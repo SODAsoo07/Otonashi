@@ -1,4 +1,5 @@
-# Otonashi
+# Otonashi 오토나시</br>
+**AUgmented vocal-TracT and Nasal SImulator** </br>
 React로 제작된 무생물 우타우 창작 툴
 
 Pink Trombone (https://www.imaginary.org/ko/node/1520) 이라는 성도 시뮬레이션 라이브러리에서 영감을 받아 제작된 툴입니다. </br>
