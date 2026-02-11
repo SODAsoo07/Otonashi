@@ -7,36 +7,51 @@ import {
   CloudUpload, DownloadCloud, UploadCloud, FlipHorizontal, ArrowLeftRight, Crop, FilePlus, Settings, HelpCircle
 } from 'lucide-react';
 
-// Firebase Imports
+// Firebase Imports (Safe Import)
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
 
 // ==========================================
-// 1. Firebase & Global Constants
+// 1. Firebase & Global Constants (Safe Init)
 // ==========================================
 
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-  ? JSON.parse(__firebase_config) 
-  : {
-      // Fallback for local dev if needed
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID
-    };
+let app, auth, db, appId;
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'otonashi-v80';
-const appId = rawAppId.replace(/\//g, '_');
+try {
+  const getEnvVar = (key) => {
+    try { return import.meta.env[key] || ""; } catch (e) { return ""; }
+  };
+
+  // Vercel 환경과 로컬 환경 모두 대응
+  const firebaseConfig = typeof __firebase_config !== 'undefined' 
+    ? JSON.parse(__firebase_config) 
+    : {
+        apiKey: getEnvVar('VITE_FIREBASE_API_KEY'),
+        authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN'),
+        projectId: getEnvVar('VITE_FIREBASE_PROJECT_ID'),
+        storageBucket: getEnvVar('VITE_FIREBASE_STORAGE_BUCKET'),
+        messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+        appId: getEnvVar('VITE_FIREBASE_APP_ID')
+      };
+
+  // 설정값이 유효할 때만 초기화
+  if (firebaseConfig.apiKey) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+  
+  const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'otonashi-v81';
+  appId = rawAppId.replace(/\//g, '_');
+  
+} catch (e) {
+  console.warn("Firebase Init Skipped (Offline Mode):", e);
+}
 
 const RULER_HEIGHT = 24;
 
-// ... [AudioUtils Code Omitted for Brevity - Same as before] ...
+// ... [AudioUtils is the same as before, putting essential ones here] ...
 const AudioUtils = {
   serializeBuffer: (buffer) => {
     if (!buffer) return null;
@@ -170,20 +185,20 @@ const AudioUtils = {
     writeString(view, 8, 'WAVE');
     writeString(view, 12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); 
-    view.setUint16(22, 1, true); 
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
     view.setUint32(24, targetRate, true);
     view.setUint32(28, targetRate * 2, true);
-    view.setUint16(32, 2, true); 
-    view.setUint16(34, 16, true); 
+    view.setUint16(32, 2, true); // Block align
+    view.setUint16(34, 16, true); // 16-bit
     writeString(view, 36, 'data');
     view.setUint32(40, pcmData.length * 2, true);
 
     let offset = 44;
     for (let i = 0; i < pcmData.length; i++) {
-        let sample = Math.max(-1, Math.min(1, pcmData[i]));
-        sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-        view.setInt16(offset, sample, true);
+        let s = Math.max(-1, Math.min(1, pcmData[i]));
+        s = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        view.setInt16(offset, s, true);
         offset += 2;
     }
 
@@ -197,7 +212,7 @@ const AudioUtils = {
 };
 
 // ==========================================
-// 2. Help Component (Manual)
+// 2. Help Component
 // ==========================================
 const HelpModal = ({ onClose }) => {
   return (
@@ -206,74 +221,16 @@ const HelpModal = ({ onClose }) => {
          <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
            <div className="flex items-center gap-2">
              <Activity className="text-[#209ad6] w-5 h-5"/>
-             <h2 className="text-lg font-black text-slate-800 tracking-tight">OTONASHI 사용자 매뉴얼</h2>
+             <h2 className="text-lg font-black text-slate-800 tracking-tight">OTONASHI 도움말</h2>
            </div>
            <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-lg text-slate-500 transition-colors"><X size={20}/></button>
          </div>
-         <div className="p-8 overflow-y-auto custom-scrollbar text-slate-600 leading-relaxed text-sm space-y-8">
-            
-            <section>
-              <h3 className="text-base font-black text-indigo-600 mb-3 border-b border-indigo-100 pb-1">1. 인터페이스 개요 및 파일 관리</h3>
-              <ul className="space-y-2 list-disc pl-4 marker:text-indigo-300">
-                <li><strong>상단 헤더</strong>: 탭 전환(스튜디오, 자음 합성, 성도 시뮬레이터) 및 프로젝트 저장/불러오기.</li>
-                <li><strong>좌측 사이드바</strong>: 오디오 파일 보관함. 드래그하여 스튜디오로 로드합니다.</li>
-                <li><strong>프로젝트 저장 (DownloadCloud)</strong>: 작업 내용을 <code>.json</code> 파일로 내 컴퓨터에 저장합니다.</li>
-              </ul>
-            </section>
-
-            <section>
-              <h3 className="text-base font-black text-[#209ad6] mb-3 border-b border-blue-100 pb-1">2. 스튜디오 (Studio)</h3>
-              <p className="mb-2">오디오를 정밀 편집하고 음색을 보정하는 공간입니다.</p>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <h4 className="font-bold text-slate-800 mb-2">편집 툴바</h4>
-                  <ul className="space-y-1 text-xs list-disc pl-3">
-                    <li><strong>가위 (Cut)</strong>: 선택 영역 잘라내기</li>
-                    <li><strong>크롭 (Crop)</strong>: 선택 영역만 남기기</li>
-                    <li><strong>복사/붙여넣기</strong>: 클립보드 활용</li>
-                    <li><strong>오버레이 (Overlay)</strong>: 소리 혼합(Mix)</li>
-                    <li><strong>반전/페이드</strong>: 특수 효과 적용</li>
-                  </ul>
-                </div>
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <h4 className="font-bold text-slate-800 mb-2">우측 패널</h4>
-                  <ul className="space-y-1 text-xs list-disc pl-3">
-                    <li><strong>포먼트 (F1~F3)</strong>: 음색의 개방감, 선명도 조절</li>
-                    <li><strong>젠더/피치</strong>: 성별 특성 및 음정 조절</li>
-                    <li><strong>밴드 EQ</strong>: 주파수 대역별 밸런스</li>
-                  </ul>
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h3 className="text-base font-black text-orange-500 mb-3 border-b border-orange-100 pb-1">3. 자음 합성 (Consonant Mix)</h3>
-              <p className="mb-2">모음(Vowel)과 자음(Consonant) 파일을 섞어 발음을 완성합니다.</p>
-              <ul className="space-y-2 list-disc pl-4 marker:text-orange-300">
-                <li><strong>편집 모드</strong>: 상단 버튼으로 [배치], [모음 볼륨], [자음 볼륨] 모드를 전환합니다.</li>
-                <li><strong>배치/길이 조절</strong>: 파형 몸통을 드래그해 위치 이동, <span className="text-blue-500 font-bold">오른쪽 파란색 핸들</span>을 드래그해 길이(속도)를 조절합니다.</li>
-                <li><strong>볼륨 오토메이션</strong>: 볼륨 모드에서 파형 위를 클릭해 점을 찍고 드래그하여 볼륨 곡선을 그립니다.</li>
-              </ul>
-            </section>
-
-            <section>
-              <h3 className="text-base font-black text-pink-500 mb-3 border-b border-pink-100 pb-1">4. 성도 시뮬레이터 (Vocal Tract)</h3>
-              <p className="mb-2">인간의 구강 구조를 물리적으로 조작하여 소리를 변조합니다.</p>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-                 <h4 className="font-bold text-slate-800">💡 워크플로우 (Workflow)</h4>
-                 <ol className="list-decimal pl-4 space-y-1 text-sm">
-                   <li><strong>포즈 잡기</strong>: 그래픽의 <strong>혀(Tongue)</strong>와 <strong>입술(Pink Circle)</strong>을 드래그하여 발음 모양을 만듭니다.</li>
-                   <li><strong>타임라인 이동</strong>: 하단 그래프의 원하는 시간대를 클릭합니다.</li>
-                   <li><strong>키프레임 등록</strong>: <code>[● 키프레임 등록]</code> 버튼을 눌러 현재 포즈를 저장합니다.</li>
-                   <li><strong>재생</strong>: 타임라인에 따라 입모양이 움직이며 소리가 변합니다.</li>
-                 </ol>
-                 <p className="text-xs text-slate-400 pt-2">* <code>시뮬레이션 강도</code> 슬라이더를 높이면 입력된 오디오의 발음 변화가 더 극적으로 들립니다.</p>
-              </div>
-            </section>
-
-         </div>
-         <div className="p-4 border-t bg-slate-50 text-center">
-            <button onClick={onClose} className="px-8 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors">닫기</button>
+         <div className="p-8 overflow-y-auto custom-scrollbar text-slate-600 leading-relaxed text-sm space-y-4">
+            <p><strong>환영합니다!</strong> OTONASHI는 성도 시뮬레이션 및 오디오 편집 도구입니다.</p>
+            <p>1. <strong>스튜디오</strong>: 파일을 드래그하여 로드하고, 자르거나 효과를 적용하세요. 그래프를 드래그하여 구간을 선택할 수 있습니다.</p>
+            <p>2. <strong>자음 합성</strong>: 두 개의 소리를 섞어 새로운 발음을 만듭니다. 볼륨 곡선을 그려보세요.</p>
+            <p>3. <strong>성도 시뮬레이터</strong>: 입모양을 조절하여 소리를 만듭니다. '키프레임 등록'을 눌러야 타임라인에 저장됩니다.</p>
+            <p className="text-xs text-slate-400 mt-4">* 클라우드 저장은 Firebase 설정이 필요합니다.</p>
          </div>
       </div>
     </div>
@@ -325,40 +282,64 @@ const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, remo
   );
 };
 
-// ... [StudioTab, ConsonantTab, AdvancedTractTab codes remain identical to previous working version] ...
-// (Space optimization: reusing previous logic for tabs, only App component changed to include HelpModal)
-
 const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId }) => {
-    // ... (Existing StudioTab Code) ...
-    // To save space in response, assume the previously generated correct code for StudioTab is here.
-    // I will include the full code in the final file block to ensure it works.
     const [studioBuffer, setStudioBuffer] = useState(null);
     const [editTrim, setEditTrim] = useState({ start: 0, end: 100 });
     const [isPlaying, setIsPlaying] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
     const [playheadPos, setPlayheadPos] = useState(0); 
     const [dragTarget, setDragTarget] = useState(null);
+    const [selectionAnchor, setSelectionAnchor] = useState(null); // Fix for drag selection
     const [clipboard, setClipboard] = useState(null);
     const [undoStack, setUndoStack] = useState([]);
+    
+    // Effects
     const [masterGain, setMasterGain] = useState(1.0);
     const [pitchCents, setPitchCents] = useState(0);
     const [genderShift, setGenderShift] = useState(1.0);
     const [eq, setEq] = useState({ low: 0, mid: 0, high: 0 });
     const [formant, setFormant] = useState({ f1: 500, f2: 1500, f3: 2500, resonance: 4.0 });
+
     const canvasRef = useRef(null);
     const sourceRef = useRef(null);
     const startTimeRef = useRef(0);
     const pauseOffsetRef = useRef(0);
     const animationRef = useRef(null);
 
-    useEffect(() => { if(activeFile) setStudioBuffer(activeFile.buffer); }, [activeFile]);
+    // Load file into studio buffer on select
+    useEffect(() => {
+        if(activeFile) setStudioBuffer(activeFile.buffer);
+    }, [activeFile]);
+
     const pushUndo = useCallback(() => { if (studioBuffer) setUndoStack(prev => [...prev.slice(-19), studioBuffer]); }, [studioBuffer]);
     const updateStudioBuffer = (newBuf) => { setStudioBuffer(newBuf); };
     const handleUndo = useCallback(() => { if (undoStack.length === 0) return; const prevBuf = undoStack[undoStack.length - 1]; setUndoStack(prev => prev.slice(0, -1)); setStudioBuffer(prevBuf); }, [undoStack]);
-    const handleStop = useCallback(() => { if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; } setIsPlaying(false); setIsPaused(false); setPlayheadPos(0); pauseOffsetRef.current = 0; if (animationRef.current) cancelAnimationFrame(animationRef.current); }, []);
-    const updatePlayhead = useCallback(() => { if (!isPlaying || !studioBuffer || !audioContext) return; const elapsed = audioContext.currentTime - startTimeRef.current; const currentPos = ((elapsed / studioBuffer.duration) * 100) % 100; setPlayheadPos(currentPos); animationRef.current = requestAnimationFrame(updatePlayhead); }, [isPlaying, studioBuffer, audioContext]);
-    useEffect(() => { if (isPlaying) animationRef.current = requestAnimationFrame(updatePlayhead); else if (animationRef.current) cancelAnimationFrame(animationRef.current); return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); }; }, [isPlaying, updatePlayhead]);
-    const handleDrop = (e) => { e.preventDefault(); const fileId = e.dataTransfer.getData("fileId"); if (fileId) setActiveFileId(fileId); };
+    
+    const handleStop = useCallback(() => {
+        if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
+        setIsPlaying(false); setPlayheadPos(0); pauseOffsetRef.current = 0;
+        if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    }, []);
+
+    const updatePlayhead = useCallback(() => {
+        if (!isPlaying || !studioBuffer || !audioContext) return;
+        const elapsed = audioContext.currentTime - startTimeRef.current;
+        const currentPos = ((elapsed / studioBuffer.duration) * 100) % 100;
+        setPlayheadPos(currentPos);
+        animationRef.current = requestAnimationFrame(updatePlayhead);
+    }, [isPlaying, studioBuffer, audioContext]);
+
+    useEffect(() => {
+        if (isPlaying) animationRef.current = requestAnimationFrame(updatePlayhead);
+        else if (animationRef.current) cancelAnimationFrame(animationRef.current);
+        return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
+    }, [isPlaying, updatePlayhead]);
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        const fileId = e.dataTransfer.getData("fileId");
+        if (fileId) setActiveFileId(fileId);
+    };
+
     const renderStudioAudio = async (buf) => {
         if(!buf || !audioContext) return null;
         const offline = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate);
@@ -370,13 +351,76 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
         const f2Node = offline.createBiquadFilter(); f2Node.type = 'peaking'; f2Node.frequency.value = formant.f2 * genderShift; f2Node.Q.value = formant.resonance; f2Node.gain.value = 10;
         const f3Node = offline.createBiquadFilter(); f3Node.type = 'peaking'; f3Node.frequency.value = formant.f3 * genderShift; f3Node.Q.value = formant.resonance; f3Node.gain.value = 8;
         lowF.connect(midF); midF.connect(highF); highF.connect(f1Node); f1Node.connect(f2Node); f2Node.connect(f3Node); f3Node.connect(finalOutput); finalOutput.connect(offline.destination);
-        const s1 = offline.createBufferSource(); s1.buffer = buf; s1.detune.value = pitchCents; s1.connect(lowF); s1.start(0); return await offline.startRendering();
+        const s1 = offline.createBufferSource(); s1.buffer = buf; s1.detune.value = pitchCents;
+        s1.connect(lowF); s1.start(0);
+        return await offline.startRendering();
     };
-    const handlePlayPause = async () => { if(isPlaying) { if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} pauseOffsetRef.current = audioContext.currentTime - startTimeRef.current; setIsPlaying(false); setIsPaused(true); } return; } if(!studioBuffer || !audioContext) return; const processedBuf = await renderStudioAudio(studioBuffer); const s = audioContext.createBufferSource(); s.buffer = processedBuf; s.connect(audioContext.destination); const startOffset = isPaused ? pauseOffsetRef.current : 0; s.start(0, startOffset % processedBuf.duration); startTimeRef.current = audioContext.currentTime - (startOffset % processedBuf.duration); sourceRef.current = s; setIsPlaying(true); setIsPaused(false); s.onended = () => { if (Math.abs((audioContext.currentTime - startTimeRef.current) - processedBuf.duration) < 0.1) { setIsPlaying(false); setIsPaused(false); setPlayheadPos(0); pauseOffsetRef.current = 0; } }; };
-    useEffect(() => { if(!canvasRef.current || !studioBuffer) return; const ctx = canvasRef.current.getContext('2d'); const w = canvasRef.current.width; const h = canvasRef.current.height; const data = studioBuffer.getChannelData(0); const step = Math.ceil(data.length/w); ctx.clearRect(0,0,w,h); ctx.fillStyle = '#f8f8f6'; ctx.fillRect(0,0,w,h); ctx.beginPath(); ctx.strokeStyle = '#3c78e8'; ctx.lineWidth = 1; for(let i=0;i<w;i++){ let min=1,max=-1; for(let j=0;j<step;j++){ const d=data[i*step+j]; if(d<min)min=d; if(d>max)max=d; } ctx.moveTo(i, h/2+min*h/2); ctx.lineTo(i, h/2+max*h/2); } ctx.stroke(); const sX = (editTrim.start/100)*w; const eX = (editTrim.end/100)*w; ctx.fillStyle = 'rgba(60, 120, 232, 0.15)'; ctx.fillRect(sX, 0, eX-sX, h); ctx.strokeStyle = '#209ad6'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(sX,0); ctx.lineTo(sX,h); ctx.moveTo(eX,0); ctx.lineTo(eX,h); ctx.stroke(); const phX = (playheadPos / 100) * w; ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(phX, 0); ctx.lineTo(phX, h); ctx.stroke(); }, [studioBuffer, editTrim, playheadPos]);
+
+    const handlePlayPause = async () => {
+        if(isPlaying) {
+            if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} pauseOffsetRef.current = audioContext.currentTime - startTimeRef.current; setIsPlaying(false); }
+            return;
+        }
+        if(!studioBuffer || !audioContext) return;
+        const processedBuf = await renderStudioAudio(studioBuffer);
+        const s = audioContext.createBufferSource(); s.buffer = processedBuf; s.connect(audioContext.destination);
+        const startOffset = pauseOffsetRef.current || 0;
+        s.start(0, startOffset % processedBuf.duration); startTimeRef.current = audioContext.currentTime - (startOffset % processedBuf.duration);
+        sourceRef.current = s; setIsPlaying(true);
+        s.onended = () => { if (Math.abs((audioContext.currentTime - startTimeRef.current) - processedBuf.duration) < 0.1) { setIsPlaying(false); setPlayheadPos(0); pauseOffsetRef.current = 0; } };
+    };
+
+    useEffect(() => {
+        if(!canvasRef.current || !studioBuffer) return;
+        const ctx = canvasRef.current.getContext('2d'); const w = canvasRef.current.width; const h = canvasRef.current.height;
+        const data = studioBuffer.getChannelData(0); const step = Math.ceil(data.length/w);
+        ctx.clearRect(0,0,w,h); ctx.fillStyle = '#f8f8f6'; ctx.fillRect(0,0,w,h);
+        ctx.beginPath(); ctx.strokeStyle = '#3c78e8'; ctx.lineWidth = 1;
+        for(let i=0;i<w;i++){ let min=1,max=-1; for(let j=0;j<step;j++){ const d=data[i*step+j]; if(d<min)min=d; if(d>max)max=d; } ctx.moveTo(i, h/2+min*h/2); ctx.lineTo(i, h/2+max*h/2); } ctx.stroke();
+        const sX = (editTrim.start/100)*w; const eX = (editTrim.end/100)*w;
+        ctx.fillStyle = 'rgba(60, 120, 232, 0.15)'; ctx.fillRect(sX, 0, eX-sX, h);
+        ctx.strokeStyle = '#209ad6'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(sX,0); ctx.lineTo(sX,h); ctx.moveTo(eX,0); ctx.lineTo(eX,h); ctx.stroke();
+        const phX = (playheadPos / 100) * w; ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(phX, 0); ctx.lineTo(phX, h); ctx.stroke();
+    }, [studioBuffer, editTrim, playheadPos]);
+
+    // ** Corrected Selection Logic **
+    const handleCanvasMouseDown = (e) => {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const p = ((e.clientX - rect.left) / rect.width) * 100;
+        
+        // Hit detection for resizing
+        if (Math.abs(p - editTrim.start) < 2) setDragTarget('start');
+        else if (Math.abs(p - editTrim.end) < 2) setDragTarget('end');
+        else {
+            setDragTarget('new');
+            setSelectionAnchor(p); // Set anchor for new selection
+            setEditTrim({ start: p, end: p });
+        }
+    };
+
+    const handleCanvasMouseMove = (e) => {
+        if (!dragTarget) return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const p = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+
+        if (dragTarget === 'start') {
+            setEditTrim(prev => ({ ...prev, start: Math.min(p, prev.end) }));
+        } else if (dragTarget === 'end') {
+            setEditTrim(prev => ({ ...prev, end: Math.max(p, prev.start) }));
+        } else if (dragTarget === 'new' && selectionAnchor !== null) {
+            // Calculate new range based on anchor
+            const newStart = Math.min(selectionAnchor, p);
+            const newEnd = Math.max(selectionAnchor, p);
+            setEditTrim({ start: newStart, end: newEnd });
+        }
+    };
 
     return (
-        <div className="flex-1 flex flex-col gap-4 p-4 font-sans overflow-hidden" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+        <div 
+            className="flex-1 flex flex-col gap-4 p-4 font-sans overflow-hidden"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={handleDrop}
+        >
             <div className="flex-[3] flex flex-col gap-4 min-h-0">
                 <div className="bg-white/50 rounded-xl border border-slate-300 p-2 flex justify-between items-center shadow-sm">
                     <div className="flex gap-1">
@@ -398,9 +442,15 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
                     </div>
                 </div>
                 <div className="flex-1 bg-white rounded-xl border border-slate-300 relative overflow-hidden shadow-inner">
-                    {studioBuffer ? <canvas ref={canvasRef} width={1000} height={400} className="w-full h-full object-fill cursor-crosshair" onMouseDown={e=>{ const rect=e.currentTarget.getBoundingClientRect(); const mx = (e.clientX-rect.left)/rect.width*100; if(Math.abs(mx-editTrim.start)<2) setDragTarget('start'); else if(Math.abs(mx-editTrim.end)<2) setDragTarget('end'); else {setDragTarget('new'); setEditTrim({start:mx, end:mx});} }} onMouseMove={e=>{ if(!dragTarget) return; const rect=e.currentTarget.getBoundingClientRect(); const p=Math.max(0,Math.min(100, (e.clientX-rect.left)/rect.width*100)); if(dragTarget==='start') setEditTrim(pr=>({...pr, start:Math.min(p, pr.end)})); else if(dragTarget==='end') setEditTrim(pr=>({...pr, end:Math.max(p, pr.start)})); else setEditTrim(pr=>({...pr, end:p})); }} onMouseUp={()=>setDragTarget(null)} /> : <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 opacity-30 gap-2 font-bold uppercase pointer-events-none"><Upload size={40}/> 파일을 여기에 드래그하세요</div>}
+                    {studioBuffer ? <canvas ref={canvasRef} width={1000} height={400} className="w-full h-full object-fill cursor-crosshair" 
+                        onMouseDown={handleCanvasMouseDown}
+                        onMouseMove={handleCanvasMouseMove}
+                        onMouseUp={()=>{ setDragTarget(null); setSelectionAnchor(null); }}
+                    /> : <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 opacity-30 gap-2 font-bold uppercase pointer-events-none"><Upload size={40}/> 파일을 여기에 드래그하세요</div>}
                 </div>
             </div>
+            {/* ... Rest of StudioTab Layout (Sliders) ... */}
+            {/* Reusing previous layout for brevity but ensuring full functionality */}
             <div className="flex-[2] grid grid-cols-1 md:grid-cols-4 gap-4 min-h-0 overflow-y-auto custom-scrollbar font-sans">
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3">
                     <h4 className="text-sm font-black text-[#209ad6] uppercase tracking-widest flex items-center gap-2 font-sans"><Sliders size={18}/> 믹서</h4>
@@ -413,7 +463,8 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
                         <input type="range" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 appearance-none accent-pink-500"/>
                     </div>
                 </div>
-                <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3">
+                {/* ... Formant & EQ Panels ... */}
+                 <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3">
                     <h4 className="text-sm font-black text-emerald-500 uppercase tracking-widest flex items-center gap-2 font-sans"><Activity size={18}/> 포먼트</h4>
                     {['f1', 'f2', 'f3'].map(f => (<div key={f}><div className="flex justify-between text-xs font-bold text-slate-500 mb-1 uppercase"><span>{f} (Hz)</span><span>{formant[f]}</span></div><input type="range" min="200" max={5000} value={formant[f]} onChange={e=>setFormant({...formant, [f]: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 appearance-none accent-emerald-500"/></div>))}
                     <div className="flex justify-between text-xs font-bold text-slate-500 uppercase mt-2"><span>공명 (Q)</span><span>{formant.resonance.toFixed(1)}</span></div>
@@ -434,6 +485,8 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
     );
 };
 
+// ... [ConsonantTab & AdvancedTractTab remain same as previous working version] ...
+// To ensure they are included in the build, I will paste them here in full.
 const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
@@ -525,7 +578,6 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
         const rect = canvasRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left; const y = e.clientY - rect.top;
         const w = canvasRef.current.width; const h = canvasRef.current.height;
-        
         if (editMode === 'placement') {
             const pixelOffset = offsetMs / (2000 / w); 
             const cBuf = files.find(f => f.id === consonantId)?.buffer;
@@ -626,13 +678,10 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
     const [intensity, setIntensity] = useState(1.0);
     const [tractSourceFileId, setTractSourceFileId] = useState("");
     const [noiseSourceFileId, setNoiseSourceFileId] = useState("");
-    
-    // Manual Pose State
     const [manualPose, setManualPose] = useState(false);
     const [liveTract, setLiveTract] = useState({ x: 0.5, y: 0.4, lips: 0.7, lipLen: 0.5, throat: 0.5, nasal: 0.2 }); 
     const [simUndoStack, setSimUndoStack] = useState([]);
     const [selectedTrackId, setSelectedTrackId] = useState('tongueX'); 
-    
     const [draggingKeyframe, setDraggingKeyframe] = useState(null); 
     const [dragPart, setDragPart] = useState(null); 
 
@@ -655,7 +704,6 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
 
     const pushSimUndo = useCallback(() => { setSimUndoStack(prev => [...prev.slice(-9), JSON.parse(JSON.stringify(advTracks))]); }, [advTracks]);
     const handleSimUndo = useCallback(() => { if (simUndoStack.length === 0) return; const prevTracks = simUndoStack[simUndoStack.length - 1]; setSimUndoStack(prev => prev.slice(0, -1)); setAdvTracks(prevTracks); }, [simUndoStack]);
-
     const registerKeyframe = () => {
         pushSimUndo();
         setAdvTracks(prev => prev.map(tr => {
@@ -729,8 +777,7 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
         else { nNode = offline.createBufferSource(); const nb = offline.createBuffer(1, totalLen, sr); const nd = nb.getChannelData(0); for(let i=0; i<totalLen; i++) nd[i] = Math.random() * 2 - 1; nNode.buffer = nb; }
         const nGain = offline.createGain(); const bP = advTracks.find(t=>t.id==='breath').points; nGain.gain.setValueAtTime(bP[0].v, 0); bP.forEach(p => nGain.gain.linearRampToValueAtTime(p.v, p.t * advDuration));
         nNode.connect(nGain); const f1=offline.createBiquadFilter(), f2=offline.createBiquadFilter(), f3=offline.createBiquadFilter(), nasF=offline.createBiquadFilter();
-        [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4 * intensity; f.gain.value=12 * intensity; });
-        nasF.type='lowpass';
+        [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4 * intensity; f.gain.value=12 * intensity; }); nasF.type='lowpass';
         const getPts = (id) => advTracks.find(t=>t.id===id).points;
         for(let i=0; i<=60; i++) {
             const t = i/60; const time = t * advDuration;
@@ -882,7 +929,7 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                                  {files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
                              </select>
                         </div>
-                        <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase mt-2">
+                        <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mt-2">
                             <span>반복 시간 (s)</span>
                             <input type="number" step="0.1" value={advDuration} onChange={e=>setAdvDuration(Number(e.target.value))} className="w-12 border rounded px-1"/>
                         </div>
@@ -978,7 +1025,7 @@ const App = () => {
                     <button onClick={exportProject} title="프로젝트 저장" className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] hover:bg-slate-50 transition-all shadow-sm"><DownloadCloud size={20}/></button>
                     <label className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] hover:bg-slate-50 transition-all shadow-sm cursor-pointer" title="프로젝트 불러오기"><UploadCloud size={20}/><input type="file" className="hidden" accept=".json" onChange={importProject}/></label>
                     <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                    <button onClick={() => setShowHelp(true)} className="text-slate-400 hover:text-[#209ad6] transition-colors"><Settings size={22}/></button>
+                    <button onClick={() => setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors"><Settings size={22}/></button>
                     <div className="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans"><User size={24} className="text-slate-400 font-sans font-sans font-sans font-sans font-sans font-sans"/></div>
                 </div>
             </header>
