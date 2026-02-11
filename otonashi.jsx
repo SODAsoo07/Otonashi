@@ -4,19 +4,54 @@ import {
   Layers, Zap, Settings, Mic2, ChevronDown, ChevronRight, Copy, Clipboard, 
   TrendingUp, X, FileAudio, Plus, Trash2, Save, RefreshCw, CircleDot, User, 
   Grid, Volume2, Wind, Eraser, MoveHorizontal, LogIn, Edit2, Check, 
-  MousePointer2, SlidersHorizontal, RotateCcw, Combine, Undo2, TrendingDown
+  MousePointer2, SlidersHorizontal, RotateCcw, Combine, Undo2, TrendingDown,
+  Cloud, CloudUpload, CloudDownload
 } from 'lucide-react';
 
+// Firebase Imports
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from 'firebase/firestore';
+
 /**
- * OTONASHI (AUgmented vocal-TracT and Nasal SImulator) v70
- * - 성도 시뮬레이터: 실행 취소(Undo, 10단계) 기능 추가
- * - Vercel 배포를 위한 AudioContext SSR 안정화 유지
+ * OTONASHI (AUgmented vocal-TracT and Nasal SImulator)
+ * - Vercel 배포 최적화
  */
+
+// --- Firebase Configuration ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'otonashi-v75';
 
 // --- 1. Global Utilities ---
 const RULER_HEIGHT = 24;
 
 const AudioUtils = {
+  // AudioBuffer를 Firestore에 저장 가능한 객체로 변환 (채널 데이터 추출)
+  serializeBuffer: (buffer) => {
+    if (!buffer) return null;
+    const channels = [];
+    for (let i = 0; i < buffer.numberOfChannels; i++) {
+      channels.push(Array.from(buffer.getChannelData(i)));
+    }
+    return {
+      sampleRate: buffer.sampleRate,
+      numberOfChannels: buffer.numberOfChannels,
+      channels: channels
+    };
+  },
+  // Firestore 데이터를 AudioBuffer로 복구
+  deserializeBuffer: async (ctx, data) => {
+    if (!ctx || !data) return null;
+    const { sampleRate, numberOfChannels, channels } = data;
+    const buffer = ctx.createBuffer(numberOfChannels, channels[0].length, sampleRate);
+    for (let i = 0; i < numberOfChannels; i++) {
+      buffer.copyToChannel(new Float32Array(channels[i]), i);
+    }
+    return buffer;
+  },
   createBufferFromSlice: (ctx, buf, startPct, endPct) => {
     if(!buf || !ctx) return null;
     const start = Math.floor(buf.length * (startPct/100));
@@ -89,7 +124,7 @@ const AudioUtils = {
 // ==========================================
 // Component: File Rack
 // ==========================================
-const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, removeFile, renameFile }) => {
+const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, removeFile, renameFile, isSaving }) => {
   const [editingId, setEditingId] = useState(null);
   const [tempName, setTempName] = useState("");
 
@@ -101,7 +136,9 @@ const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, remo
   return (
     <aside className="w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 font-sans">
       <div className="p-4 border-b border-slate-300 flex justify-between items-center bg-slate-200/50">
-        <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">파일 보관함</span>
+        <span className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
+          파일 보관함 {isSaving && <RefreshCw size={10} className="animate-spin text-blue-500" />}
+        </span>
         <label className="cursor-pointer hover:bg-slate-300 p-1 rounded transition text-[#209ad6]">
           <Plus className="w-4 h-4"/>
           <input type="file" multiple accept=".wav,.mp3,audio/*" className="hidden" onChange={handleFileUpload}/>
@@ -494,7 +531,7 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
     const [simIndex, setSimIndex] = useState(1);
     const [clickToAdd, setClickToAdd] = useState(false);
     
-    // History
+    // History (Sim)
     const [simUndoStack, setSimUndoStack] = useState([]);
 
     const liveAudioRef = useRef(null); 
@@ -774,37 +811,125 @@ const App = () => {
     const [files, setFiles] = useState([]);
     const [activeFileId, setActiveFileId] = useState(null);
     const [activeTab, setActiveTab] = useState('editor');
+    
+    // Auth & Data States
+    const [user, setUser] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
+    // Initialize AudioContext & Auth
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const Ctx = window.AudioContext || window.webkitAudioContext;
             if (Ctx) setAudioContext(new Ctx());
         }
+
+        const initAuth = async () => {
+          try {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+              await signInAnonymously(auth);
+            }
+          } catch (error) {
+            console.error("Auth failed:", error);
+          }
+        };
+        initAuth();
+
+        const unsubscribe = onAuthStateChanged(auth, (u) => {
+            setUser(u);
+        });
+        return () => unsubscribe();
     }, []);
 
+    // Load initial data from Firestore
+    useEffect(() => {
+        if (!user || !audioContext) return;
+
+        const loadData = async () => {
+            setIsLoading(true);
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'rack', 'current');
+                const docSnap = await getDoc(docRef);
+                
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.files && data.files.length > 0) {
+                        const loadedFiles = await Promise.all(data.files.map(async f => {
+                            const buffer = await AudioUtils.deserializeBuffer(audioContext, f.data);
+                            return { id: f.id, name: f.name, buffer };
+                        }));
+                        setFiles(loadedFiles);
+                        if (loadedFiles.length > 0) setActiveFileId(loadedFiles[0].id);
+                    }
+                }
+            } catch (error) {
+                console.error("Load failed:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadData();
+    }, [user, audioContext]);
+
     const activeFile = useMemo(() => files.find(f => f.id === activeFileId), [files, activeFileId]);
+
+    const saveToCloud = async (currentFiles) => {
+        if (!user) return;
+        setIsSaving(true);
+        try {
+            const serializedFiles = currentFiles.map(f => ({
+                id: f.id,
+                name: f.name,
+                data: AudioUtils.serializeBuffer(f.buffer)
+            }));
+            
+            await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'rack', 'current'), {
+                files: serializedFiles,
+                updatedAt: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error("Save failed:", error);
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const handleFileUpload = async (e) => {
         if(!audioContext) return;
         const selFiles = Array.from(e.target.files);
+        const newFiles = [];
         for(const file of selFiles) {
             const arrayBuffer = await file.arrayBuffer();
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            const newFile = { id: Math.random().toString(36).substr(2, 9), name: file.name, buffer: audioBuffer };
-            setFiles(prev => [...prev, newFile]);
-            if(!activeFileId) setActiveFileId(newFile.id);
+            newFiles.push({ id: Math.random().toString(36).substr(2, 9), name: file.name, buffer: audioBuffer });
         }
+        const updatedFiles = [...files, ...newFiles];
+        setFiles(updatedFiles);
+        if(!activeFileId && newFiles.length > 0) setActiveFileId(newFiles[0].id);
     };
 
     const addToRack = (buffer, name) => {
         const newFile = { id: Math.random().toString(36).substr(2, 9), name: name || "새 오디오", buffer };
-        setFiles(prev => [...prev, newFile]);
+        setFiles(prev => {
+            const updated = [...prev, newFile];
+            return updated;
+        });
         setActiveFileId(newFile.id);
     };
 
-    const renameFile = (id, newName) => { setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f)); };
-    const updateFile = (newBuffer) => { setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, buffer: newBuffer } : f)); };
-    const removeFile = (id) => { setFiles(prev => prev.filter(f => f.id !== id)); if(activeFileId === id) setActiveFileId(null); };
+    const renameFile = (id, newName) => { 
+        setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f)); 
+    };
+    const updateFile = (newBuffer) => { 
+        setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, buffer: newBuffer } : f)); 
+    };
+    const removeFile = (id) => { 
+        setFiles(prev => prev.filter(f => f.id !== id)); 
+        if(activeFileId === id) setActiveFileId(null); 
+    };
 
     return (
         <div className="h-screen w-full bg-[#f8f8f6] text-[#1f1e1d] flex flex-col font-sans overflow-hidden">
@@ -822,11 +947,29 @@ const App = () => {
                     <button onClick={()=>setActiveTab('consonant')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab==='consonant'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>자음 합성</button>
                     <button onClick={()=>setActiveTab('sim')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab==='sim'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>성도 시뮬레이터</button>
                 </nav>
-                <div className="flex items-center gap-3"><button className="text-slate-400 hover:text-slate-600 transition-colors"><Settings size={20}/></button><div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner"><User size={20} className="text-slate-400"/></div></div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={() => saveToCloud(files)} 
+                        disabled={isSaving || !user}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${isSaving ? 'bg-slate-100 text-slate-400' : 'bg-white text-blue-600 border-blue-100 hover:bg-blue-50'}`}
+                    >
+                        {isSaving ? <RefreshCw size={14} className="animate-spin" /> : <CloudUpload size={14} />}
+                        {isSaving ? '저장 중...' : '클라우드에 저장'}
+                    </button>
+                    <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner">
+                        <User size={20} className={user ? "text-blue-500" : "text-slate-400"}/>
+                    </div>
+                </div>
             </header>
             <main className="flex-1 flex overflow-hidden">
-                <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
-                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden">
+                <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} isSaving={isSaving} />
+                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden relative">
+                    {isLoading && (
+                        <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center gap-3">
+                            <RefreshCw className="animate-spin text-[#209ad6]" size={32} />
+                            <span className="text-sm font-bold text-slate-500">데이터를 불러오는 중...</span>
+                        </div>
+                    )}
                     {activeTab === 'editor' && <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} />}
                     {activeTab === 'consonant' && <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
                     {activeTab === 'sim' && <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
