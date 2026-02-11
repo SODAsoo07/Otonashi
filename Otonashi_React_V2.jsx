@@ -9,11 +9,7 @@ import {
 
 /**
  * OTONASHI (AUgmented vocal-TracT and Nasal SImulator) v70
- * - Simulator: SVG 문법 오류(이스케이프 문자) 수정 및 키프레임 그래프 복구
- * - Studio: F1, F2, F3 및 공명(Resonance) 개별 편집 패널 유지
- * - Studio: 드래그 앤 드롭, Fade In/Out, Undo (20단계) 지원
- * - 버튼 명칭: "보관함에 저장"으로 통일
- * - Simulator: 타임라인 스크러빙 및 재생/일시정지 지원
+ * Written in Gemini 3.0
  */
 
 // --- 1. 전역 유틸리티 ---
@@ -829,5 +825,6 @@ const App = () => {
         </div>
     );
 };
+
 
 export default App;
