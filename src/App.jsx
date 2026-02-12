@@ -4,7 +4,7 @@ import {
   Layers, Zap, Mic2, Copy, Clipboard, TrendingUp, X, FileAudio, Plus, 
   LogIn, Edit2, CircleDot, User, MoveHorizontal, Check, MousePointer2, 
   SlidersHorizontal, RotateCcw, Combine, Undo2, TrendingDown,
-  CloudUpload, DownloadCloud, UploadCloud, FlipHorizontal, ArrowLeftRight, Crop, FilePlus, Settings, HelpCircle
+  CloudUpload, DownloadCloud, UploadCloud, FlipHorizontal, ArrowLeftRight, Crop, FilePlus, Settings, HelpCircle, RefreshCw
 } from 'lucide-react';
 
 // Firebase Imports (Safe Import)
@@ -48,6 +48,10 @@ try {
 }
 
 const RULER_HEIGHT = 24;
+
+// ==========================================
+// 2. Audio Utility Functions
+// ==========================================
 
 const AudioUtils = {
   serializeBuffer: (buffer) => {
@@ -154,10 +158,6 @@ const AudioUtils = {
     }
     return newBuf;
   },
-  createSilence: (ctx, sec) => {
-    if(!ctx) return null;
-    return ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * sec)), ctx.sampleRate);
-  },
   downloadWav: async (buffer, name) => {
     if (!buffer) return;
     const targetRate = 44100;
@@ -167,16 +167,11 @@ const AudioUtils = {
     s.connect(offline.destination);
     s.start(0);
     const rendered = await offline.startRendering();
-    
     const pcmData = rendered.getChannelData(0);
     const wavLen = 44 + pcmData.length * 2;
     const arrayBuffer = new ArrayBuffer(wavLen);
     const view = new DataView(arrayBuffer);
-    
-    const writeString = (v, offset, string) => {
-        for (let i = 0; i < string.length; i++) v.setUint8(offset + i, string.charCodeAt(i));
-    };
-
+    const writeString = (v, offset, string) => { for (let i = 0; i < string.length; i++) v.setUint8(offset + i, string.charCodeAt(i)); };
     writeString(view, 0, 'RIFF');
     view.setUint32(4, 36 + pcmData.length * 2, true);
     writeString(view, 8, 'WAVE');
@@ -190,7 +185,6 @@ const AudioUtils = {
     view.setUint16(34, 16, true); 
     writeString(view, 36, 'data');
     view.setUint32(40, pcmData.length * 2, true);
-
     let offset = 44;
     for (let i = 0; i < pcmData.length; i++) {
         let sample = Math.max(-1, Math.min(1, pcmData[i]));
@@ -198,7 +192,6 @@ const AudioUtils = {
         view.setInt16(offset, sample, true);
         offset += 2;
     }
-
     const blob = new Blob([view], { type: 'audio/wav' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -209,7 +202,7 @@ const AudioUtils = {
 };
 
 // ==========================================
-// 2. UI Sub-Components
+// 3. UI Sub-Components
 // ==========================================
 
 const HelpModal = ({ onClose }) => {
@@ -225,9 +218,9 @@ const HelpModal = ({ onClose }) => {
          </div>
          <div className="p-8 overflow-y-auto custom-scrollbar text-slate-600 leading-relaxed text-sm space-y-4">
             <p><strong>환영합니다!</strong> OTONASHI는 성도 시뮬레이션 및 오디오 편집 도구입니다.</p>
-            <p>1. <strong>스튜디오</strong>: 파일을 드래그하여 로드하고, 편집하세요. 선택 영역을 드래그하여 작업할 수 있습니다.</p>
-            <p>2. <strong>자음 합성</strong>: 두 개의 소리를 섞고 볼륨 곡선을 그려 발음을 조절하세요.</p>
-            <p>3. <strong>성도 시뮬레이터</strong>: 마우스로 혀와 입술을 드래그해 모양을 잡고, <code>키프레임 등록</code>을 눌러 저장하세요.</p>
+            <p>1. <strong>스튜디오</strong>: 파일을 드래그하여 로드하고 편집하세요. 그래프 영역을 드래그하여 작업 구간을 선택할 수 있습니다.</p>
+            <p>2. <strong>자음 합성</strong>: 두 개의 소리를 믹싱하고 볼륨 곡선을 그려 발음을 조절하세요. <strong>우클릭</strong>으로 키프레임을 삭제할 수 있습니다.</p>
+            <p>3. <strong>성도 시뮬레이터</strong>: 혀와 입술 모양을 잡고 <code>키프레임 등록</code>을 통해 타임라인에 소리를 생성하세요.</p>
          </div>
       </div>
     </div>
@@ -277,7 +270,7 @@ const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, remo
   );
 };
 
-const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId }) => {
+const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) => {
     const [studioBuffer, setStudioBuffer] = useState(null);
     const [editTrim, setEditTrim] = useState({ start: 0, end: 100 });
     const [isPlaying, setIsPlaying] = useState(false);
@@ -286,12 +279,14 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
     const [selectionAnchor, setSelectionAnchor] = useState(null); 
     const [clipboard, setClipboard] = useState(null);
     const [undoStack, setUndoStack] = useState([]);
-    
     const [masterGain, setMasterGain] = useState(1.0);
     const [pitchCents, setPitchCents] = useState(0);
     const [genderShift, setGenderShift] = useState(1.0);
     const [eq, setEq] = useState({ low: 0, mid: 0, high: 0 });
     const [formant, setFormant] = useState({ f1: 500, f2: 1500, f3: 2500, resonance: 4.0 });
+    const [showAutomation, setShowAutomation] = useState(false);
+    const [showStretchModal, setShowStretchModal] = useState(false);
+    const [stretchRatio, setStretchRatio] = useState(100);
 
     const canvasRef = useRef(null);
     const sourceRef = useRef(null);
@@ -299,10 +294,14 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
     const pauseOffsetRef = useRef(0);
     const animationRef = useRef(null);
 
-    useEffect(() => { if(activeFile) setStudioBuffer(activeFile.buffer); }, [activeFile]);
+    useEffect(() => {
+        if(activeFile) {
+            setStudioBuffer(activeFile.buffer);
+            setEditTrim({ start: 0, end: 0 }); 
+        }
+    }, [activeFile]);
 
     const pushUndo = useCallback(() => { if (studioBuffer) setUndoStack(prev => [...prev.slice(-19), studioBuffer]); }, [studioBuffer]);
-    const updateStudioBuffer = (newBuf) => { setStudioBuffer(newBuf); };
     const handleUndo = useCallback(() => { if (undoStack.length === 0) return; const prevBuf = undoStack[undoStack.length - 1]; setUndoStack(prev => prev.slice(0, -1)); setStudioBuffer(prevBuf); }, [undoStack]);
     
     const handleStop = useCallback(() => {
@@ -394,15 +393,16 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
                     <div className="flex gap-1">
                         <button onClick={handleUndo} disabled={undoStack.length === 0} title="실행 취소" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Undo2 size={16}/></button>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); setClipboard(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); updateStudioBuffer(AudioUtils.deleteRange(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="잘라내기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Scissors size={16}/></button>
-                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); updateStudioBuffer(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="크롭" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Crop size={16}/></button>
+                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); setClipboard(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); setStudioBuffer(AudioUtils.deleteRange(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="잘라내기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Scissors size={16}/></button>
+                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="크롭" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Crop size={16}/></button>
                         <button onClick={() => { if(!studioBuffer) return; setClipboard(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="복사" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Copy size={16}/></button>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                        <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); updateStudioBuffer(AudioUtils.insertBuffer(audioContext, studioBuffer, clipboard, editTrim.end)); }} title="붙여넣기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Clipboard size={16}/></button>
-                        <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); updateStudioBuffer(AudioUtils.mixBuffers(audioContext, studioBuffer, clipboard, editTrim.start)); }} title="오버레이" className="p-2 hover:bg-slate-200 rounded text-indigo-500"><Layers size={16}/></button>
-                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); updateStudioBuffer(AudioUtils.reverseBuffer(audioContext, studioBuffer)); }} title="좌우 반전" className="p-2 hover:bg-slate-200 rounded text-purple-500"><FlipHorizontal size={16}/></button>
-                        <button onClick={async () => { if(!studioBuffer) return; pushUndo(); updateStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, 'in', editTrim.start, editTrim.end)); }} title="페이드 인" className="p-2 hover:bg-slate-200 rounded text-emerald-500"><TrendingUp size={16}/></button>
-                        <button onClick={async () => { if(!studioBuffer) return; pushUndo(); updateStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, 'out', editTrim.start, editTrim.end)); }} title="페이드 아웃" className="p-2 hover:bg-slate-200 rounded text-rose-500"><TrendingDown size={16}/></button>
+                        <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.insertBuffer(audioContext, studioBuffer, clipboard, editTrim.end)); }} title="붙여넣기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Clipboard size={16}/></button>
+                        <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.mixBuffers(audioContext, studioBuffer, clipboard, editTrim.start)); }} title="오버레이" className="p-2 hover:bg-slate-200 rounded text-indigo-500"><Layers size={16}/></button>
+                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.reverseBuffer(audioContext, studioBuffer)); }} title="좌우 반전" className="p-2 hover:bg-slate-200 rounded text-purple-500"><FlipHorizontal size={16}/></button>
+                        <button onClick={async () => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, 'in', editTrim.start, editTrim.end)); }} title="페이드 인" className="p-2 hover:bg-slate-200 rounded text-emerald-500"><TrendingUp size={16}/></button>
+                        <button onClick={async () => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, 'out', editTrim.start, editTrim.end)); }} title="페이드 아웃" className="p-2 hover:bg-slate-200 rounded text-rose-500"><TrendingDown size={16}/></button>
+                        <button onClick={()=>setShowStretchModal(true)} title="시간 늘리기" className="p-2 hover:bg-slate-200 rounded text-[#209ad6]"><MoveHorizontal size={16}/></button>
                     </div>
                     <div className="flex gap-2">
                         <button onClick={() => { if(!studioBuffer) return; const sel = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end); if(sel) onAddToRack(sel, (activeFile?.name || "Extract") + "_cut"); }} title="선택 영역 새 파일로 저장" className="bg-white text-slate-700 border border-slate-300 px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 hover:bg-slate-100 shadow-sm"><FilePlus size={18}/></button>
@@ -442,6 +442,20 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
                     </div>
                 </div>
             </div>
+            {showStretchModal && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-50 animate-in zoom-in-95 font-sans"><div className="bg-[#e8e8e6] p-6 rounded-xl border border-slate-300 w-80 shadow-2xl font-sans"><h3 className="font-bold text-[#209ad6] mb-4 uppercase tracking-tighter text-sm font-sans font-sans">시간 늘리기 ({stretchRatio}%)</h3><input type="range" min="50" max="200" value={stretchRatio} onChange={e=>setStretchRatio(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded mb-6 appearance-none accent-[#209ad6]"/><button onClick={() => {
+                if(!studioBuffer || !audioContext) return;
+                pushUndo();
+                const sel = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end);
+                const ratio = stretchRatio/100;
+                const off = new OfflineAudioContext(sel.numberOfChannels, Math.floor(sel.length*ratio), sel.sampleRate);
+                const s = off.createBufferSource(); s.buffer=sel; s.playbackRate.value=1/ratio; s.connect(off.destination); s.start();
+                off.startRendering().then(str => {
+                    const pre = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, 0, editTrim.start);
+                    const post = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.end, 100);
+                    updateStudioBuffer(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, str), post));
+                    setShowStretchModal(false);
+                });
+            }} className="w-full py-3 bg-[#209ad6] text-white rounded-xl font-bold mb-2 font-sans transition-all">적용</button><button onClick={()=>setShowStretchModal(false)} className="w-full py-2 text-slate-500 font-bold text-xs uppercase font-sans font-sans">취소</button></div></div>}
         </div>
     );
 };
@@ -449,7 +463,8 @@ const StudioTab = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack,
 const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
-    const [offsetMs, setOffsetMs] = useState(0);
+    const [offsetMs, setOffsetMs] = useState(0); // Consonant Offset
+    const [vowelOffsetMs, setVowelOffsetMs] = useState(0); // Vowel Offset
     const [vowelGain, setVowelGain] = useState(1.0);
     const [consonantGain, setConsonantGain] = useState(1.0);
     const [consonantStretch, setConsonantStretch] = useState(1.0);
@@ -458,27 +473,46 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
     const [cVolumePts, setCVolumePts] = useState([{t:0,v:1}, {t:1,v:1}]);
     const [editMode, setEditMode] = useState('placement'); 
     const canvasRef = useRef(null);
+    const sourceRef = useRef(null);
     const [dragging, setDragging] = useState(null); 
 
     const mixConsonant = async () => {
         const v = files.find(f => f.id === vowelId)?.buffer;
         const c = files.find(f => f.id === consonantId)?.buffer;
         if (!v || !audioContext) return null;
+
         const cLen = c ? (c.length / c.sampleRate) * consonantStretch : 0;
-        const offSec = offsetMs/1000;
-        const totalDuration = Math.max(v.duration, offSec + cLen);
+        const vStart = vowelOffsetMs / 1000;
+        const cStart = offsetMs / 1000;
+
+        // Calculate total duration including potential negative offsets (start point adjustment)
+        // We normalize so the earliest sound starts at 0 for the rendering context
+        const minStart = Math.min(vStart, cStart);
+        const normVStart = vStart - minStart;
+        const normCStart = cStart - minStart;
+
+        const totalDuration = Math.max(normVStart + v.duration, normCStart + cLen);
         const totalSamples = Math.ceil(totalDuration * v.sampleRate);
+        
         const offline = new OfflineAudioContext(v.numberOfChannels, totalSamples, v.sampleRate);
+
+        // Render Vowel
         const sV = offline.createBufferSource(); sV.buffer = v;
-        const gV = offline.createGain(); gV.gain.setValueAtTime(vVolumePts[0].v * vowelGain, 0);
-        vVolumePts.forEach(p => gV.gain.linearRampToValueAtTime(p.v * vowelGain, p.t * v.duration));
-        sV.connect(gV); gV.connect(offline.destination); sV.start(0);
+        const gV = offline.createGain(); gV.gain.setValueAtTime(vVolumePts[0].v * vowelGain, normVStart);
+        vVolumePts.forEach(p => gV.gain.linearRampToValueAtTime(p.v * vowelGain, normVStart + p.t * v.duration));
+        sV.connect(gV); gV.connect(offline.destination); sV.start(normVStart);
+
+        // Render Consonant
         if(c) {
-            const sC = offline.createBufferSource(); sC.buffer = c; sC.playbackRate.value = 1 / consonantStretch;
-            const gC = offline.createGain(); const startTime = Math.max(0, offSec); const duration = c.duration * consonantStretch;
-            gC.gain.setValueAtTime(cVolumePts[0].v * consonantGain, startTime);
-            cVolumePts.forEach(p => gC.gain.linearRampToValueAtTime(p.v * consonantGain, startTime + p.t * duration));
-            sC.connect(gC); gC.connect(offline.destination); sC.start(startTime);
+            const sC = offline.createBufferSource(); sC.buffer = c;
+            sC.playbackRate.value = 1 / consonantStretch;
+            const gC = offline.createGain();
+            const duration = c.duration * consonantStretch;
+            
+            gC.gain.setValueAtTime(cVolumePts[0].v * consonantGain, normCStart);
+            cVolumePts.forEach(p => gC.gain.linearRampToValueAtTime(p.v * consonantGain, normCStart + p.t * duration));
+            
+            sC.connect(gC); gC.connect(offline.destination); sC.start(normCStart);
         }
         return await offline.startRendering();
     };
@@ -487,6 +521,7 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
         if(!canvasRef.current || !audioContext) return;
         const ctx = canvasRef.current.getContext('2d'); const w = canvasRef.current.width; const h = canvasRef.current.height;
         ctx.clearRect(0,0,w,h); ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0,0,w,h);
+        
         const drawWave = (buf, color, offsetY, widthScale = 1.0) => {
             if(!buf) return 0;
             const data = buf.getChannelData(0); const pixelWidth = (buf.duration * widthScale / 2.0) * w;
@@ -498,39 +533,105 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
             }
             ctx.stroke(); return pixelWidth;
         };
+
         const drawEnvelope = (points, color, widthPx, offsetX = 0) => {
             ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 2;
             points.forEach((p, i) => { const x = offsetX + p.t * widthPx; const y = h - (p.v * h); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.stroke();
             points.forEach(p => { const x = offsetX + p.t * widthPx; const y = h - (p.v * h); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); });
         };
-        const vBuf = files.find(f => f.id === vowelId)?.buffer; const cBuf = files.find(f => f.id === consonantId)?.buffer;
-        let vWidth = 0; if(vBuf) { vWidth = drawWave(vBuf, '#3b82f6', h/2); if (editMode === 'vVol') drawEnvelope(vVolumePts, '#1d4ed8', vWidth, 0); }
+
+        const vBuf = files.find(f => f.id === vowelId)?.buffer; 
+        const cBuf = files.find(f => f.id === consonantId)?.buffer;
+
+        // Draw Vowel
+        if(vBuf) { 
+            const pixelOffset = vowelOffsetMs / (2000 / w); 
+            ctx.save(); ctx.translate(pixelOffset, 0);
+            const vWidth = drawWave(vBuf, '#3b82f6', h/2); 
+            if (editMode === 'placement') { ctx.fillStyle = '#3b82f6'; ctx.fillRect(vWidth/2 - 20, h/2 - 10, 40, 20); ctx.fillStyle='white'; ctx.fillText("VOWEL", vWidth/2 - 15, h/2+4); }
+            ctx.restore();
+            if (editMode === 'vVol') drawEnvelope(vVolumePts, '#1d4ed8', vWidth, pixelOffset); 
+        }
+
+        // Draw Consonant
         if(cBuf) {
-            const pixelOffset = offsetMs / (2000 / w); ctx.save(); ctx.translate(pixelOffset, 0);
+            const pixelOffset = offsetMs / (2000 / w); 
+            ctx.save(); ctx.translate(pixelOffset, 0);
             const drawnWidth = drawWave(cBuf, '#f97316', h/2, consonantStretch);
-            if (editMode === 'placement') { ctx.fillStyle = '#3b82f6'; ctx.fillRect(drawnWidth - 6, h/2 - 25, 12, 50); } ctx.restore();
+            if (editMode === 'placement') { ctx.fillStyle = '#f97316'; ctx.fillRect(drawnWidth - 6, h/2 - 25, 12, 50); } 
+            ctx.restore();
             if (editMode === 'cVol') drawEnvelope(cVolumePts, '#ea580c', drawnWidth, pixelOffset);
         }
         ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,h/2); ctx.lineTo(w,h/2); ctx.stroke();
-    }, [vowelId, consonantId, offsetMs, consonantStretch, files, audioContext, vVolumePts, cVolumePts, editMode]);
+    }, [vowelId, consonantId, offsetMs, vowelOffsetMs, consonantStretch, files, audioContext, vVolumePts, cVolumePts, editMode]);
 
     const handleCanvasMouseDown = (e) => {
         const rect = canvasRef.current.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top; const w = canvasRef.current.width; const h = canvasRef.current.height;
+        
         if (editMode === 'placement') {
-            const pixelOffset = offsetMs / (2000 / w); const cBuf = files.find(f => f.id === consonantId)?.buffer;
-            if (cBuf) { const pixelWidth = (cBuf.duration * consonantStretch / 2.0) * w; if (Math.abs(x * (w/rect.width) - (pixelOffset + pixelWidth)) < 20) { setDragging('stretch'); return; } }
-            setDragging('offset');
+            // Check Consonant Drag
+            const cPixelOffset = offsetMs / (2000 / w); 
+            const cBuf = files.find(f => f.id === consonantId)?.buffer;
+            if (cBuf) { 
+                const pixelWidth = (cBuf.duration * consonantStretch / 2.0) * w; 
+                // Stretch Handle check
+                if (Math.abs(x * (w/rect.width) - (cPixelOffset + pixelWidth)) < 20) { setDragging('stretch'); return; }
+                // Body Drag Check
+                if (x * (w/rect.width) > cPixelOffset && x * (w/rect.width) < cPixelOffset + pixelWidth) { setDragging('offset'); return; }
+            }
+            
+            // Check Vowel Drag
+            const vPixelOffset = vowelOffsetMs / (2000 / w);
+            const vBuf = files.find(f => f.id === vowelId)?.buffer;
+            if (vBuf) {
+                const pixelWidth = (vBuf.duration / 2.0) * w;
+                if (x * (w/rect.width) > vPixelOffset && x * (w/rect.width) < vPixelOffset + pixelWidth) { setDragging('vOffset'); return; }
+            }
         } else if (editMode === 'vVol') {
             const vBuf = files.find(f => f.id === vowelId)?.buffer; if (!vBuf) return;
-            const width = (vBuf.duration / 2.0) * w; const hitIdx = vVolumePts.findIndex(p => Math.hypot(x*(w/rect.width) - p.t*width, y*(h/rect.height) - (h-p.v*h)) < 10);
+            const vPixelOffset = vowelOffsetMs / (2000 / w);
+            const width = (vBuf.duration / 2.0) * w; 
+            const hitIdx = vVolumePts.findIndex(p => Math.hypot(x*(w/rect.width) - (vPixelOffset + p.t*width), y*(h/rect.height) - (h-p.v*h)) < 10);
             if (hitIdx !== -1) setDragging(`vPoint:${hitIdx}`);
-            else { const t = Math.max(0, Math.min(1, (x * (w/rect.width)) / width)); const v = Math.max(0, Math.min(1, 1 - (y * (h/rect.height)) / h)); const newPts = [...vVolumePts, {t,v}].sort((a,b)=>a.t-b.t); setVVolumePts(newPts); setDragging(`vPoint:${newPts.findIndex(p=>p.t===t)}`); }
+            else { 
+                const t = Math.max(0, Math.min(1, (x * (w/rect.width) - vPixelOffset) / width)); 
+                const v = Math.max(0, Math.min(1, 1 - (y * (h/rect.height)) / h)); 
+                const newPts = [...vVolumePts, {t,v}].sort((a,b)=>a.t-b.t); 
+                setVVolumePts(newPts); setDragging(`vPoint:${newPts.findIndex(p=>p.t===t)}`); 
+            }
         } else if (editMode === 'cVol') {
              const cBuf = files.find(f => f.id === consonantId)?.buffer; if (!cBuf) return;
              const pixelOffset = offsetMs / (2000 / w); const width = (cBuf.duration * consonantStretch / 2.0) * w;
              const hitIdx = cVolumePts.findIndex(p => Math.hypot(x*(w/rect.width) - (pixelOffset + p.t*width), y*(h/rect.height) - (h-p.v*h)) < 10);
              if (hitIdx !== -1) setDragging(`cPoint:${hitIdx}`);
-             else { const t = Math.max(0, Math.min(1, (x*(w/rect.width) - pixelOffset) / width)); const v = Math.max(0, Math.min(1, 1 - (y*(h/rect.height)) / h)); const newPts = [...cVolumePts, {t,v}].sort((a,b)=>a.t-b.t); setCVolumePts(newPts); setDragging(`cPoint:${newPts.findIndex(p=>p.t===t)}`); }
+             else { 
+                const t = Math.max(0, Math.min(1, (x*(w/rect.width) - pixelOffset) / width)); 
+                const v = Math.max(0, Math.min(1, 1 - (y*(h/rect.height)) / h)); 
+                const newPts = [...cVolumePts, {t,v}].sort((a,b)=>a.t-b.t); 
+                setCVolumePts(newPts); setDragging(`cPoint:${newPts.findIndex(p=>p.t===t)}`); 
+            }
+        }
+    };
+
+    const handleCanvasContextMenu = (e) => {
+        e.preventDefault();
+        const rect = canvasRef.current.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top; const w = canvasRef.current.width; const h = canvasRef.current.height;
+
+        if (editMode === 'vVol') {
+            const vBuf = files.find(f => f.id === vowelId)?.buffer; if (!vBuf) return;
+            const vPixelOffset = vowelOffsetMs / (2000 / w);
+            const width = (vBuf.duration / 2.0) * w; 
+            const hitIdx = vVolumePts.findIndex(p => Math.hypot(x*(w/rect.width) - (vPixelOffset + p.t*width), y*(h/rect.height) - (h-p.v*h)) < 10);
+            if (hitIdx !== -1 && vVolumePts.length > 2) {
+                setVVolumePts(prev => prev.filter((_, i) => i !== hitIdx));
+            }
+        } else if (editMode === 'cVol') {
+            const cBuf = files.find(f => f.id === consonantId)?.buffer; if (!cBuf) return;
+            const pixelOffset = offsetMs / (2000 / w); const width = (cBuf.duration * consonantStretch / 2.0) * w;
+            const hitIdx = cVolumePts.findIndex(p => Math.hypot(x*(w/rect.width) - (pixelOffset + p.t*width), y*(h/rect.height) - (h-p.v*h)) < 10);
+            if (hitIdx !== -1 && cVolumePts.length > 2) {
+                setCVolumePts(prev => prev.filter((_, i) => i !== hitIdx));
+            }
         }
     };
 
@@ -538,15 +639,45 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
         const move = (e) => {
             if(!dragging) return;
             const rect = canvasRef.current.getBoundingClientRect(); const w = canvasRef.current.width; const h = canvasRef.current.height;
-            if (dragging === 'offset') setOffsetMs(prev => Math.max(-500, Math.min(1500, prev + e.movementX * 4)));
-            else if (dragging === 'stretch') { const pixelOffset = offsetMs / (2000 / w); const newWidthPx = (e.clientX - rect.left) * (w / rect.width) - pixelOffset; const cBuf = files.find(f => f.id === consonantId)?.buffer; if (cBuf && newWidthPx > 10) setConsonantStretch(newWidthPx / ((cBuf.duration / 2.0) * w)); }
-            else if (dragging.startsWith('vPoint:')) { const idx = parseInt(dragging.split(':')[1]); const vBuf = files.find(f => f.id === vowelId)?.buffer; if (vBuf) { const t = Math.max(0, Math.min(1, (e.clientX - rect.left) * (w/rect.width) / ((vBuf.duration/2.0)*w))); const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) * (h/rect.height) / h)); setVVolumePts(prev => { const next = [...prev]; next[idx] = {t,v}; return next.sort((a,b)=>a.t-b.t); }); } }
-            else if (dragging.startsWith('cPoint:')) { const idx = parseInt(dragging.split(':')[1]); const cBuf = files.find(f => f.id === consonantId)?.buffer; if (cBuf) { const width = (cBuf.duration * consonantStretch / 2.0) * w; const t = Math.max(0, Math.min(1, ((e.clientX - rect.left) * (w/rect.width) - (offsetMs/(2000/w))) / width)); const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) * (h/rect.height) / h)); setCVolumePts(prev => { const next = [...prev]; next[idx] = {t,v}; return next.sort((a,b)=>a.t-b.t); }); } }
+            
+            if (dragging === 'offset') {
+                setOffsetMs(prev => Math.max(-500, Math.min(1500, prev + e.movementX * 4)));
+            } else if (dragging === 'vOffset') {
+                setVowelOffsetMs(prev => Math.max(-500, Math.min(1500, prev + e.movementX * 4)));
+            } else if (dragging === 'stretch') { 
+                const cBuf = files.find(f => f.id === consonantId)?.buffer;
+                if (cBuf) {
+                    const pixelOffset = offsetMs / (2000 / w);
+                    const mouseX = (e.clientX - rect.left) * (w / rect.width);
+                    // Calculate width from start of consonant to mouse position
+                    const newWidthPx = Math.max(10, mouseX - pixelOffset); 
+                    const baseWidthPx = (cBuf.duration / 2.0) * w;
+                    setConsonantStretch(newWidthPx / baseWidthPx);
+                }
+            } else if (dragging.startsWith('vPoint:')) { 
+                const idx = parseInt(dragging.split(':')[1]); 
+                const vBuf = files.find(f => f.id === vowelId)?.buffer; 
+                if (vBuf) { 
+                    const vPixelOffset = vowelOffsetMs / (2000 / w);
+                    const t = Math.max(0, Math.min(1, ((e.clientX - rect.left) * (w/rect.width) - vPixelOffset) / ((vBuf.duration/2.0)*w))); 
+                    const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) * (h/rect.height) / h)); 
+                    setVVolumePts(prev => { const next = [...prev]; next[idx] = {t,v}; return next.sort((a,b)=>a.t-b.t); }); 
+                } 
+            } else if (dragging.startsWith('cPoint:')) { 
+                const idx = parseInt(dragging.split(':')[1]); 
+                const cBuf = files.find(f => f.id === consonantId)?.buffer; 
+                if (cBuf) { 
+                    const width = (cBuf.duration * consonantStretch / 2.0) * w; 
+                    const t = Math.max(0, Math.min(1, ((e.clientX - rect.left) * (w/rect.width) - (offsetMs/(2000/w))) / width)); 
+                    const v = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) * (h/rect.height) / h)); 
+                    setCVolumePts(prev => { const next = [...prev]; next[idx] = {t,v}; return next.sort((a,b)=>a.t-b.t); }); 
+                } 
+            }
         };
         const up = () => setDragging(null);
         window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
         return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-    }, [dragging, offsetMs, consonantId, vowelId, consonantStretch, files]);
+    }, [dragging, offsetMs, vowelOffsetMs, consonantId, vowelId, consonantStretch, files]);
 
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in font-sans">
@@ -575,7 +706,8 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
                 <div className="bg-white border border-slate-300 p-6 rounded-2xl shadow-inner space-y-4">
                     <div className="flex justify-between items-center">
                         <div className="flex gap-4">
-                            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2"><MoveHorizontal size={16} className="text-slate-400"/> 오프셋: <span className="text-indigo-600 font-bold">{Math.round(offsetMs)}ms</span></h3>
+                            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2"><MoveHorizontal size={16} className="text-slate-400"/> 자음 오프셋: <span className="text-indigo-600 font-bold">{Math.round(offsetMs)}ms</span></h3>
+                            <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2"><MoveHorizontal size={16} className="text-slate-400"/> 모음 오프셋: <span className="text-blue-600 font-bold">{Math.round(vowelOffsetMs)}ms</span></h3>
                             <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2"><ArrowLeftRight size={16} className="text-slate-400"/> 길이: <span className="text-pink-600 font-bold">{Math.round(consonantStretch*100)}%</span></h3>
                         </div>
                         <div className="flex gap-3">
@@ -584,9 +716,9 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
                         </div>
                     </div>
                     <div className="relative h-48 w-full bg-slate-100 rounded-xl overflow-hidden border border-slate-200 cursor-ew-resize group shadow-inner">
-                        <canvas ref={canvasRef} width={1000} height={192} className="w-full h-full block" onMouseDown={handleCanvasMouseDown}/>
+                        <canvas ref={canvasRef} width={1000} height={192} className="w-full h-full block" onMouseDown={handleCanvasMouseDown} onContextMenu={handleCanvasContextMenu}/>
                         <div className="absolute top-2 right-2 text-xs font-bold text-slate-400 bg-white/80 px-2 py-1 rounded pointer-events-none border border-slate-200 uppercase tracking-tighter">
-                            {editMode === 'placement' ? 'Drag Body to Move / Edge Handle to Stretch' : 'Click to Add Volume Point, Drag to Adjust'}
+                            {editMode === 'placement' ? 'Drag Body to Move / Edge Handle to Stretch' : 'Click to Add Point / Right Click to Delete'}
                         </div>
                     </div>
                 </div>
@@ -629,7 +761,6 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
 
     const pushSimUndo = useCallback(() => { setSimUndoStack(prev => [...prev.slice(-9), JSON.parse(JSON.stringify(advTracks))]); }, [advTracks]);
     const handleSimUndo = useCallback(() => { if (simUndoStack.length === 0) return; const prevTracks = simUndoStack[simUndoStack.length - 1]; setSimUndoStack(prev => prev.slice(0, -1)); setAdvTracks(prevTracks); }, [simUndoStack]);
-
     const registerKeyframe = () => {
         pushSimUndo();
         setAdvTracks(prev => prev.map(tr => {
@@ -700,10 +831,8 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
         if (customNoise) { nNode = offline.createBufferSource(); nNode.buffer = customNoise; nNode.loop = true; } 
         else { nNode = offline.createBufferSource(); const nb = offline.createBuffer(1, totalLen, sr); const nd = nb.getChannelData(0); for(let i=0; i<totalLen; i++) nd[i] = Math.random() * 2 - 1; nNode.buffer = nb; }
         const nGain = offline.createGain(); const bP = advTracks.find(t=>t.id==='breath').points; nGain.gain.setValueAtTime(bP[0].v, 0); bP.forEach(p => nGain.gain.linearRampToValueAtTime(p.v, p.t * advDuration));
-        
         const masterGainNode = offline.createGain(); const vP = advTracks.find(t=>t.id==='volume').points;
         masterGainNode.gain.setValueAtTime(vP[0].v, 0); vP.forEach(p => masterGainNode.gain.linearRampToValueAtTime(p.v, p.t * advDuration));
-
         const f1=offline.createBiquadFilter(), f2=offline.createBiquadFilter(), f3=offline.createBiquadFilter(), nasF=offline.createBiquadFilter();
         [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4 * intensity; f.gain.value=12 * intensity; }); nasF.type='lowpass';
         const getPts = (id) => advTracks.find(t=>t.id===id).points;
@@ -799,7 +928,7 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                                 const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                                 const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
                                 if (dragPart === 'lips') setLiveTract(p => ({...p, lipLen: x, lips: y}));
-                                else if (dragPart === 'tongue') setLiveTract(p => ({...p, x, y}));
+                                else if (dragPart === 'tongue') setLiveTract(p => ({...p, x: x, y: 1-ny}));
                             }} 
                             onMouseDown={(e) => {
                                 if (dragPart) return; setManualPose(true); const rect = e.currentTarget.getBoundingClientRect();
@@ -828,8 +957,8 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                              {['A','E','I','O','U'].map(v=><button key={v} onClick={()=>applyPreset(v)} title={`모음 ${v}`} className="flex-1 h-8 rounded-lg bg-white border border-slate-300 font-bold text-xs hover:bg-[#209ad6] hover:text-white transition-all">{v}</button>)}
                         </div>
                         <div className="flex gap-2 mb-4">
-                             <button onClick={()=>{setAdvTracks(prev=>prev.map(t=>t.id==='pitch'?{...t,points:[{t:0,v:110},{t:1,v:110}]}:t))}} className="flex-1 py-1.5 bg-white border border-slate-300 rounded-lg text-blue-500 text-xs font-bold hover:bg-blue-50">Male</button>
-                             <button onClick={()=>{setAdvTracks(prev=>prev.map(t=>t.id==='pitch'?{...t,points:[{t:0,v:330},{t:1,v:330}]}:t))}} className="flex-1 py-1.5 bg-white border border-slate-300 rounded-lg text-pink-500 text-xs font-bold hover:bg-pink-50">Female</button>
+                             <button onClick={()=>{setAdvTracks(prev=>prev.map(t=>t.id==='pitch'?{...t,points:[{t:0,v:110},{t:1,v:110}]}:t))}} className="flex-1 py-1.5 bg-white border border-slate-300 rounded-lg text-blue-500 text-xs font-bold hover:bg-blue-50 shadow-sm">Male</button>
+                             <button onClick={()=>{setAdvTracks(prev=>prev.map(t=>t.id==='pitch'?{...t,points:[{t:0,v:330},{t:1,v:330}]}:t))}} className="flex-1 py-1.5 bg-white border border-slate-300 rounded-lg text-pink-500 text-xs font-bold hover:bg-pink-50 shadow-sm">Female</button>
                         </div>
                         <div className="space-y-1 mb-2">
                              <div className="flex justify-between text-xs font-bold text-slate-700 uppercase"><span>음량 (Volume)</span><span>{Math.round(liveTract.volume * 100)}%</span></div>
@@ -838,7 +967,9 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                         {[{id:'lips', label:'입술 열기'}, {id:'lipLen', label:'입술 길이'}, {id:'throat', label:'목 조임'}, {id:'nasal', label:'비성'}].map(p => (
                             <div key={p.id} className="space-y-1">
                                 <div className="flex justify-between text-xs font-bold text-slate-500 uppercase"><span>{p.label}</span><span>{Math.round(liveTract[p.id]*100)}%</span></div>
-                                <input type="range" min="0" max="1" step="0.01" value={liveTract[p.id]} onChange={e=>{ setManualPose(true); setLiveTract(prev=>({...prev, [p.id]:Number(e.target.value)})); }} className="w-full h-1.5 bg-slate-300 appearance-none rounded-full accent-[#209ad6]"/>
+                                <input type="range" min="0" max="1" step="0.01" value={liveTract[p.id]} 
+                                    onChange={e=>{ setManualPose(true); setLiveTract(prev=>({...prev, [p.id]:Number(e.target.value)})); }} 
+                                    className="w-full h-1.5 bg-slate-300 appearance-none rounded-full accent-[#209ad6]"/>
                             </div>
                         ))}
                         <div className="pt-2 border-t border-slate-200">
@@ -846,12 +977,9 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                              <input type="range" min="0" max="3" step="0.1" value={intensity} onChange={e=>setIntensity(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 appearance-none rounded-full accent-emerald-500"/>
                         </div>
                         <div className="space-y-1 mt-2">
-                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">입력 소스 (Base)</span>
+                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">입력 소스 / 노이즈 소스</span>
                              <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full text-xs p-1.5 rounded border border-slate-200"><option value="">기본 신디사이저</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
-                        </div>
-                        <div className="space-y-1">
-                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">노이즈 소스 (Noise)</span>
-                             <select value={noiseSourceFileId} onChange={e=>setNoiseSourceFileId(e.target.value)} className="w-full text-xs p-1.5 rounded border border-slate-200"><option value="">기본 화이트 노이즈</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                             <select value={noiseSourceFileId} onChange={e=>setNoiseSourceFileId(e.target.value)} className="w-full text-xs p-1.5 rounded border border-slate-200 mt-1"><option value="">기본 화이트 노이즈</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                         </div>
                         <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase mt-2"><span>반복 시간 (s)</span><input type="number" step="0.1" value={advDuration} onChange={e=>setAdvDuration(Number(e.target.value))} className="w-12 border rounded px-1"/></div>
                     </div>
@@ -910,30 +1038,30 @@ const App = () => {
         <div className="h-screen w-full bg-[#f8f8f6] text-[#1f1e1d] flex flex-col font-sans overflow-hidden">
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
             <style>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }`}</style>
-            <header className="h-14 border-b border-slate-300 bg-white flex items-center justify-between px-6 shrink-0 z-10 shadow-sm">
-                <div className="flex items-center gap-3">
-                    <div className="bg-[#209ad6] p-1.5 rounded-lg text-white shadow-lg shadow-blue-200"><Activity size={24}/></div>
-                    <div className="flex flex-col">
-                        <h1 className="font-black text-2xl tracking-tighter leading-none bg-clip-text text-transparent bg-gradient-to-r from-[#b2d4ed] via-[#3c78e8] to-[#e3daf5]">OTONASHI</h1>
-                        <span className="text-[8px] text-slate-400 font-bold uppercase tracking-tight">AUgmented vocal-TracT and Nasal SImulator</span>
+            <header className="h-14 border-b border-slate-300 bg-white flex items-center justify-between px-6 shrink-0 z-10 shadow-sm font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
+                <div className="flex items-center gap-3 font-sans">
+                    <div className="bg-[#209ad6] p-1.5 rounded-lg text-white shadow-lg shadow-blue-200 font-sans font-sans font-sans"><Activity size={24}/></div>
+                    <div className="flex flex-col font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
+                        <h1 className="font-black text-2xl tracking-tighter leading-none bg-clip-text text-transparent bg-gradient-to-r from-[#b2d4ed] via-[#3c78e8] to-[#e3daf5] font-sans font-sans font-sans font-sans font-sans font-sans">OTONASHI</h1>
+                        <span className="text-[8px] text-slate-400 font-bold uppercase tracking-tight font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">AUgmented vocal-TracT and Nasal SImulator</span>
                     </div>
                 </div>
-                <nav className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                <nav className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
                     <button onClick={()=>setActiveTab('editor')} className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${activeTab==='editor'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>스튜디오</button>
                     <button onClick={()=>setActiveTab('consonant')} className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${activeTab==='consonant'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>자음 합성</button>
                     <button onClick={()=>setActiveTab('sim')} className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${activeTab==='sim'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>성도 시뮬레이터</button>
                 </nav>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
                     <button onClick={exportProject} title="프로젝트 저장" className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] hover:bg-slate-50 shadow-sm"><DownloadCloud size={20}/></button>
                     <label className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] hover:bg-slate-50 shadow-sm cursor-pointer" title="프로젝트 불러오기"><UploadCloud size={20}/><input type="file" className="hidden" accept=".json" onChange={importProject}/></label>
                     <div className="w-px h-6 bg-slate-300 mx-1"></div>
                     <button onClick={() => setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors"><Settings size={22}/></button>
-                    <div className="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner"><User size={24} className="text-slate-400"/></div>
+                    <div className="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans"><User size={24} className="text-slate-400 font-sans font-sans font-sans font-sans font-sans font-sans"/></div>
                 </div>
             </header>
-            <main className="flex-1 flex overflow-hidden">
+            <main className="flex-1 flex overflow-hidden font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
                 <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
-                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden relative shadow-inner">
+                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden relative shadow-inner font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
                     {activeTab === 'editor' && <StudioTab audioContext={audioContext} activeFile={files.find(f=>f.id===activeFileId)} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} />}
                     {activeTab === 'consonant' && <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
                     {activeTab === 'sim' && <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
