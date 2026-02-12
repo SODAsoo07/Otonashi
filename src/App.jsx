@@ -3,7 +3,6 @@ import {
   Activity, DownloadCloud, UploadCloud, Settings, History, User 
 } from 'lucide-react';
 
-// 파일 경로와 대소문자를 반드시 확인하세요!
 import { AudioUtils } from './utils/AudioUtils';
 import { FileRack } from './components/FileRack';
 import { StudioTab } from './components/StudioTab';
@@ -11,10 +10,7 @@ import { ConsonantTab } from './components/ConsonantTab';
 import { SimulatorTab } from './components/SimulatorTab';
 import { HelpModal, HistoryModal } from './components/Modals';
 
-// Firebase (없어도 앱이 멈추지 않게 처리)
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+// Firebase 설정 (생략)
 
 const App = () => {
   const [audioContext, setAudioContext] = useState(null);
@@ -30,6 +26,17 @@ const App = () => {
   }, []);
 
   const activeFile = useMemo(() => files.find(f => f.id === activeFileId), [files, activeFileId]);
+
+  // --- 추가된 함수들 ---
+  const removeFile = useCallback((id) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+    if (activeFileId === id) setActiveFileId(null);
+  }, [activeFileId]);
+
+  const renameFile = useCallback((id, newName) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+  }, []);
+  // --------------------
 
   const addToRack = useCallback((buffer, name) => {
     const newFile = {
@@ -125,16 +132,14 @@ const App = () => {
         </div>
 
         <nav className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-          {['editor', 'consonant', 'sim'].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab === tab ? 'bg-white text-[#209ad6] shadow-sm border border-slate-200' : 'text-slate-500'}`}>
-              {tab === 'editor' ? '스튜디오' : tab === 'consonant' ? '자음 합성' : '시뮬레이터'}
-            </button>
-          ))}
+          <button onClick={() => setActiveTab('editor')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab === 'editor' ? 'bg-white text-[#209ad6] shadow-sm border border-slate-200' : 'text-slate-500'}`}>스튜디오</button>
+          <button onClick={() => setActiveTab('consonant')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab === 'consonant' ? 'bg-white text-[#209ad6] shadow-sm border border-slate-200' : 'text-slate-500'}`}>자음 합성</button>
+          <button onClick={() => setActiveTab('sim')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab === 'sim' ? 'bg-white text-[#209ad6] shadow-sm border border-slate-200' : 'text-slate-500'}`}>시뮬레이터</button>
         </nav>
 
         <div className="flex items-center gap-3">
           <button onClick={() => setShowHistory(true)} className="flex items-center gap-1 p-2.5 bg-slate-100 border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] transition-all">
-            <History size={18}/> <span className="text-xs hidden md:inline">History</span>
+            <History size={18}/> <span className="text-xs hidden md:inline font-bold">History</span>
           </button>
           <button onClick={exportProject} className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] transition-all"><DownloadCloud size={20}/></button>
           <label className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] cursor-pointer transition-all">
@@ -147,7 +152,9 @@ const App = () => {
 
       <main className="flex-1 flex overflow-hidden">
         <FileRack 
-          files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} 
+          files={files} 
+          activeFileId={activeFileId} 
+          setActiveFileId={setActiveFileId} 
           handleFileUpload={async (e) => {
             if(!audioContext) return;
             for(const file of Array.from(e.target.files)) {
@@ -155,7 +162,9 @@ const App = () => {
                 addToRack(buffer, file.name);
             }
           }} 
-          removeFile={removeFile} renameFile={renameFile} 
+          removeFile={removeFile} 
+          renameFile={renameFile} 
+          isSaving={false}
         />
         <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto relative shadow-inner">
           <div className={activeTab === 'editor' ? 'block h-full' : 'hidden'}>
