@@ -271,7 +271,7 @@ const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, remo
   };
 
   return (
-    <aside className="w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 font-sans z-20">
+    <aside className="w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 font-sans z-20 h-full">
       <div className="p-4 border-b border-slate-300 flex justify-between items-center bg-slate-200/50">
         <span className="text-sm font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
           파일 보관함 {isSaving && <RefreshCw size={10} className="animate-spin text-blue-500" />}
@@ -457,7 +457,7 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
     };
 
     return (
-        <div className="flex-1 flex flex-col gap-4 p-4 font-sans overflow-hidden" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+        <div className="flex-1 flex flex-col gap-4 p-4 font-sans overflow-y-auto custom-scrollbar h-full" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
             {fadeModalType && <FadeModal type={fadeModalType} onClose={()=>setFadeModalType(null)} onApply={async (shape) => {
                 if(!studioBuffer) return; 
                 handleEditAction(await AudioUtils.applyFade(audioContext, studioBuffer, fadeModalType, editTrim.start, editTrim.end, shape), `Fade ${fadeModalType}`);
@@ -471,7 +471,7 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
                 />
             )}
 
-            <div className="flex-[3] flex flex-col gap-4 min-h-0">
+            <div className="flex-shrink-0 flex flex-col gap-4">
                 <div className="bg-white/50 rounded-xl border border-slate-300 p-2 flex justify-between items-center shadow-sm">
                     <div className="flex gap-1">
                         <button onClick={() => activeFile && onUndo(activeFile.id)} disabled={!activeFile || historyIndex <= 0} title="실행 취소" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Undo2 size={16}/></button>
@@ -494,10 +494,10 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
                         <button onClick={async () => { if(!studioBuffer || !audioContext) return; const res = await renderStudioAudio(studioBuffer); if(res) onAddToRack(res, (activeFile?.name || "Studio") + "_결과"); }} title="결과물 저장" className="bg-[#a3cef0] text-[#1f1e1d] px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 hover:bg-[#209ad6] hover:text-white shadow-sm"><LogIn size={18}/> 보관함에 저장</button>
                     </div>
                 </div>
-                <div className="flex-1 bg-white rounded-xl border border-slate-300 relative overflow-hidden shadow-inner group">
+                <div className="h-[500px] bg-white rounded-xl border border-slate-300 relative overflow-hidden shadow-inner group flex-shrink-0">
                     {studioBuffer ? (
                         <>
-                            <canvas ref={canvasRef} width={1000} height={400} className="w-full h-full object-fill cursor-crosshair" onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={()=>{ setDragTarget(null); setSelectionAnchor(null); }} />
+                            <canvas ref={canvasRef} width={1000} height={500} className="w-full h-full object-fill cursor-crosshair" onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={()=>{ setDragTarget(null); setSelectionAnchor(null); }} />
                             <div className="absolute top-2 right-2 flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
                                 <button onClick={()=>{setPlayheadPos(0); pauseOffsetRef.current=0;}} title="맨 앞으로" className="p-1 bg-white border rounded hover:text-[#209ad6]"><SkipBack size={16}/></button>
                                 <button onClick={()=>{setPlayheadPos(100); pauseOffsetRef.current=studioBuffer.duration;}} title="맨 뒤로" className="p-1 bg-white border rounded hover:text-[#209ad6]"><SkipForward size={16}/></button>
@@ -524,7 +524,7 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
                     )}
                 </div>
             </div>
-            <div className="flex-[2] grid grid-cols-1 md:grid-cols-4 gap-4 min-h-0 overflow-y-auto custom-scrollbar font-sans">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-h-min pb-4">
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3">
                     <h4 className="text-sm font-black text-[#209ad6] uppercase tracking-widest flex items-center gap-2 font-sans"><Sliders size={18}/> 믹서</h4>
                     <div className="space-y-2">
@@ -571,10 +571,7 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
 };
 
 const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
-    // ... [Same ConsonantTab code as previous, omitted for brevity but included in full file above] ...
-    // Note: The provided full code block above contains the complete ConsonantTab.
-    // I am not re-typing it here to avoid redundancy in the explanation text, 
-    // but the final output code block has everything.
+    // ... [ConsonantTab - Same as previous v90 code] ...
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
     const [offsetMs, setOffsetMs] = useState(0); 
@@ -831,8 +828,7 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
 };
 
 const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
-    // ... [Same AdvancedTractTab code as previous, omitted for brevity but included in full file above] ...
-    // Note: Same here, the full code block above has the complete component.
+    // ... [AdvancedTractTab - Same as previous v90 code] ...
     const [isAdvPlaying, setIsAdvPlaying] = useState(false);
     const [playHeadPos, setPlayHeadPos] = useState(0); 
     const [advDuration, setAdvDuration] = useState(2.0);
@@ -1065,7 +1061,7 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                             <path d="M 120 400 L 120 600" stroke="#94a3b8" strokeWidth={Math.max(2, 40 - liveTract.throat * 30)} strokeLinecap="round" opacity="0.5" />
                             <path d={`M 150 400 L 150 280 Q 150 150 250 150 Q 320 150 350 ${225 - liveTract.lips * 40} L 350 ${225 + liveTract.lips * 40} Q 320 350 250 350 Z`} fill="#f8fafc" stroke="#64748b" strokeWidth="3" />
                             <path d={`M 180 400 Q ${180 + liveTract.x * 160} ${330 - liveTract.y * 120} ${280 + liveTract.x * 50} ${250 + liveTract.y * 50}`} stroke="#f472b6" strokeWidth="18" strokeLinecap="round" fill="none" />
-                            <ellipse cx={350 + liveTract.lipLen * 20} cy="225" rx={6 + liveTract.lipLen * 30} ry={3 + liveTract.lips * 40} fill="#db2777" opacity="0.85" className="cursor-ew-resize hover:opacity-100" />
+                            <ellipse cx={350 + liveTract.lipLen * 20} cy="225" rx={6 + liveTract.lipLen * 30} ry={3 + liveTract.lips * 40} fill="#db2777" opacity="0.85" className="cursor-move hover:opacity-100" />
                         </svg>
                         <div className="absolute inset-0" 
                             onMouseMove={(e) => {
@@ -1078,7 +1074,8 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                             onMouseDown={(e) => {
                                 if (dragPart) return; setManualPose(true); const rect = e.currentTarget.getBoundingClientRect();
                                 const nx = (e.clientX - rect.left) / rect.width, ny = (e.clientY - rect.top) / rect.height;
-                                if (nx > 0.8 && ny > 0.4 && ny < 0.7) setDragPart('lips');
+                                // Lips detection (Right side, middle height) - Adjusted hit area
+                                if (nx > 0.75 && ny > 0.4 && ny < 0.7) setDragPart('lips');
                                 else if (nx > 0.3 && nx < 0.8 && ny > 0.4 && ny < 1.0) { setDragPart('tongue'); setLiveTract(p => ({...p, x: nx, y: 1-ny})); }
                             }} 
                         />
@@ -1296,7 +1293,8 @@ const App = () => {
             </header>
             <main className="flex-1 flex overflow-hidden font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
                 <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
-                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden relative shadow-inner font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
+                {/* Changed: allow vertical scroll, remove h-full constraint on children if needed */}
+                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto relative shadow-inner font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
                     <div className={activeTab === 'editor' ? 'block h-full' : 'hidden'}>
                         <StudioTab 
                             audioContext={audioContext} 
