@@ -3,8 +3,9 @@ import {
   Upload, Play, Pause, Square, Download, Scissors, Music, Sliders, Activity, 
   Layers, Zap, Mic2, Copy, Clipboard, TrendingUp, X, FileAudio, Plus, 
   LogIn, Edit2, CircleDot, User, MoveHorizontal, Check, MousePointer2, 
-  SlidersHorizontal, RotateCcw, Combine, Undo2, TrendingDown,
-  CloudUpload, DownloadCloud, UploadCloud, FlipHorizontal, ArrowLeftRight, Crop, FilePlus, Settings, HelpCircle, RefreshCw
+  SlidersHorizontal, RotateCcw, Combine, Undo2, Redo2, TrendingDown,
+  CloudUpload, DownloadCloud, UploadCloud, FlipHorizontal, ArrowLeftRight, Crop, FilePlus, Settings, HelpCircle, RefreshCw,
+  SkipBack, SkipForward, AlertTriangle, MousePointerClick, Signal, SignalLow, SignalHigh
 } from 'lucide-react';
 
 // Firebase Imports (Safe Import)
@@ -136,15 +137,25 @@ const AudioUtils = {
     }
     return newBuf;
   },
-  applyFade: async (ctx, buf, type, startPct, endPct) => {
+  applyFade: async (ctx, buf, type, startPct, endPct, shape = 'linear') => {
     if(!buf || !ctx) return null;
     const offline = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate);
     const s = offline.createBufferSource(); s.buffer = buf;
     const g = offline.createGain();
     const start = (startPct/100) * buf.duration;
     const end = (endPct/100) * buf.duration;
-    if (type === 'in') { g.gain.setValueAtTime(0, start); g.gain.linearRampToValueAtTime(1, end); } 
-    else { g.gain.setValueAtTime(1, start); g.gain.linearRampToValueAtTime(0, end); }
+    
+    // Fade Logic
+    if (type === 'in') { 
+        g.gain.setValueAtTime(0, start); 
+        if(shape === 'exponential') g.gain.exponentialRampToValueAtTime(1, end);
+        else g.gain.linearRampToValueAtTime(1, end);
+    } else { 
+        g.gain.setValueAtTime(1, start); 
+        if(shape === 'exponential') g.gain.exponentialRampToValueAtTime(0.01, end); // Exp can't go to 0
+        else g.gain.linearRampToValueAtTime(0, end);
+    }
+
     s.connect(g); g.connect(offline.destination); s.start(0);
     return await offline.startRendering();
   },
@@ -218,7 +229,7 @@ const HelpModal = ({ onClose }) => {
          </div>
          <div className="p-8 overflow-y-auto custom-scrollbar text-slate-600 leading-relaxed text-sm space-y-4">
             <p><strong>환영합니다!</strong> OTONASHI는 성도 시뮬레이션 및 오디오 편집 도구입니다.</p>
-            <p>1. <strong>스튜디오</strong>: 파일을 드래그하여 로드하고 편집하세요. 그래프 영역을 드래그하여 작업 구간을 선택할 수 있습니다.</p>
+            <p>1. <strong>스튜디오</strong>: 파일을 드래그하여 로드하고 편집하세요. <strong>스페이스바</strong>로 재생/정지 할 수 있습니다.</p>
             <p>2. <strong>자음 합성</strong>: 두 개의 소리를 믹싱하고 볼륨 곡선을 그려 발음을 조절하세요. <strong>우클릭</strong>으로 키프레임을 삭제할 수 있습니다.</p>
             <p>3. <strong>성도 시뮬레이터</strong>: 혀와 입술 모양을 잡고 <code>키프레임 등록</code>을 통해 타임라인에 소리를 생성하세요.</p>
          </div>
@@ -227,10 +238,35 @@ const HelpModal = ({ onClose }) => {
   );
 };
 
+const FadeModal = ({ type, onClose, onApply }) => {
+    const [shape, setShape] = useState('linear');
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-in zoom-in-95" onClick={onClose}>
+            <div className="bg-white p-6 rounded-xl shadow-2xl w-80 font-sans" onClick={e=>e.stopPropagation()}>
+                <h3 className="text-lg font-black text-slate-700 mb-4 flex items-center gap-2">
+                    {type === 'in' ? <SignalLow size={20}/> : <SignalHigh size={20}/>}
+                    Fade {type === 'in' ? 'In' : 'Out'} 설정
+                </h3>
+                <div className="flex gap-2 mb-6">
+                    <button onClick={()=>setShape('linear')} className={`flex-1 py-3 rounded-lg border font-bold text-xs ${shape==='linear'?'bg-[#209ad6] text-white border-[#209ad6]':'bg-slate-50 text-slate-500 border-slate-200'}`}>직선 (Linear)</button>
+                    <button onClick={()=>setShape('exponential')} className={`flex-1 py-3 rounded-lg border font-bold text-xs ${shape==='exponential'?'bg-[#209ad6] text-white border-[#209ad6]':'bg-slate-50 text-slate-500 border-slate-200'}`}>곡선 (Exp)</button>
+                </div>
+                <button onClick={()=>{ onApply(shape); onClose(); }} className="w-full py-3 bg-[#209ad6] text-white rounded-lg font-bold shadow-md hover:bg-[#1a85b9] transition-all">적용하기</button>
+            </div>
+        </div>
+    );
+};
+
 const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, removeFile, renameFile, isSaving }) => {
   const [editingId, setEditingId] = useState(null);
   const [tempName, setTempName] = useState("");
   const submitRename = (id) => { if(tempName.trim()) renameFile(id, tempName.trim()); setEditingId(null); };
+
+  const confirmRemove = (id) => {
+      if (window.confirm("정말 이 파일을 보관함에서 삭제하시겠습니까?")) {
+          removeFile(id);
+      }
+  };
 
   return (
     <aside className="w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 font-sans z-20">
@@ -257,7 +293,7 @@ const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, remo
             <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
                 <button onClick={() => AudioUtils.downloadWav(f.buffer, f.name)} title="WAV 다운로드" className="p-1 hover:text-[#209ad6]"><Download size={14}/></button>
                 <button onClick={() => { setEditingId(f.id); setTempName(f.name); }} title="이름 변경" className="p-1 hover:text-[#209ad6]"><Edit2 size={14}/></button>
-                <button onClick={(e) => { e.stopPropagation(); removeFile(f.id); }} title="삭제" className="p-1 hover:text-red-500"><X size={14}/></button>
+                <button onClick={(e) => { e.stopPropagation(); confirmRemove(f.id); }} title="삭제" className="p-1 hover:text-red-500"><X size={14}/></button>
             </div>
           </div>
         ))}
@@ -270,7 +306,7 @@ const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, remo
   );
 };
 
-const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) => {
+const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, handleFileUpload }) => {
     const [studioBuffer, setStudioBuffer] = useState(null);
     const [editTrim, setEditTrim] = useState({ start: 0, end: 100 });
     const [isPlaying, setIsPlaying] = useState(false);
@@ -279,30 +315,53 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) =
     const [selectionAnchor, setSelectionAnchor] = useState(null); 
     const [clipboard, setClipboard] = useState(null);
     const [undoStack, setUndoStack] = useState([]);
+    const [redoStack, setRedoStack] = useState([]); // Redo Stack Added
     const [masterGain, setMasterGain] = useState(1.0);
     const [pitchCents, setPitchCents] = useState(0);
     const [genderShift, setGenderShift] = useState(1.0);
     const [eq, setEq] = useState({ low: 0, mid: 0, high: 0 });
     const [formant, setFormant] = useState({ f1: 500, f2: 1500, f3: 2500, resonance: 4.0 });
-    const [showAutomation, setShowAutomation] = useState(false);
     const [showStretchModal, setShowStretchModal] = useState(false);
     const [stretchRatio, setStretchRatio] = useState(100);
+    const [fadeModalType, setFadeModalType] = useState(null); // 'in' or 'out'
 
     const canvasRef = useRef(null);
     const sourceRef = useRef(null);
     const startTimeRef = useRef(0);
     const pauseOffsetRef = useRef(0);
     const animationRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
         if(activeFile) {
             setStudioBuffer(activeFile.buffer);
-            setEditTrim({ start: 0, end: 0 }); 
+            setEditTrim({ start: 0, end: 100 }); // Reset selection to full on load
         }
     }, [activeFile]);
 
-    const pushUndo = useCallback(() => { if (studioBuffer) setUndoStack(prev => [...prev.slice(-19), studioBuffer]); }, [studioBuffer]);
-    const handleUndo = useCallback(() => { if (undoStack.length === 0) return; const prevBuf = undoStack[undoStack.length - 1]; setUndoStack(prev => prev.slice(0, -1)); setStudioBuffer(prevBuf); }, [undoStack]);
+    // Undo/Redo Logic
+    const pushUndo = useCallback(() => { 
+        if (studioBuffer) {
+            setUndoStack(prev => [...prev.slice(-19), studioBuffer]); 
+            setRedoStack([]); // Clear redo on new action
+        }
+    }, [studioBuffer]);
+
+    const handleUndo = useCallback(() => { 
+        if (undoStack.length === 0) return; 
+        const prevBuf = undoStack[undoStack.length - 1]; 
+        setRedoStack(prev => [...prev, studioBuffer]); // Save current to redo
+        setUndoStack(prev => prev.slice(0, -1)); 
+        setStudioBuffer(prevBuf); 
+    }, [undoStack, studioBuffer]);
+
+    const handleRedo = useCallback(() => {
+        if (redoStack.length === 0) return;
+        const nextBuf = redoStack[redoStack.length - 1];
+        setUndoStack(prev => [...prev, studioBuffer]); // Save current to undo
+        setRedoStack(prev => prev.slice(0, -1));
+        setStudioBuffer(nextBuf);
+    }, [redoStack, studioBuffer]);
     
     const handleStop = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
@@ -324,7 +383,23 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) =
         return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
     }, [isPlaying, updatePlayhead]);
 
-    const handleDrop = (e) => { e.preventDefault(); const fileId = e.dataTransfer.getData("fileId"); if (fileId) setActiveFileId(fileId); };
+    // Drag & Drop from OS or Rack
+    const handleDrop = async (e) => { 
+        e.preventDefault(); 
+        // 1. Check for Rack Drag
+        const fileId = e.dataTransfer.getData("fileId"); 
+        if (fileId) {
+            setActiveFileId(fileId);
+            return;
+        }
+        // 2. Check for OS File Drop
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const file = e.dataTransfer.files[0];
+            const buffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+            onAddToRack(buffer, file.name); // Add to Rack
+            setStudioBuffer(buffer); // Load directly to Studio
+        }
+    };
 
     const renderStudioAudio = async (buf) => {
         if(!buf || !audioContext) return null;
@@ -356,6 +431,19 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) =
         s.onended = () => { if (Math.abs((audioContext.currentTime - startTimeRef.current) - processedBuf.duration) < 0.1) { setIsPlaying(false); setPlayheadPos(0); pauseOffsetRef.current = 0; } };
     };
 
+    // Spacebar Logic
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                handlePlayPause();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handlePlayPause]);
+
+    // Canvas Logic
     useEffect(() => {
         if(!canvasRef.current || !studioBuffer) return;
         const ctx = canvasRef.current.getContext('2d'); const w = canvasRef.current.width; const h = canvasRef.current.height;
@@ -388,10 +476,16 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) =
 
     return (
         <div className="flex-1 flex flex-col gap-4 p-4 font-sans overflow-hidden" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+            {fadeModalType && <FadeModal type={fadeModalType} onClose={()=>setFadeModalType(null)} onApply={async (shape) => {
+                if(!studioBuffer) return; pushUndo(); 
+                setStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, fadeModalType, editTrim.start, editTrim.end, shape));
+            }} />}
+
             <div className="flex-[3] flex flex-col gap-4 min-h-0">
                 <div className="bg-white/50 rounded-xl border border-slate-300 p-2 flex justify-between items-center shadow-sm">
                     <div className="flex gap-1">
                         <button onClick={handleUndo} disabled={undoStack.length === 0} title="실행 취소" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Undo2 size={16}/></button>
+                        <button onClick={handleRedo} disabled={redoStack.length === 0} title="다시 실행" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Redo2 size={16}/></button>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
                         <button onClick={() => { if(!studioBuffer) return; pushUndo(); setClipboard(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); setStudioBuffer(AudioUtils.deleteRange(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="잘라내기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Scissors size={16}/></button>
                         <button onClick={() => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="크롭" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Crop size={16}/></button>
@@ -400,8 +494,8 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) =
                         <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.insertBuffer(audioContext, studioBuffer, clipboard, editTrim.end)); }} title="붙여넣기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Clipboard size={16}/></button>
                         <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.mixBuffers(audioContext, studioBuffer, clipboard, editTrim.start)); }} title="오버레이" className="p-2 hover:bg-slate-200 rounded text-indigo-500"><Layers size={16}/></button>
                         <button onClick={() => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.reverseBuffer(audioContext, studioBuffer)); }} title="좌우 반전" className="p-2 hover:bg-slate-200 rounded text-purple-500"><FlipHorizontal size={16}/></button>
-                        <button onClick={async () => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, 'in', editTrim.start, editTrim.end)); }} title="페이드 인" className="p-2 hover:bg-slate-200 rounded text-emerald-500"><TrendingUp size={16}/></button>
-                        <button onClick={async () => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, 'out', editTrim.start, editTrim.end)); }} title="페이드 아웃" className="p-2 hover:bg-slate-200 rounded text-rose-500"><TrendingDown size={16}/></button>
+                        <button onClick={()=>setFadeModalType('in')} title="페이드 인 설정" className="p-2 hover:bg-slate-200 rounded text-emerald-500"><SignalLow size={16}/></button>
+                        <button onClick={()=>setFadeModalType('out')} title="페이드 아웃 설정" className="p-2 hover:bg-slate-200 rounded text-rose-500"><SignalHigh size={16}/></button>
                         <button onClick={()=>setShowStretchModal(true)} title="시간 늘리기" className="p-2 hover:bg-slate-200 rounded text-[#209ad6]"><MoveHorizontal size={16}/></button>
                     </div>
                     <div className="flex gap-2">
@@ -409,8 +503,34 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) =
                         <button onClick={async () => { if(!studioBuffer || !audioContext) return; const res = await renderStudioAudio(studioBuffer); if(res) onAddToRack(res, (activeFile?.name || "Studio") + "_결과"); }} title="결과물 저장" className="bg-[#a3cef0] text-[#1f1e1d] px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 hover:bg-[#209ad6] hover:text-white shadow-sm"><LogIn size={18}/> 보관함에 저장</button>
                     </div>
                 </div>
-                <div className="flex-1 bg-white rounded-xl border border-slate-300 relative overflow-hidden shadow-inner">
-                    {studioBuffer ? <canvas ref={canvasRef} width={1000} height={400} className="w-full h-full object-fill cursor-crosshair" onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={()=>{ setDragTarget(null); setSelectionAnchor(null); }} /> : <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 opacity-30 gap-2 font-bold uppercase pointer-events-none"><Upload size={40}/> 파일을 여기에 드래그하세요</div>}
+                <div className="flex-1 bg-white rounded-xl border border-slate-300 relative overflow-hidden shadow-inner group">
+                    {studioBuffer ? (
+                        <>
+                            <canvas ref={canvasRef} width={1000} height={400} className="w-full h-full object-fill cursor-crosshair" onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={()=>{ setDragTarget(null); setSelectionAnchor(null); }} />
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                                <button onClick={()=>{setPlayheadPos(0); pauseOffsetRef.current=0;}} title="맨 앞으로" className="p-1 bg-white border rounded hover:text-[#209ad6]"><SkipBack size={16}/></button>
+                                <button onClick={()=>{setPlayheadPos(100); pauseOffsetRef.current=studioBuffer.duration;}} title="맨 뒤로" className="p-1 bg-white border rounded hover:text-[#209ad6]"><SkipForward size={16}/></button>
+                                <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                                <button onClick={()=>setEditTrim(p=>({...p, start:0}))} title="선택 시작을 맨 앞으로" className="p-1 bg-white border rounded text-xs font-bold">Start=0</button>
+                                <button onClick={()=>setEditTrim(p=>({...p, end:100}))} title="선택 끝을 맨 뒤로" className="p-1 bg-white border rounded text-xs font-bold">End=100</button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-2 font-bold uppercase cursor-pointer hover:bg-slate-50 transition-colors"
+                             onClick={() => fileInputRef.current.click()}>
+                            <Upload size={40}/> 
+                            <span>파일을 드래그하거나 여기를 클릭하세요</span>
+                            <span className="text-[10px] text-slate-300 mt-2">또는 보관함에 파일을 추가 후 드래그하세요</span>
+                            <input type="file" ref={fileInputRef} className="hidden" accept="audio/*" onChange={(e)=>{
+                                if(e.target.files.length>0) {
+                                    const file = e.target.files[0];
+                                    file.arrayBuffer().then(b => audioContext.decodeAudioData(b)).then(buf => {
+                                        onAddToRack(buf, file.name); setStudioBuffer(buf);
+                                    });
+                                }
+                            }}/>
+                        </div>
+                    )}
                 </div>
             </div>
             <div className="flex-[2] grid grid-cols-1 md:grid-cols-4 gap-4 min-h-0 overflow-y-auto custom-scrollbar font-sans">
@@ -463,8 +583,8 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId }) =
 const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
-    const [offsetMs, setOffsetMs] = useState(0); // Consonant Offset
-    const [vowelOffsetMs, setVowelOffsetMs] = useState(0); // Vowel Offset
+    const [offsetMs, setOffsetMs] = useState(0); 
+    const [vowelOffsetMs, setVowelOffsetMs] = useState(0); 
     const [vowelGain, setVowelGain] = useState(1.0);
     const [consonantGain, setConsonantGain] = useState(1.0);
     const [consonantStretch, setConsonantStretch] = useState(1.0);
@@ -485,8 +605,6 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
         const vStart = vowelOffsetMs / 1000;
         const cStart = offsetMs / 1000;
 
-        // Calculate total duration including potential negative offsets (start point adjustment)
-        // We normalize so the earliest sound starts at 0 for the rendering context
         const minStart = Math.min(vStart, cStart);
         const normVStart = vStart - minStart;
         const normCStart = cStart - minStart;
@@ -496,13 +614,11 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
         
         const offline = new OfflineAudioContext(v.numberOfChannels, totalSamples, v.sampleRate);
 
-        // Render Vowel
         const sV = offline.createBufferSource(); sV.buffer = v;
         const gV = offline.createGain(); gV.gain.setValueAtTime(vVolumePts[0].v * vowelGain, normVStart);
         vVolumePts.forEach(p => gV.gain.linearRampToValueAtTime(p.v * vowelGain, normVStart + p.t * v.duration));
         sV.connect(gV); gV.connect(offline.destination); sV.start(normVStart);
 
-        // Render Consonant
         if(c) {
             const sC = offline.createBufferSource(); sC.buffer = c;
             sC.playbackRate.value = 1 / consonantStretch;
@@ -543,7 +659,6 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
         const vBuf = files.find(f => f.id === vowelId)?.buffer; 
         const cBuf = files.find(f => f.id === consonantId)?.buffer;
 
-        // Draw Vowel
         if(vBuf) { 
             const pixelOffset = vowelOffsetMs / (2000 / w); 
             ctx.save(); ctx.translate(pixelOffset, 0);
@@ -553,7 +668,6 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
             if (editMode === 'vVol') drawEnvelope(vVolumePts, '#1d4ed8', vWidth, pixelOffset); 
         }
 
-        // Draw Consonant
         if(cBuf) {
             const pixelOffset = offsetMs / (2000 / w); 
             ctx.save(); ctx.translate(pixelOffset, 0);
@@ -569,18 +683,14 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
         const rect = canvasRef.current.getBoundingClientRect(); const x = e.clientX - rect.left; const y = e.clientY - rect.top; const w = canvasRef.current.width; const h = canvasRef.current.height;
         
         if (editMode === 'placement') {
-            // Check Consonant Drag
             const cPixelOffset = offsetMs / (2000 / w); 
             const cBuf = files.find(f => f.id === consonantId)?.buffer;
             if (cBuf) { 
                 const pixelWidth = (cBuf.duration * consonantStretch / 2.0) * w; 
-                // Stretch Handle check
                 if (Math.abs(x * (w/rect.width) - (cPixelOffset + pixelWidth)) < 20) { setDragging('stretch'); return; }
-                // Body Drag Check
                 if (x * (w/rect.width) > cPixelOffset && x * (w/rect.width) < cPixelOffset + pixelWidth) { setDragging('offset'); return; }
             }
             
-            // Check Vowel Drag
             const vPixelOffset = vowelOffsetMs / (2000 / w);
             const vBuf = files.find(f => f.id === vowelId)?.buffer;
             if (vBuf) {
@@ -649,7 +759,6 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
                 if (cBuf) {
                     const pixelOffset = offsetMs / (2000 / w);
                     const mouseX = (e.clientX - rect.left) * (w / rect.width);
-                    // Calculate width from start of consonant to mouse position
                     const newWidthPx = Math.max(10, mouseX - pixelOffset); 
                     const baseWidthPx = (cBuf.duration / 2.0) * w;
                     setConsonantStretch(newWidthPx / baseWidthPx);
@@ -742,8 +851,10 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
     const [dragPart, setDragPart] = useState(null); 
 
     const canvasRef = useRef(null);
+    const waveCanvasRef = useRef(null); // Real-time Visualizer
     const simPlaySourceRef = useRef(null);
     const animRef = useRef(null);
+    const analyserRef = useRef(null); // Analyser Node
     const startTimeRef = useRef(0);
     const pauseOffsetRef = useRef(0);
 
@@ -850,11 +961,49 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
         if (!audioContext) return; setManualPose(false); 
         if (isAdvPlaying) { if (simPlaySourceRef.current) { try { simPlaySourceRef.current.stop(); } catch (e) {} pauseOffsetRef.current = audioContext.currentTime - startTimeRef.current; if (animRef.current) cancelAnimationFrame(animRef.current); setIsAdvPlaying(false); } return; }
         const res = await renderAdvancedAudio(); if (!res) return;
-        const s = audioContext.createBufferSource(); s.buffer = res; s.connect(audioContext.destination);
+        
+        const s = audioContext.createBufferSource(); s.buffer = res;
+        const analyser = audioContext.createAnalyser(); analyser.fftSize = 2048; 
+        analyserRef.current = analyser;
+
+        s.connect(analyser); analyser.connect(audioContext.destination);
+
         const startOffset = pauseOffsetRef.current % res.duration; s.start(0, startOffset);
         startTimeRef.current = audioContext.currentTime - startOffset; simPlaySourceRef.current = s; setIsAdvPlaying(true);
-        const animate = () => { const elapsed = audioContext.currentTime - startTimeRef.current; if (elapsed >= res.duration) { setIsAdvPlaying(false); setPlayHeadPos(0); pauseOffsetRef.current = 0; } else { setPlayHeadPos(elapsed / res.duration); animRef.current = requestAnimationFrame(animate); } };
+        const animate = () => { 
+            const elapsed = audioContext.currentTime - startTimeRef.current; 
+            if (elapsed >= res.duration) { setIsAdvPlaying(false); setPlayHeadPos(0); pauseOffsetRef.current = 0; } 
+            else { 
+                setPlayHeadPos(elapsed / res.duration); 
+                drawWaveform(); // Visualizer
+                animRef.current = requestAnimationFrame(animate); 
+            } 
+        };
         animRef.current = requestAnimationFrame(animate);
+    };
+
+    const drawWaveform = () => {
+        if(!analyserRef.current || !waveCanvasRef.current) return;
+        const bufferLength = analyserRef.current.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyserRef.current.getByteTimeDomainData(dataArray);
+        const canvas = waveCanvasRef.current;
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#209ad6';
+        ctx.beginPath();
+        const sliceWidth = width * 1.0 / bufferLength;
+        let x = 0;
+        for(let i = 0; i < bufferLength; i++) {
+            const v = dataArray[i] / 128.0;
+            const y = v * height / 2;
+            if(i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            x += sliceWidth;
+        }
+        ctx.stroke();
     };
 
     const handleCanvasMouseDown = (e) => {
@@ -950,9 +1099,10 @@ const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
                         </div>
                     </div>
                 </div>
-                <div className="w-72 bg-white/40 rounded-2xl border border-slate-300 p-3 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
-                    <h3 className="font-black text-slate-600 uppercase tracking-widest flex items-center gap-2 text-xs"><Sliders size={18} className="text-[#209ad6]"/> 파라미터</h3>
-                    <div className="space-y-3">
+                <div className="w-72 bg-white/40 rounded-2xl border border-slate-300 p-3 flex flex-col gap-4 overflow-y-auto custom-scrollbar relative">
+                    <canvas ref={waveCanvasRef} width={280} height={400} className="absolute inset-0 w-full h-full pointer-events-none opacity-20"/>
+                    <h3 className="font-black text-slate-600 uppercase tracking-widest flex items-center gap-2 text-xs z-10"><Sliders size={18} className="text-[#209ad6]"/> 파라미터</h3>
+                    <div className="space-y-3 z-10">
                         <div className="flex gap-2 mb-2">
                              {['A','E','I','O','U'].map(v=><button key={v} onClick={()=>applyPreset(v)} title={`모음 ${v}`} className="flex-1 h-8 rounded-lg bg-white border border-slate-300 font-bold text-xs hover:bg-[#209ad6] hover:text-white transition-all">{v}</button>)}
                         </div>
