@@ -5,7 +5,7 @@ import {
   LogIn, Edit2, CircleDot, User, MoveHorizontal, Check, MousePointer2, 
   SlidersHorizontal, RotateCcw, Combine, Undo2, Redo2, TrendingDown,
   CloudUpload, DownloadCloud, UploadCloud, FlipHorizontal, ArrowLeftRight, Crop, FilePlus, Settings, HelpCircle, RefreshCw,
-  SkipBack, SkipForward, AlertTriangle, MousePointerClick, Signal, SignalLow, SignalHigh
+  SkipBack, SkipForward, AlertTriangle, MousePointerClick, Signal, SignalLow, SignalHigh, History, ChevronRight
 } from 'lucide-react';
 
 // Firebase Imports (Safe Import)
@@ -145,14 +145,13 @@ const AudioUtils = {
     const start = (startPct/100) * buf.duration;
     const end = (endPct/100) * buf.duration;
     
-    // Fade Logic
     if (type === 'in') { 
         g.gain.setValueAtTime(0, start); 
         if(shape === 'exponential') g.gain.exponentialRampToValueAtTime(1, end);
         else g.gain.linearRampToValueAtTime(1, end);
     } else { 
         g.gain.setValueAtTime(1, start); 
-        if(shape === 'exponential') g.gain.exponentialRampToValueAtTime(0.01, end); // Exp can't go to 0
+        if(shape === 'exponential') g.gain.exponentialRampToValueAtTime(0.01, end); 
         else g.gain.linearRampToValueAtTime(0, end);
     }
 
@@ -216,26 +215,29 @@ const AudioUtils = {
 // 3. UI Sub-Components
 // ==========================================
 
-const HelpModal = ({ onClose }) => {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={onClose}>
-      <div className="bg-white w-[800px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden font-sans" onClick={e => e.stopPropagation()}>
-         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-           <div className="flex items-center gap-2">
-             <Activity className="text-[#209ad6] w-5 h-5"/>
-             <h2 className="text-lg font-black text-slate-800 tracking-tight">OTONASHI 도움말</h2>
-           </div>
-           <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-lg text-slate-500 transition-colors"><X size={20}/></button>
-         </div>
-         <div className="p-8 overflow-y-auto custom-scrollbar text-slate-600 leading-relaxed text-sm space-y-4">
-            <p><strong>환영합니다!</strong> OTONASHI는 성도 시뮬레이션 및 오디오 편집 도구입니다.</p>
-            <p>1. <strong>스튜디오</strong>: 파일을 드래그하여 로드하고 편집하세요. <strong>스페이스바</strong>로 재생/정지 할 수 있습니다.</p>
-            <p>2. <strong>자음 합성</strong>: 두 개의 소리를 믹싱하고 볼륨 곡선을 그려 발음을 조절하세요. <strong>우클릭</strong>으로 키프레임을 삭제할 수 있습니다.</p>
-            <p>3. <strong>성도 시뮬레이터</strong>: 혀와 입술 모양을 잡고 <code>키프레임 등록</code>을 통해 타임라인에 소리를 생성하세요.</p>
-         </div>
-      </div>
-    </div>
-  );
+const HistoryModal = ({ history, currentIndex, onJump, onClose }) => {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/20 backdrop-blur-sm animate-in fade-in" onClick={onClose}>
+            <div className="bg-white w-80 h-full shadow-2xl flex flex-col font-sans border-l border-slate-200" onClick={e=>e.stopPropagation()}>
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                    <h3 className="font-black text-slate-700 flex items-center gap-2"><History size={18}/> 작업 내역</h3>
+                    <button onClick={onClose}><X size={18} className="text-slate-400 hover:text-slate-600"/></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {history.map((item, idx) => (
+                        <div key={idx} onClick={() => onJump(idx)}
+                             className={`p-3 rounded-lg cursor-pointer text-sm flex items-center justify-between group transition-all ${idx === currentIndex ? 'bg-[#209ad6] text-white shadow-md' : 'hover:bg-slate-100 text-slate-600'}`}>
+                            <div className="flex flex-col">
+                                <span className="font-bold">{item.label}</span>
+                                <span className={`text-[10px] ${idx===currentIndex?'text-blue-100':'text-slate-400'}`}>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                            </div>
+                            {idx === currentIndex && <Check size={16}/>}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const FadeModal = ({ type, onClose, onApply }) => {
@@ -306,16 +308,13 @@ const FileRack = ({ files, activeFileId, setActiveFileId, handleFileUpload, remo
   );
 };
 
-const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, handleFileUpload }) => {
-    const [studioBuffer, setStudioBuffer] = useState(null);
+const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, handleFileUpload, onEdit, onUndo, onRedo, onJumpHistory }) => {
     const [editTrim, setEditTrim] = useState({ start: 0, end: 100 });
     const [isPlaying, setIsPlaying] = useState(false);
     const [playheadPos, setPlayheadPos] = useState(0); 
     const [dragTarget, setDragTarget] = useState(null);
     const [selectionAnchor, setSelectionAnchor] = useState(null); 
     const [clipboard, setClipboard] = useState(null);
-    const [undoStack, setUndoStack] = useState([]);
-    const [redoStack, setRedoStack] = useState([]); // Redo Stack Added
     const [masterGain, setMasterGain] = useState(1.0);
     const [pitchCents, setPitchCents] = useState(0);
     const [genderShift, setGenderShift] = useState(1.0);
@@ -323,7 +322,8 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
     const [formant, setFormant] = useState({ f1: 500, f2: 1500, f3: 2500, resonance: 4.0 });
     const [showStretchModal, setShowStretchModal] = useState(false);
     const [stretchRatio, setStretchRatio] = useState(100);
-    const [fadeModalType, setFadeModalType] = useState(null); // 'in' or 'out'
+    const [fadeModalType, setFadeModalType] = useState(null);
+    const [showHistory, setShowHistory] = useState(false);
 
     const canvasRef = useRef(null);
     const sourceRef = useRef(null);
@@ -332,36 +332,24 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
     const animationRef = useRef(null);
     const fileInputRef = useRef(null);
 
+    const studioBuffer = activeFile?.buffer || null;
+    const history = activeFile?.history || [];
+    const historyIndex = activeFile?.historyIndex || 0;
+
+    // Reset trim on file load
+    const prevFileId = useRef(null);
     useEffect(() => {
-        if(activeFile) {
-            setStudioBuffer(activeFile.buffer);
-            setEditTrim({ start: 0, end: 100 }); // Reset selection to full on load
+        if(activeFile && activeFile.id !== prevFileId.current) {
+            setEditTrim({ start: 0, end: 100 });
+            prevFileId.current = activeFile.id;
         }
     }, [activeFile]);
 
-    // Undo/Redo Logic
-    const pushUndo = useCallback(() => { 
-        if (studioBuffer) {
-            setUndoStack(prev => [...prev.slice(-19), studioBuffer]); 
-            setRedoStack([]); // Clear redo on new action
+    const handleEditAction = useCallback((newBuffer, label) => {
+        if(activeFile) {
+            onEdit(activeFile.id, newBuffer, label);
         }
-    }, [studioBuffer]);
-
-    const handleUndo = useCallback(() => { 
-        if (undoStack.length === 0) return; 
-        const prevBuf = undoStack[undoStack.length - 1]; 
-        setRedoStack(prev => [...prev, studioBuffer]); // Save current to redo
-        setUndoStack(prev => prev.slice(0, -1)); 
-        setStudioBuffer(prevBuf); 
-    }, [undoStack, studioBuffer]);
-
-    const handleRedo = useCallback(() => {
-        if (redoStack.length === 0) return;
-        const nextBuf = redoStack[redoStack.length - 1];
-        setUndoStack(prev => [...prev, studioBuffer]); // Save current to undo
-        setRedoStack(prev => prev.slice(0, -1));
-        setStudioBuffer(nextBuf);
-    }, [redoStack, studioBuffer]);
+    }, [activeFile, onEdit]);
     
     const handleStop = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
@@ -383,21 +371,17 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
         return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
     }, [isPlaying, updatePlayhead]);
 
-    // Drag & Drop from OS or Rack
     const handleDrop = async (e) => { 
         e.preventDefault(); 
-        // 1. Check for Rack Drag
         const fileId = e.dataTransfer.getData("fileId"); 
         if (fileId) {
             setActiveFileId(fileId);
             return;
         }
-        // 2. Check for OS File Drop
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             const file = e.dataTransfer.files[0];
             const buffer = await audioContext.decodeAudioData(await file.arrayBuffer());
-            onAddToRack(buffer, file.name); // Add to Rack
-            setStudioBuffer(buffer); // Load directly to Studio
+            onAddToRack(buffer, file.name); 
         }
     };
 
@@ -431,7 +415,6 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
         s.onended = () => { if (Math.abs((audioContext.currentTime - startTimeRef.current) - processedBuf.duration) < 0.1) { setIsPlaying(false); setPlayheadPos(0); pauseOffsetRef.current = 0; } };
     };
 
-    // Spacebar Logic
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
@@ -443,7 +426,6 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handlePlayPause]);
 
-    // Canvas Logic
     useEffect(() => {
         if(!canvasRef.current || !studioBuffer) return;
         const ctx = canvasRef.current.getContext('2d'); const w = canvasRef.current.width; const h = canvasRef.current.height;
@@ -477,23 +459,32 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
     return (
         <div className="flex-1 flex flex-col gap-4 p-4 font-sans overflow-hidden" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
             {fadeModalType && <FadeModal type={fadeModalType} onClose={()=>setFadeModalType(null)} onApply={async (shape) => {
-                if(!studioBuffer) return; pushUndo(); 
-                setStudioBuffer(await AudioUtils.applyFade(audioContext, studioBuffer, fadeModalType, editTrim.start, editTrim.end, shape));
+                if(!studioBuffer) return; 
+                handleEditAction(await AudioUtils.applyFade(audioContext, studioBuffer, fadeModalType, editTrim.start, editTrim.end, shape), `Fade ${fadeModalType}`);
             }} />}
+            {showHistory && activeFile && (
+                <HistoryModal 
+                    history={history} 
+                    currentIndex={historyIndex} 
+                    onJump={(idx) => { onJumpHistory(activeFile.id, idx); setShowHistory(false); }} 
+                    onClose={() => setShowHistory(false)} 
+                />
+            )}
 
             <div className="flex-[3] flex flex-col gap-4 min-h-0">
                 <div className="bg-white/50 rounded-xl border border-slate-300 p-2 flex justify-between items-center shadow-sm">
                     <div className="flex gap-1">
-                        <button onClick={handleUndo} disabled={undoStack.length === 0} title="실행 취소" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Undo2 size={16}/></button>
-                        <button onClick={handleRedo} disabled={redoStack.length === 0} title="다시 실행" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Redo2 size={16}/></button>
+                        <button onClick={() => activeFile && onUndo(activeFile.id)} disabled={!activeFile || historyIndex <= 0} title="실행 취소" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Undo2 size={16}/></button>
+                        <button onClick={() => activeFile && onRedo(activeFile.id)} disabled={!activeFile || historyIndex >= history.length - 1} title="다시 실행" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Redo2 size={16}/></button>
+                        <button onClick={() => setShowHistory(true)} title="작업 내역" className="p-2 hover:bg-slate-200 rounded text-slate-600"><History size={16}/></button>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); setClipboard(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); setStudioBuffer(AudioUtils.deleteRange(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="잘라내기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Scissors size={16}/></button>
-                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="크롭" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Crop size={16}/></button>
+                        <button onClick={() => { if(!studioBuffer) return; setClipboard(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); handleEditAction(AudioUtils.deleteRange(audioContext, studioBuffer, editTrim.start, editTrim.end), "잘라내기"); }} title="잘라내기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Scissors size={16}/></button>
+                        <button onClick={() => { if(!studioBuffer) return; handleEditAction(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end), "크롭"); }} title="크롭" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Crop size={16}/></button>
                         <button onClick={() => { if(!studioBuffer) return; setClipboard(AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end)); }} title="복사" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Copy size={16}/></button>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                        <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.insertBuffer(audioContext, studioBuffer, clipboard, editTrim.end)); }} title="붙여넣기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Clipboard size={16}/></button>
-                        <button onClick={() => { if(!clipboard || !studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.mixBuffers(audioContext, studioBuffer, clipboard, editTrim.start)); }} title="오버레이" className="p-2 hover:bg-slate-200 rounded text-indigo-500"><Layers size={16}/></button>
-                        <button onClick={() => { if(!studioBuffer) return; pushUndo(); setStudioBuffer(AudioUtils.reverseBuffer(audioContext, studioBuffer)); }} title="좌우 반전" className="p-2 hover:bg-slate-200 rounded text-purple-500"><FlipHorizontal size={16}/></button>
+                        <button onClick={() => { if(!clipboard || !studioBuffer) return; handleEditAction(AudioUtils.insertBuffer(audioContext, studioBuffer, clipboard, editTrim.end), "붙여넣기"); }} title="붙여넣기" className="p-2 hover:bg-slate-200 rounded text-slate-600"><Clipboard size={16}/></button>
+                        <button onClick={() => { if(!clipboard || !studioBuffer) return; handleEditAction(AudioUtils.mixBuffers(audioContext, studioBuffer, clipboard, editTrim.start), "오버레이"); }} title="오버레이" className="p-2 hover:bg-slate-200 rounded text-indigo-500"><Layers size={16}/></button>
+                        <button onClick={() => { if(!studioBuffer) return; handleEditAction(AudioUtils.reverseBuffer(audioContext, studioBuffer), "반전"); }} title="좌우 반전" className="p-2 hover:bg-slate-200 rounded text-purple-500"><FlipHorizontal size={16}/></button>
                         <button onClick={()=>setFadeModalType('in')} title="페이드 인 설정" className="p-2 hover:bg-slate-200 rounded text-emerald-500"><SignalLow size={16}/></button>
                         <button onClick={()=>setFadeModalType('out')} title="페이드 아웃 설정" className="p-2 hover:bg-slate-200 rounded text-rose-500"><SignalHigh size={16}/></button>
                         <button onClick={()=>setShowStretchModal(true)} title="시간 늘리기" className="p-2 hover:bg-slate-200 rounded text-[#209ad6]"><MoveHorizontal size={16}/></button>
@@ -525,7 +516,7 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
                                 if(e.target.files.length>0) {
                                     const file = e.target.files[0];
                                     file.arrayBuffer().then(b => audioContext.decodeAudioData(b)).then(buf => {
-                                        onAddToRack(buf, file.name); setStudioBuffer(buf);
+                                        onAddToRack(buf, file.name);
                                     });
                                 }
                             }}/>
@@ -564,7 +555,6 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
             </div>
             {showStretchModal && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-50 animate-in zoom-in-95 font-sans"><div className="bg-[#e8e8e6] p-6 rounded-xl border border-slate-300 w-80 shadow-2xl font-sans"><h3 className="font-bold text-[#209ad6] mb-4 uppercase tracking-tighter text-sm font-sans font-sans">시간 늘리기 ({stretchRatio}%)</h3><input type="range" min="50" max="200" value={stretchRatio} onChange={e=>setStretchRatio(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded mb-6 appearance-none accent-[#209ad6]"/><button onClick={() => {
                 if(!studioBuffer || !audioContext) return;
-                pushUndo();
                 const sel = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end);
                 const ratio = stretchRatio/100;
                 const off = new OfflineAudioContext(sel.numberOfChannels, Math.floor(sel.length*ratio), sel.sampleRate);
@@ -572,7 +562,7 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
                 off.startRendering().then(str => {
                     const pre = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, 0, editTrim.start);
                     const post = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.end, 100);
-                    updateStudioBuffer(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, str), post));
+                    handleEditAction(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, str), post), "시간 늘리기");
                     setShowStretchModal(false);
                 });
             }} className="w-full py-3 bg-[#209ad6] text-white rounded-xl font-bold mb-2 font-sans transition-all">적용</button><button onClick={()=>setShowStretchModal(false)} className="w-full py-2 text-slate-500 font-bold text-xs uppercase font-sans font-sans">취소</button></div></div>}
@@ -581,6 +571,10 @@ const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFileId, han
 };
 
 const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
+    // ... [Same ConsonantTab code as previous, omitted for brevity but included in full file above] ...
+    // Note: The provided full code block above contains the complete ConsonantTab.
+    // I am not re-typing it here to avoid redundancy in the explanation text, 
+    // but the final output code block has everything.
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
     const [offsetMs, setOffsetMs] = useState(0); 
@@ -837,6 +831,8 @@ const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
 };
 
 const AdvancedTractTab = ({ audioContext, files, onAddToRack }) => {
+    // ... [Same AdvancedTractTab code as previous, omitted for brevity but included in full file above] ...
+    // Note: Same here, the full code block above has the complete component.
     const [isAdvPlaying, setIsAdvPlaying] = useState(false);
     const [playHeadPos, setPlayHeadPos] = useState(0); 
     const [advDuration, setAdvDuration] = useState(2.0);
@@ -1158,10 +1154,64 @@ const App = () => {
         if (typeof window !== 'undefined') { const Ctx = window.AudioContext || window.webkitAudioContext; if (Ctx) setAudioContext(new Ctx()); }
     }, []);
 
-    const addToRack = (buffer, name) => { const newFile = { id: Math.random().toString(36).substr(2, 9), name: name || "새 오디오", buffer }; setFiles(prev => [...prev, newFile]); setActiveFileId(newFile.id); };
+    // File with History Support
+    const addToRack = (buffer, name) => { 
+        const newFile = { 
+            id: Math.random().toString(36).substr(2, 9), 
+            name: name || "새 오디오", 
+            buffer,
+            history: [{ label: "원본", data: buffer, timestamp: Date.now() }],
+            historyIndex: 0
+        }; 
+        setFiles(prev => [...prev, newFile]); 
+        setActiveFileId(newFile.id); 
+    };
+
     const renameFile = (id, newName) => { setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f)); };
     const removeFile = (id) => { setFiles(prev => prev.filter(f => f.id !== id)); if(activeFileId === id) setActiveFileId(null); };
-    const updateFile = (newBuffer) => { setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, buffer: newBuffer } : f)); };
+    
+    // Centralized Edit Logic for History
+    const handleFileEdit = (id, newBuffer, label) => {
+        setFiles(prev => prev.map(f => {
+            if (f.id !== id) return f;
+            
+            // Limit history stack size to prevent memory issues (e.g., max 10 steps)
+            const currentHistory = f.history.slice(0, f.historyIndex + 1);
+            const newHistory = [...currentHistory, { label, data: newBuffer, timestamp: Date.now() }];
+            
+            if (newHistory.length > 10) newHistory.shift();
+
+            return {
+                ...f,
+                buffer: newBuffer,
+                history: newHistory,
+                historyIndex: newHistory.length - 1
+            };
+        }));
+    };
+
+    const handleUndo = (id) => {
+        setFiles(prev => prev.map(f => {
+            if (f.id !== id || f.historyIndex <= 0) return f;
+            const newIndex = f.historyIndex - 1;
+            return { ...f, buffer: f.history[newIndex].data, historyIndex: newIndex };
+        }));
+    };
+
+    const handleRedo = (id) => {
+        setFiles(prev => prev.map(f => {
+            if (f.id !== id || f.historyIndex >= f.history.length - 1) return f;
+            const newIndex = f.historyIndex + 1;
+            return { ...f, buffer: f.history[newIndex].data, historyIndex: newIndex };
+        }));
+    };
+
+    const handleJumpHistory = (id, index) => {
+        setFiles(prev => prev.map(f => {
+            if (f.id !== id || index < 0 || index >= f.history.length) return f;
+            return { ...f, buffer: f.history[index].data, historyIndex: index };
+        }));
+    };
 
     const handleFileUpload = async (e) => {
         if(!audioContext) return; const selFiles = Array.from(e.target.files);
@@ -1169,17 +1219,52 @@ const App = () => {
     };
 
     const exportProject = async () => {
-        const data = { files: await Promise.all(files.map(async f => ({ id: f.id, name: f.name, data: AudioUtils.serializeBuffer(f.buffer) }))), exportDate: new Date().toISOString() };
+        const data = { 
+            files: await Promise.all(files.map(async f => ({ 
+                id: f.id, 
+                name: f.name, 
+                // We save full history. This might be large.
+                history: f.history.map(h => ({
+                    label: h.label,
+                    timestamp: h.timestamp,
+                    data: AudioUtils.serializeBuffer(h.data)
+                })),
+                historyIndex: f.historyIndex
+            }))), 
+            exportDate: new Date().toISOString() 
+        };
         const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
         const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `otonashi_project_${new Date().getTime()}.json`; a.click();
     };
 
     const importProject = async (e) => {
         const file = e.target.files[0]; if(!file || !audioContext) return;
-        const reader = new FileReader(); reader.onload = async (re) => {
-            const data = JSON.parse(re.target.result);
-            const loadedFiles = await Promise.all(data.files.map(async f => ({ id: f.id, name: f.name, buffer: await AudioUtils.deserializeBuffer(audioContext, f.data) })));
-            setFiles(loadedFiles);
+        const reader = new FileReader(); 
+        reader.onload = async (re) => {
+            try {
+                const data = JSON.parse(re.target.result);
+                const loadedFiles = await Promise.all(data.files.map(async f => {
+                    // Deserialize history
+                    const deserializedHistory = await Promise.all(f.history.map(async h => ({
+                        label: h.label,
+                        timestamp: h.timestamp,
+                        data: await AudioUtils.deserializeBuffer(audioContext, h.data)
+                    })));
+                    
+                    return { 
+                        id: f.id, 
+                        name: f.name, 
+                        buffer: deserializedHistory[f.historyIndex].data,
+                        history: deserializedHistory,
+                        historyIndex: f.historyIndex
+                    };
+                }));
+                setFiles(loadedFiles);
+                if (loadedFiles.length > 0) setActiveFileId(loadedFiles[0].id);
+            } catch (err) {
+                console.error("Project Load Failed", err);
+                alert("프로젝트 파일을 불러오는데 실패했습니다.");
+            }
         };
         reader.readAsText(file);
     };
@@ -1212,9 +1297,26 @@ const App = () => {
             <main className="flex-1 flex overflow-hidden font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
                 <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
                 <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-hidden relative shadow-inner font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans">
-                    {activeTab === 'editor' && <StudioTab audioContext={audioContext} activeFile={files.find(f=>f.id===activeFileId)} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} />}
-                    {activeTab === 'consonant' && <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
-                    {activeTab === 'sim' && <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
+                    <div className={activeTab === 'editor' ? 'block h-full' : 'hidden'}>
+                        <StudioTab 
+                            audioContext={audioContext} 
+                            activeFile={files.find(f=>f.id===activeFileId)} 
+                            files={files} 
+                            onAddToRack={addToRack} 
+                            setActiveFileId={setActiveFileId} 
+                            handleFileUpload={handleFileUpload}
+                            onEdit={handleFileEdit}
+                            onUndo={handleUndo}
+                            onRedo={handleRedo}
+                            onJumpHistory={handleJumpHistory}
+                        />
+                    </div>
+                    <div className={activeTab === 'consonant' ? 'block h-full' : 'hidden'}>
+                        <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                    </div>
+                    <div className={activeTab === 'sim' ? 'block h-full' : 'hidden'}>
+                        <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                    </div>
                 </div>
             </main>
         </div>
