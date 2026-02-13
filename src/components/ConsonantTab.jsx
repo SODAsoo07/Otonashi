@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Combine, MoveHorizontal, ArrowLeftRight, Play, Pause, LogIn, Trash2 } from 'lucide-react';
-import { AudioUtils } from '../utils/AudioUtils';
+import * as AudioUtils from '../utils/AudioUtils';
 
 export const ConsonantTab = ({ audioContext, files, onAddToRack }) => {
     const [vowelId, setVowelId] = useState("");
