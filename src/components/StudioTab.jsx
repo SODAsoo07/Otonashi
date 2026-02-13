@@ -47,6 +47,11 @@ export const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFile
         return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
     }, [isPlaying, updatePlayhead]);
 
+    useEffect(() => {
+        const handleKeyDown = (e) => { if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); handlePlayPause(); } };
+        window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isPlaying, studioBuffer]);
+
     const handlePlayPause = async () => {
         if(isPlaying) { if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} pauseOffsetRef.current = audioContext.currentTime - startTimeRef.current; setIsPlaying(false); } return; }
         if(!studioBuffer || !audioContext) return;
@@ -90,7 +95,7 @@ export const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFile
         <div className="flex-1 flex flex-col gap-4 p-4 font-sans overflow-y-auto custom-scrollbar h-full bg-slate-50" onDragOver={e=>e.preventDefault()}>
             {fadeModalType && <FadeModal type={fadeModalType} onClose={()=>setFadeModalType(null)} onApply={async (shape) => { if(!studioBuffer) return; handleEditAction(await AudioUtils.applyFade(audioContext, studioBuffer, fadeModalType, editTrim.start, editTrim.end, shape), `Fade ${fadeModalType}`); }} />}
             <div className="flex-shrink-0 flex flex-col gap-4">
-                <div className="bg-white rounded-xl border border-slate-300 p-2 flex justify-between items-center shadow-sm font-sans">
+                <div className="bg-white rounded-xl border border-slate-300 p-2 flex justify-between items-center shadow-sm">
                     <div className="flex gap-1 font-bold">
                         <button onClick={() => onUndo(activeFile.id)} disabled={historyIndex <= 0} className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Undo2 size={16}/></button>
                         <button onClick={() => onRedo(activeFile.id)} disabled={historyIndex >= history.length - 1} className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30"><Redo2 size={16}/></button>
@@ -102,9 +107,9 @@ export const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFile
                         <button onClick={() => { if(!clipboard || !studioBuffer) return; handleEditAction(AudioUtils.insertBuffer(audioContext, studioBuffer, clipboard, editTrim.end), "붙여넣기"); }} className="p-2 hover:bg-slate-200 rounded text-slate-600"><Clipboard size={16}/></button>
                         <button onClick={() => { if(!clipboard || !studioBuffer) return; handleEditAction(AudioUtils.mixBuffers(audioContext, studioBuffer, clipboard, editTrim.start), "오버레이"); }} className="p-2 hover:bg-slate-200 rounded text-indigo-500"><Layers size={16}/></button>
                         <button onClick={() => { if(!studioBuffer) return; handleEditAction(AudioUtils.reverseBuffer(audioContext, studioBuffer), "반전"); }} className="p-2 hover:bg-slate-200 rounded text-purple-500"><FlipHorizontal size={16}/></button>
-                        <button onClick={()=>setFadeModalType('in')} className="p-2 hover:bg-slate-200 rounded text-emerald-500"><SignalLow size={16}/></button>
-                        <button onClick={()=>setFadeModalType('out')} className="p-2 hover:bg-slate-200 rounded text-rose-500"><SignalHigh size={16}/></button>
-                        <button onClick={()=>setShowStretchModal(true)} className="p-2 hover:bg-slate-200 rounded text-[#209ad6]"><MoveHorizontal size={16}/></button>
+                        <button onClick={()=>setFadeModalType('in')} className="p-2 hover:bg-slate-200 rounded text-emerald-500 font-bold font-sans"><SignalLow size={16}/></button>
+                        <button onClick={()=>setFadeModalType('out')} className="p-2 hover:bg-slate-200 rounded text-rose-500 font-bold font-sans"><SignalHigh size={16}/></button>
+                        <button onClick={()=>setShowStretchModal(true)} className="p-2 hover:bg-slate-200 rounded text-[#209ad6] font-bold font-sans"><MoveHorizontal size={16}/></button>
                     </div>
                     <button onClick={async () => { if(!studioBuffer) return; const res = await renderStudioAudio(studioBuffer); if(res) onAddToRack(res, activeFile.name + "_결과"); }} className="bg-[#a3cef0] text-[#1f1e1d] px-3 py-1.5 rounded text-sm font-bold flex items-center gap-1 hover:bg-[#209ad6] hover:text-white shadow-sm transition-all"><LogIn size={18}/> 보관함에 저장</button>
                 </div>
@@ -112,28 +117,20 @@ export const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFile
                     {studioBuffer ? (
                         <>
                             <canvas ref={canvasRef} width={1000} height={500} className="w-full h-full object-fill cursor-crosshair" 
-                                onMouseDown={(e)=> {
-                                    const rect = canvasRef.current.getBoundingClientRect(); const p = ((e.clientX - rect.left) / rect.width) * 100;
-                                    if (Math.abs(p - editTrim.start) < 2) setDragTarget('start'); else if (Math.abs(p - editTrim.end) < 2) setDragTarget('end');
-                                    else { setDragTarget('new'); setSelectionAnchor(p); setEditTrim({ start: p, end: p }); }
-                                }}
-                                onMouseMove={(e)=> {
-                                    if (!dragTarget) return; const rect = canvasRef.current.getBoundingClientRect(); const p = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                                    if (dragTarget === 'start') setEditTrim(prev => ({ ...prev, start: Math.min(p, prev.end) })); else if (dragTarget === 'end') setEditTrim(prev => ({ ...prev, end: Math.max(p, prev.start) }));
-                                    else if (dragTarget === 'new') setEditTrim({ start: Math.min(selectionAnchor, p), end: Math.max(selectionAnchor, p) });
-                                }}
+                                onMouseDown={(e)=> { const r = canvasRef.current.getBoundingClientRect(); const p = ((e.clientX-r.left)/r.width)*100; if(Math.abs(p-editTrim.start)<2) setDragTarget('start'); else if(Math.abs(p-editTrim.end)<2) setDragTarget('end'); else { setDragTarget('new'); setSelectionAnchor(p); setEditTrim({start:p, end:p}); } }}
+                                onMouseMove={(e)=> { if(!dragTarget)return; const r = canvasRef.current.getBoundingClientRect(); const p = Math.max(0, Math.min(100, ((e.clientX-r.left)/r.width)*100)); if(dragTarget==='start') setEditTrim(v=>({...v, start:Math.min(p, v.end)})); else if(dragTarget==='end') setEditTrim(v=>({...v, end:Math.max(p, v.start)})); else setEditTrim({start:Math.min(selectionAnchor, p), end:Math.max(selectionAnchor, p)}); }}
                                 onMouseUp={()=>setDragTarget(null)}
                             />
-                            <div className="absolute top-2 right-2 flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
-                                <button onClick={()=>{setPlayheadPos(0); pauseOffsetRef.current=0;}} className="p-1 bg-white border rounded hover:text-[#209ad6] font-bold"><SkipBack size={16}/></button>
-                                <button onClick={()=>{setPlayheadPos(100); pauseOffsetRef.current=studioBuffer.duration;}} className="p-1 bg-white border rounded hover:text-[#209ad6] font-bold"><SkipForward size={16}/></button>
+                            <div className="absolute top-2 right-2 flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity font-bold">
+                                <button onClick={()=>{setPlayheadPos(0); pauseOffsetRef.current=0;}} className="p-1 bg-white border rounded hover:text-[#209ad6]"><SkipBack size={16}/></button>
+                                <button onClick={()=>{setPlayheadPos(100); pauseOffsetRef.current=studioBuffer.duration;}} className="p-1 bg-white border rounded hover:text-[#209ad6]"><SkipForward size={16}/></button>
                                 <button onClick={()=>setEditTrim({start:0, end:100})} className="p-1 bg-white border rounded text-[10px] font-black">FULL</button>
                             </div>
                         </>
                     ) : (
                         <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-2 font-black uppercase cursor-pointer hover:bg-slate-50 transition-colors"
                              onClick={() => fileInputRef.current.click()}>
-                            <Upload size={40}/> <span>파일을 여기에 드래그하거나 클릭하세요</span>
+                            <Upload size={40}/> <span>파일을 드래그하거나 클릭하세요</span>
                             <input type="file" ref={fileInputRef} className="hidden" accept="audio/*" onChange={async (e)=>{ if(e.target.files.length>0){ const f=e.target.files[0]; onAddToRack(await audioContext.decodeAudioData(await f.arrayBuffer()), f.name); } }}/>
                         </div>
                     )}
@@ -141,34 +138,25 @@ export const StudioTab = ({ audioContext, activeFile, onAddToRack, setActiveFile
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-h-min pb-10 font-bold">
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3 font-bold">
-                    <h4 className="text-sm font-black text-[#209ad6] uppercase tracking-widest flex items-center gap-2"><Sliders size={18}/> 믹서</h4>
-                    <div className="space-y-2"><div className="flex justify-between text-xs font-black text-slate-500"><span>볼륨</span><span>{Math.round(masterGain*100)}%</span></div><input type="range" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-emerald-500"/><div className="flex justify-between text-xs font-black text-slate-500 mt-3"><span>피치</span><span>{pitchCents}</span></div><input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 appearance-none accent-[#209ad6]"/></div>
+                    <h4 className="text-sm font-black text-[#209ad6] uppercase tracking-widest flex items-center gap-2 font-bold"><Sliders size={18}/> 믹서</h4>
+                    <div className="space-y-2"><div className="flex justify-between text-xs font-black text-slate-500"><span>볼륨</span><span>{Math.round(masterGain*100)}%</span></div><input type="range" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-emerald-500"/><div className="flex justify-between text-xs font-black text-slate-500 mt-3"><span>피치 (Cents)</span><span>{pitchCents}</span></div><input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 appearance-none accent-[#209ad6]"/></div>
                 </div>
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3 font-bold">
                     <h4 className="text-sm font-black text-emerald-500 uppercase tracking-widest flex items-center gap-2"><Activity size={18}/> 포먼트</h4>
                     {['f1', 'f2', 'f3'].map(f => (<div key={f}><div className="flex justify-between text-xs font-black text-slate-500 mb-1 uppercase"><span>{f}</span><span>{formant[f]}Hz</span></div><input type="range" min="200" max={5000} value={formant[f]} onChange={e=>setFormant({...formant, [f]: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 appearance-none accent-emerald-500"/></div>))}
                 </div>
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3 font-bold">
-                    <h4 className="text-sm font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2"><SlidersHorizontal size={18}/> 밴드 EQ</h4>
-                    {['low', 'mid', 'high'].map(band => (<div key={band}><div className="flex justify-between text-xs font-black text-slate-500 mb-1 uppercase"><span>{band}</span><span>{eq[band]}dB</span></div><input type="range" min="-24" max="24" value={eq[band]} onChange={e=>setEq({...eq, [band]: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 appearance-none accent-indigo-500"/></div>))}
+                    <h4 className="text-sm font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2 font-sans font-bold"><SlidersHorizontal size={18}/> 밴드 EQ</h4>
+                    {['low', 'mid', 'high'].map(band => (<div key={band}><div className="flex justify-between text-xs font-black text-slate-500 mb-1 uppercase font-sans font-bold"><span>{band}</span><span>{eq[band]}dB</span></div><input type="range" min="-24" max="24" value={eq[band]} onChange={e=>setEq({...eq, [band]: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 appearance-none accent-indigo-500"/></div>))}
                 </div>
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3 justify-end font-bold">
                     <div className="flex gap-2">
                         <button onClick={handleStop} className="p-3 bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-600 transition-all font-bold"><Square size={20} fill="currentColor"/></button>
-                        <button onClick={handlePlayPause} className="flex-1 py-3 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-lg font-black text-xs flex items-center justify-center gap-2 shadow-sm transition-all">{isPlaying ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor"/>} {isPlaying ? '중지' : '미리보기'}</button>
+                        <button onClick={handlePlayPause} className="flex-1 py-3 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-lg font-black text-xs flex items-center justify-center gap-2 shadow-sm transition-all font-bold">{isPlaying ? <Pause size={20} fill="currentColor"/> : <Play size={20} fill="currentColor"/>} {isPlaying ? '중지' : '미리보기'}</button>
                     </div>
                 </div>
             </div>
-            {showStretchModal && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-[110] animate-in zoom-in-95 font-sans font-bold"><div className="bg-white p-6 rounded-xl border border-slate-300 w-80 shadow-2xl font-sans font-bold"><h3 className="font-black text-[#209ad6] mb-4 uppercase text-sm">시간 늘리기 ({stretchRatio}%)</h3><input type="range" min="50" max="200" value={stretchRatio} onChange={e=>setStretchRatio(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded mb-6 appearance-none accent-[#209ad6]"/><button onClick={() => {
-                const sel = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end); const ratio = stretchRatio/100;
-                const off = new OfflineAudioContext(sel.numberOfChannels, Math.floor(sel.length*ratio), sel.sampleRate);
-                const s = off.createBufferSource(); s.buffer=sel; s.playbackRate.value=1/ratio; s.connect(off.destination); s.start();
-                off.startRendering().then(str => {
-                    const pre = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, 0, editTrim.start);
-                    const post = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.end, 100);
-                    handleEditAction(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, str), post), "시간 늘리기"); setShowStretchModal(false);
-                });
-            }} className="w-full py-3 bg-[#209ad6] text-white rounded-xl font-bold">적용</button></div></div>}
+            {showStretchModal && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-[110] animate-in zoom-in-95 font-sans font-bold"><div className="bg-white p-6 rounded-xl border border-slate-300 w-80 shadow-2xl font-sans font-bold"><h3 className="font-black text-[#209ad6] mb-4 uppercase text-sm font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold">시간 늘리기 ({stretchRatio}%)</h3><input type="range" min="50" max="200" value={stretchRatio} onChange={e=>setStretchRatio(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded mb-6 appearance-none accent-[#209ad6]"/><button onClick={() => { const sel = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.start, editTrim.end); const ratio = stretchRatio/100; const off = new OfflineAudioContext(sel.numberOfChannels, Math.floor(sel.length*ratio), sel.sampleRate); const s = off.createBufferSource(); s.buffer=sel; s.playbackRate.value=1/ratio; s.connect(off.destination); s.start(); off.startRendering().then(str => { const pre = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, 0, editTrim.start); const post = AudioUtils.createBufferFromSlice(audioContext, studioBuffer, editTrim.end, 100); handleEditAction(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, str), post), "시간 늘리기"); setShowStretchModal(false); }); }} className="w-full py-3 bg-[#209ad6] text-white rounded-xl font-bold font-sans font-bold">적용</button></div></div>}
         </div>
     );
 };
