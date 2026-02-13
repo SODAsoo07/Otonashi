@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Undo2, RotateCcw, CircleDot, Pause, Play, LogIn, Sliders, X } from 'lucide-react';
+import { Undo2, RotateCcw, CircleDot, Pause, Play, LogIn, Sliders, X, Check } from 'lucide-react';
 import { AudioUtils } from '../utils/AudioUtils';
 
 const BASE_DURATION = 2.0;
@@ -24,6 +24,7 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
     const waveCanvasRef = useRef(null); 
     const simPlaySourceRef = useRef(null);
     const animRef = useRef(null);
+    const analyserRef = useRef(null); 
     const startTimeRef = useRef(0);
 
     const [advTracks, setAdvTracks] = useState([
@@ -41,7 +42,6 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
     const pushSimUndo = useCallback(() => { setSimUndoStack(prev => [...prev.slice(-9), JSON.parse(JSON.stringify(advTracks))]); }, [advTracks]);
     const handleSimUndo = useCallback(() => { if (simUndoStack.length === 0) return; setAdvTracks(simUndoStack[simUndoStack.length - 1]); setSimUndoStack(prev => prev.slice(0, -1)); }, [simUndoStack]);
     
-    // --- 핵심 렌더링 로직 ---
     const renderOneCycle = useCallback(async () => {
         if (!audioContext) return null;
         const sr = audioContext.sampleRate; const totalLen = Math.max(1, Math.floor(sr * BASE_DURATION));
@@ -76,13 +76,8 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         sNode.start(0); nNode.start(0); return await offline.startRendering();
     }, [audioContext, advTracks, intensity, tractSourceFileId, noiseSourceFileId, files, synthType]);
 
-    // --- 에러가 났던 재생/일시정지 함수 (정의됨) ---
     const handlePlayPauseSim = async () => {
-        if (isAdvPlaying) { 
-            if (simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch (e) {} 
-            if (animRef.current) cancelAnimationFrame(animRef.current); 
-            setIsAdvPlaying(false); setPlayHeadPos(0); return; 
-        }
+        if (isAdvPlaying) { if (simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch (e) {} if (animRef.current) cancelAnimationFrame(animRef.current); setIsAdvPlaying(false); setPlayHeadPos(0); return; }
         const oneCycle = await renderOneCycle(); if (!oneCycle) return;
         let finalBuf = oneCycle; if (loopCount > 1) { for(let i=1; i<loopCount; i++) finalBuf = AudioUtils.concatBuffers(audioContext, finalBuf, oneCycle); }
         const s = audioContext.createBufferSource(); s.buffer = finalBuf;
@@ -95,35 +90,56 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         animRef.current = requestAnimationFrame(animate);
     };
 
-    // --- 전체 파형 미리보기 드로잉 로직 ---
+    // --- Waveform Background Logic (Scaled and Offset) ---
     const renderPreviewAndDraw = useCallback(async () => {
-        if (!audioContext) return;
+        if (!audioContext || !waveCanvasRef.current) return;
         const cycle = await renderOneCycle();
-        if (!cycle || !waveCanvasRef.current) return;
+        if (!cycle) return;
         const ctx = waveCanvasRef.current.getContext('2d');
         const w = waveCanvasRef.current.width, h = waveCanvasRef.current.height;
         const data = cycle.getChannelData(0); const step = Math.ceil(data.length / w);
-        ctx.clearRect(0,0,w,h); ctx.lineWidth=3; ctx.strokeStyle='#3b82f6'; ctx.beginPath();
+        
+        ctx.clearRect(0,0,w,h);
+        ctx.lineWidth = 2.0; 
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)'; // Transparent Blue
+        ctx.beginPath();
+        
+        const centerY = h / 2 + 20; // 20px Down
+        const amplitude = h * 0.1; // Reduced Size (about 10-15% of height)
+
         for(let i=0; i<w; i++) {
-            let min=1, max=-1; for(let j=0; j<step; j++) { const d = data[i*step+j]; if(d<min)min=d; if(d>max)max=d; }
-            ctx.moveTo(i, h/2 + min*(h/3)); ctx.lineTo(i, h/2 + max*(h/3));
+            let min=1, max=-1; 
+            for(let j=0; j<step; j++) { 
+                const d = data[i*step+j]; if(d<min) min=d; if(d>max) max=d; 
+            }
+            ctx.moveTo(i, centerY + min * amplitude);
+            ctx.lineTo(i, centerY + max * amplitude);
         } ctx.stroke();
     }, [audioContext, renderOneCycle]);
 
     useEffect(() => { renderPreviewAndDraw(); }, [advTracks, renderPreviewAndDraw]);
 
-    // --- 마우스 조작 로직 ---
+    // --- Handle Input & Dragging ---
     const handleCanvasMouseDown = (e) => {
         e.preventDefault(); setManualPose(false); 
-        const rect = canvasRef.current.getBoundingClientRect(); const mx = (e.clientX - rect.left) * (1000/rect.width), my = (e.clientY - rect.top) * (150/rect.height);
+        const rect = canvasRef.current.getBoundingClientRect(); 
+        const mx = (e.clientX - rect.left) * (1000/rect.width); 
+        const my = (e.clientY - rect.top) * (150/rect.height);
         const t = Math.max(0, Math.min(1, mx / 1000));
+
         if (my < RULER_HEIGHT) { setPlayHeadPos(t); return; }
+        
         const track = advTracks.find(tr => tr.id === selectedTrackId);
-        const hitIndex = track.points.findIndex(p => Math.hypot(p.t * 1000 - mx, RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (150-RULER_HEIGHT) - my) < 15);
+        const hitIndex = track.points.findIndex(p => {
+            const px = p.t * 1000;
+            const py = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (150 - RULER_HEIGHT);
+            return Math.hypot(px - mx, py - my) < 15;
+        });
+
         pushSimUndo();
         if (hitIndex !== -1) setDraggingKeyframe({ index: hitIndex, trackId: selectedTrackId });
         else {
-            const val = track.min + (1 - (my - RULER_HEIGHT) / (150-RULER_HEIGHT)) * (track.max - track.min);
+            const val = track.min + (1 - (my - RULER_HEIGHT) / (150 - RULER_HEIGHT)) * (track.max - track.min);
             const newPoints = [...track.points, { t, v: Math.max(track.min, Math.min(track.max, val)) }].sort((a,b) => a.t - b.t);
             setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: newPoints } : tr));
         }
@@ -142,22 +158,53 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
     }, [draggingKeyframe, advTracks]);
 
+    // --- Main Timeline Drawing (Waveform + Graph + Playhead) ---
+    useEffect(() => {
+        if (!canvasRef.current) return;
+        const ctx = canvasRef.current.getContext('2d'); const w = canvasRef.current.width, h = canvasRef.current.height;
+        const track = advTracks.find(t => t.id === selectedTrackId);
+        
+        ctx.clearRect(0, 0, w, h); 
+        
+        // 1. Grid & Ruler
+        ctx.fillStyle = 'rgba(240, 240, 240, 0.5)'; ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT);
+        ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1; ctx.beginPath(); 
+        for (let i = 0; i <= 10; i++) { const x = i * (w / 10); ctx.moveTo(x, RULER_HEIGHT); ctx.lineTo(x, h); } ctx.stroke();
+        
+        // 2. Keyframe Line (Graph)
+        ctx.beginPath(); ctx.strokeStyle = track.color; ctx.lineWidth = 3; 
+        track.points.forEach((p, i) => { 
+            const x = p.t * w; 
+            const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); 
+        }); ctx.stroke();
+
+        // 3. Keyframe Points
+        track.points.forEach((p) => { 
+            const x = p.t * w; 
+            const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
+            ctx.fillStyle = track.color; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); 
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); 
+        });
+
+        // 4. Playhead (RED LINE) - CRITICAL FIX
+        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); 
+        ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
+    }, [selectedTrackId, advTracks, playHeadPos]);
+
     const registerKeyframe = () => {
         pushSimUndo();
         setAdvTracks(prev => prev.map(tr => {
             let val = 0;
             switch(tr.id) {
-                case 'tongueX': val = liveTract.x; break;
-                case 'tongueY': val = liveTract.y; break;
-                case 'lips': val = liveTract.lips; break;
-                case 'lipLen': val = liveTract.lipLen; break;
-                case 'throat': val = liveTract.throat; break;
-                case 'nasal': val = liveTract.nasal; break;
-                case 'volume': val = liveTract.volume; break;
-                default: return tr;
+                case 'tongueX': val = liveTract.x; break; case 'tongueY': val = liveTract.y; break;
+                case 'lips': val = liveTract.lips; break; case 'lipLen': val = liveTract.lipLen; break;
+                case 'throat': val = liveTract.throat; break; case 'nasal': val = liveTract.nasal; break;
+                case 'volume': val = liveTract.volume; break; default: return tr;
             }
             const idx = tr.points.findIndex(p => Math.abs(p.t - playHeadPos) < 0.02);
-            let n = [...tr.points]; if (idx !== -1) n[idx] = { ...n[idx], v: val }; else { n.push({ t: playHeadPos, v: val }); n.sort((a,b) => a.t - b.t); }
+            let n = [...tr.points]; if (idx !== -1) n[idx] = { ...n[idx], v: val }; 
+            else { n.push({ t: playHeadPos, v: val }); n.sort((a,b) => a.t - b.t); }
             return { ...tr, points: n };
         }));
         setManualPose(false); 
@@ -179,8 +226,10 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                         <div className="absolute inset-0"
                             onMouseMove={(e) => {
                                 if (!dragPart) return; const rect = e.currentTarget.getBoundingClientRect();
-                                const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
-                                if (dragPart === 'lips') setLiveTract(p => ({...p, lipLen: nx, lips: ny})); else if (dragPart === 'tongue') setLiveTract(p => ({ ...p, x: nx, y: ny }));
+                                const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                                const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+                                if (dragPart === 'lips') setLiveTract(p => ({...p, lipLen: nx, lips: ny})); 
+                                else if (dragPart === 'tongue') setLiveTract(p => ({ ...p, x: nx, y: ny }));
                             }}
                             onMouseDown={(e) => {
                                 if (dragPart) return; setManualPose(true); const rect = e.currentTarget.getBoundingClientRect();
@@ -191,7 +240,7 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                         />
                     </div>
                     <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-                        <div className="flex gap-2"><button onClick={handleSimUndo} disabled={simUndoStack.length === 0} className="p-2 bg-white rounded-xl border border-slate-300 disabled:opacity-30"><Undo2 size={18} /></button><button onClick={() => { pushSimUndo(); setAdvTracks(prev => prev.map(t => ({ ...t, points: [{ t: 0, v: t.id === 'pitch' ? 220 : t.id === 'volume' ? 1 : 0.5 }, { t: 1, v: t.id === 'pitch' ? 220 : t.id === 'volume' ? 1 : 0.5 }] }))); setManualPose(false); }} className="p-2 bg-white rounded-xl border border-slate-300 text-red-500 font-bold"><RotateCcw size={18} /></button></div>
+                        <div className="flex gap-2"><button onClick={handleSimUndo} disabled={simUndoStack.length === 0} className="p-2 bg-white rounded-xl border border-slate-300 disabled:opacity-30"><Undo2 size={18} /></button><button onClick={() => { setAdvTracks(advTracks.map(t => ({ ...t, points: [{ t: 0, v: t.id==='pitch'?220:t.id==='volume'?1:0.5 }, { t: 1, v: t.id==='pitch'?220:t.id==='volume'?1:0.5 }] }))); setManualPose(false); }} className="p-2 bg-white rounded-xl border border-slate-300 text-red-500 font-bold"><RotateCcw size={18} /></button></div>
                         <div className="flex gap-2">
                              <button onClick={registerKeyframe} className="bg-[#209ad6] text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg flex items-center gap-2"><CircleDot size={16}/> 키프레임 등록</button>
                              <button onClick={handlePlayPauseSim} className="bg-white border border-slate-300 text-slate-700 px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm">{isAdvPlaying ? <Pause size={16}/> : <Play size={16}/>} {isAdvPlaying ? '중지' : '재생'}</button>
@@ -210,17 +259,20 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                                 <select value={synthType} onChange={e=>setSynthType(e.target.value)} className="w-24 text-[10px] p-1.5 rounded border border-slate-200"><option value="sawtooth">톱니파</option><option value="sine">사인파</option><option value="square">사각파</option><option value="triangle">삼각파</option><option value="noise">노이즈</option></select>
                                 <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="flex-1 text-[10px] p-1.5 rounded border border-slate-200"><option value="">기본 신디</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                              </div>
-                             <div className="flex justify-between items-center text-xs text-slate-500 font-black mt-2 font-sans font-bold"><span>반복 횟수</span><input type="number" min="1" step="1" value={loopCount} onChange={e => setLoopCount(parseInt(e.target.value) || 1)} className="w-12 border rounded px-1 text-center font-sans font-bold"/></div>
+                             <div className="flex justify-between items-center text-xs text-slate-500 font-black mt-2"><span>반복 횟수</span><input type="number" min="1" step="1" value={loopCount} onChange={e => setLoopCount(parseInt(e.target.value) || 1)} className="w-12 border rounded px-1 text-center font-sans font-bold"/></div>
                         </div>
                     </div>
                 </div>
             </div>
             <div className="h-48 bg-white/40 rounded-3xl border border-slate-300 p-3 flex flex-col gap-2 shadow-inner relative overflow-hidden font-sans font-bold">
-                <canvas ref={waveCanvasRef} width={1000} height={192} className="absolute inset-0 w-full h-full pointer-events-none opacity-90 z-0" />
+                {/* STATIC WAVEFORM BACKGROUND */}
+                <canvas ref={waveCanvasRef} width={1000} height={192} className="absolute inset-0 w-full h-full pointer-events-none opacity-80 z-0" />
+                
                 <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar z-10">
-                    {advTracks.map(t => <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-4 py-1.5 text-xs rounded-full border transition-all whitespace-nowrap font-sans font-black ${selectedTrackId === t.id ? 'bg-[#209ad6] text-white border-[#209ad6] shadow-md' : 'bg-white/80 text-slate-500 border-slate-200 hover:border-slate-300 font-sans font-bold'}`}>{t.name}</button>)}
+                    {advTracks.map(t => <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-4 py-1.5 text-xs rounded-full border transition-all whitespace-nowrap ${selectedTrackId === t.id ? 'bg-[#209ad6] text-white border-[#209ad6] shadow-md' : 'bg-white/80 text-slate-500 border-slate-200 hover:border-slate-300'}`}>{t.name}</button>)}
                 </div>
-                <div className="flex-1 rounded-2xl border border-slate-200 relative overflow-hidden z-10 bg-white/30 backdrop-blur-[1px]" onContextMenu={e=>e.preventDefault()}>
+                {/* INTERACTIVE GRAPH CANVAS */}
+                <div className="flex-1 rounded-2xl border border-slate-200 relative overflow-hidden z-10 bg-transparent" onContextMenu={e=>e.preventDefault()}>
                     <canvas ref={canvasRef} width={1000} height={150} className="w-full h-full cursor-crosshair font-black" 
                         onMouseDown={handleCanvasMouseDown}
                     />
