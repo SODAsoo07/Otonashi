@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Undo2, RotateCcw, CircleDot, Pause, Play, LogIn, Sliders, X, Check } from 'lucide-react';
+import { Undo2, RotateCcw, CircleDot, Pause, Play, LogIn, Sliders, X } from 'lucide-react';
 import { AudioUtils } from '../utils/AudioUtils';
 
 const BASE_DURATION = 2.0;
@@ -42,9 +42,41 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
     const pushSimUndo = useCallback(() => { setSimUndoStack(prev => [...prev.slice(-9), JSON.parse(JSON.stringify(advTracks))]); }, [advTracks]);
     const handleSimUndo = useCallback(() => { if (simUndoStack.length === 0) return; setAdvTracks(simUndoStack[simUndoStack.length - 1]); setSimUndoStack(prev => prev.slice(0, -1)); }, [simUndoStack]);
     
+    // --- 기능 1: 키프레임 등록 함수 (정의 위치 수정) ---
+    const registerKeyframe = useCallback(() => {
+        pushSimUndo();
+        setAdvTracks(prev => prev.map(tr => {
+            let val = 0;
+            switch(tr.id) {
+                case 'tongueX': val = liveTract.x; break;
+                case 'tongueY': val = liveTract.y; break;
+                case 'lips': val = liveTract.lips; break;
+                case 'lipLen': val = liveTract.lipLen; break;
+                case 'throat': val = liveTract.throat; break;
+                case 'nasal': val = liveTract.nasal; break;
+                case 'volume': val = liveTract.volume; break;
+                default: return tr;
+            }
+            const threshold = 0.02;
+            const idx = tr.points.findIndex(p => Math.abs(p.t - playHeadPos) < threshold);
+            let n = [...tr.points];
+            if (idx !== -1) n[idx] = { ...n[idx], v: val };
+            else { n.push({ t: playHeadPos, v: val }); n.sort((a,b) => a.t - b.t); }
+            return { ...tr, points: n };
+        }));
+        setManualPose(false); 
+    }, [liveTract, playHeadPos, pushSimUndo]);
+
+    const applyPreset = (type) => {
+        setManualPose(true); let x=0.5, y=0.5, l=0.5;
+        switch(type) { case 'A': x=0.2; y=0.1; l=1.0; break; case 'E': x=0.8; y=0.6; l=0.8; break; case 'I': x=0.9; y=1.0; l=0.4; break; case 'O': x=0.2; y=0.5; l=0.3; break; case 'U': x=0.3; y=0.9; l=0.1; break; }
+        setLiveTract(p => ({...p, x, y, lips: l}));
+    };
+
     const renderOneCycle = useCallback(async () => {
         if (!audioContext) return null;
-        const sr = audioContext.sampleRate; const totalLen = Math.max(1, Math.floor(sr * BASE_DURATION));
+        const sr = audioContext.sampleRate;
+        const totalLen = Math.max(1, Math.floor(sr * BASE_DURATION));
         const offline = new OfflineAudioContext(1, totalLen, sr);
         let sNode; const customInput = files.find(f => f.id === tractSourceFileId)?.buffer;
         if (customInput) { sNode = offline.createBufferSource(); sNode.buffer = customInput; sNode.loop = true; } 
@@ -90,6 +122,7 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         animRef.current = requestAnimationFrame(animate);
     };
 
+    // --- 기능 2: 하단 파형 시각화 (크기 축소 및 위치 하향 조정) ---
     const renderPreviewAndDraw = useCallback(async () => {
         if (!audioContext || !waveCanvasRef.current) return;
         const cycle = await renderOneCycle();
@@ -97,8 +130,12 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         const ctx = waveCanvasRef.current.getContext('2d');
         const w = waveCanvasRef.current.width, h = waveCanvasRef.current.height;
         const data = cycle.getChannelData(0); const step = Math.ceil(data.length / w);
-        ctx.clearRect(0,0,w,h); ctx.lineWidth = 2.0; ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)'; ctx.beginPath();
-        const centerY = h / 2 + 20; const amplitude = h * 0.1;
+        ctx.clearRect(0,0,w,h); 
+        ctx.lineWidth = 2.0; 
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.6)'; // 진한 파란색 투명도 조절
+        ctx.beginPath();
+        const centerY = h / 2 + 25; // 아래로 이동
+        const amplitude = h * 0.08; // 80% 이상 크기 축소
         for(let i=0; i<w; i++) {
             let min=1, max=-1; for(let j=0; j<step; j++) { const d = data[i*step+j]; if(d<min) min=d; if(d>max) max=d; }
             ctx.moveTo(i, centerY + min * amplitude); ctx.lineTo(i, centerY + max * amplitude);
@@ -107,10 +144,10 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
 
     useEffect(() => { renderPreviewAndDraw(); }, [advTracks, renderPreviewAndDraw]);
 
-    // --- 마우스 조작 (좌클릭: 추가/이동, 우클릭: 삭제) ---
+    // --- 기능 3: 마우스 조작 및 우클릭 삭제 ---
     const handleCanvasMouseDown = (e) => {
         e.preventDefault(); setManualPose(false); 
-        const isRightClick = e.button === 2; // 우클릭 감지
+        const isRightClick = e.button === 2;
         const rect = canvasRef.current.getBoundingClientRect(); 
         const mx = (e.clientX - rect.left) * (1000/rect.width); 
         const my = (e.clientY - rect.top) * (150/rect.height);
@@ -119,31 +156,27 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         if (my < RULER_HEIGHT) { setPlayHeadPos(t); return; }
         
         const track = advTracks.find(tr => tr.id === selectedTrackId);
-        const hitIndex = track.points.findIndex(p => {
+        const hitIdx = track.points.findIndex(p => {
             const px = p.t * 1000;
             const py = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (150 - RULER_HEIGHT);
             return Math.hypot(px - mx, py - my) < 15;
         });
 
-        // 우클릭: 키프레임 삭제
         if (isRightClick) {
-            if (hitIndex !== -1 && track.points.length > 1) { // 최소 1개는 유지
+            if (hitIdx !== -1 && track.points.length > 1) {
                 pushSimUndo();
-                const newPoints = track.points.filter((_, i) => i !== hitIndex);
+                const newPoints = track.points.filter((_, i) => i !== hitIdx);
                 setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: newPoints } : tr));
             }
             return;
         }
 
-        // 좌클릭: 추가 또는 드래그 시작
         pushSimUndo();
-        if (hitIndex !== -1) setDraggingKeyframe({ index: hitIndex, trackId: selectedTrackId });
+        if (hitIdx !== -1) setDraggingKeyframe({ index: hitIdx, trackId: selectedTrackId });
         else {
-            const val = track.min + (1 - (my - RULER_HEIGHT) / (150 - RULER_HEIGHT)) * (track.max - track.min);
-            const newPoint = { t, v: Math.max(track.min, Math.min(track.max, val)) };
-            const newPoints = [...track.points, newPoint].sort((a,b) => a.t - b.t);
+            const val = track.min + (1 - (my - RULER_HEIGHT) / (150-RULER_HEIGHT)) * (track.max - track.min);
+            const newPoints = [...track.points, { t, v: Math.max(track.min, Math.min(track.max, val)) }].sort((a,b) => a.t - b.t);
             setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: newPoints } : tr));
-            setDraggingKeyframe({ index: newPoints.indexOf(newPoint), trackId: selectedTrackId });
         }
     };
 
@@ -165,18 +198,24 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         const ctx = canvasRef.current.getContext('2d'); const w = canvasRef.current.width, h = canvasRef.current.height;
         const track = advTracks.find(t => t.id === selectedTrackId);
         ctx.clearRect(0, 0, w, h); 
-        ctx.fillStyle = 'rgba(240, 240, 240, 0.5)'; ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT);
+        
+        ctx.fillStyle = 'rgba(245, 245, 245, 0.1)'; ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT);
         ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1; ctx.beginPath(); 
         for (let i = 0; i <= 10; i++) { const x = i * (w / 10); ctx.moveTo(x, RULER_HEIGHT); ctx.lineTo(x, h); } ctx.stroke();
+        
         ctx.beginPath(); ctx.strokeStyle = track.color; ctx.lineWidth = 3; track.points.forEach((p, i) => { 
             const x = p.t * w; const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
             if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); 
         }); ctx.stroke();
         track.points.forEach((p) => { 
             const x = p.t * w; const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
-            ctx.fillStyle = track.color; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); 
+            ctx.fillStyle = track.color; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); 
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); 
         });
-        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
+        
+        // 플레이헤드 빨간색 선 복구
+        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); 
+        ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
     }, [selectedTrackId, advTracks, playHeadPos]);
 
     return (
@@ -187,16 +226,22 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                         <svg viewBox="0 0 400 400" className="w-full h-full max-w-[380px] drop-shadow-2xl">
                             <path d="M 50 250 Q 50 100 200 100 Q 350 100 350 250 L 350 400 L 50 400 Z" fill="none" stroke="#e2e8f0" strokeWidth="4" />
                             <path d="M 350 220 Q 380 220 390 240" fill="none" stroke="#cbd5e1" strokeWidth="3" />
-                            <path d={`M 150 400 L 150 ${350 + liveTract.throat * 30}`} stroke="#0ea5e9" strokeWidth="22" strokeLinecap="round" opacity="0.9"/>
+                            {/* 파란색 목구멍 시각화 개선 */}
+                            <path d={`M 150 400 L 150 ${340 + (1 - liveTract.throat) * 40}`} stroke="#0ea5e9" strokeWidth={24 - liveTract.throat * 12} strokeLinecap="round" opacity="0.9"/>
+                            
                             <path d={`M 150 400 L 150 280 Q 150 150 250 150 Q 320 150 350 ${225 - liveTract.lips * 40} L 350 ${225 + liveTract.lips * 40} Q 320 350 250 350 Z`} fill="#f8fafc" stroke="#64748b" strokeWidth="3" />
                             <path d={`M 180 400 Q ${180 + liveTract.x * 160} ${330 - liveTract.y * 120} ${280 + liveTract.x * 50} ${250 + liveTract.y * 50}`} stroke="#f472b6" strokeWidth="18" strokeLinecap="round" fill="none" />
-                            <ellipse cx={350 + liveTract.lipLen * 20} cy="225" rx={15 + liveTract.lipLen * 20} ry={10 + liveTract.lips * 35} fill="#db2777" opacity="0.85" className="cursor-move hover:opacity-100" />
+                            
+                            {/* 입술 드래그 영역 인식 강화 */}
+                            <ellipse cx={350 + liveTract.lipLen * 20} cy="225" rx={20 + liveTract.lipLen * 20} ry={15 + liveTract.lips * 35} fill="#db2777" opacity="0.85" className="cursor-move hover:opacity-100" />
                         </svg>
                         <div className="absolute inset-0"
                             onMouseMove={(e) => {
                                 if (!dragPart) return; const rect = e.currentTarget.getBoundingClientRect();
-                                const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
-                                if (dragPart === 'lips') setLiveTract(p => ({...p, lipLen: nx, lips: ny})); else if (dragPart === 'tongue') setLiveTract(p => ({ ...p, x: nx, y: ny }));
+                                const nx = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                                const ny = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+                                if (dragPart === 'lips') setLiveTract(p => ({...p, lipLen: nx, lips: ny})); 
+                                else if (dragPart === 'tongue') setLiveTract(p => ({ ...p, x: nx, y: ny }));
                             }}
                             onMouseDown={(e) => {
                                 if (dragPart) return; setManualPose(true); const rect = e.currentTarget.getBoundingClientRect();
@@ -206,8 +251,8 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                             }}
                         />
                     </div>
-                    <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center font-bold">
-                        <div className="flex gap-2"><button onClick={handleSimUndo} disabled={simUndoStack.length === 0} className="p-2 bg-white rounded-xl border border-slate-300 disabled:opacity-30"><Undo2 size={18} /></button><button onClick={() => { pushSimUndo(); setAdvTracks(advTracks.map(t => ({ ...t, points: [{ t: 0, v: t.id==='pitch'?220:t.id==='volume'?1:0.5 }, { t: 1, v: t.id==='pitch'?220:t.id==='volume'?1:0.5 }] }))); setManualPose(false); }} className="p-2 bg-white rounded-xl border border-slate-300 text-red-500 font-bold"><RotateCcw size={18} /></button></div>
+                    <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                        <div className="flex gap-2"><button onClick={handleSimUndo} disabled={simUndoStack.length === 0} className="p-2 bg-white rounded-xl border border-slate-300 disabled:opacity-30"><Undo2 size={18} /></button><button onClick={() => { setAdvTracks(advTracks.map(t => ({ ...t, points: [{ t: 0, v: t.id==='pitch'?220:t.id==='volume'?1:0.5 }, { t: 1, v: t.id==='pitch'?220:t.id==='volume'?1:0.5 }] }))); setManualPose(false); }} className="p-2 bg-white rounded-xl border border-slate-300 text-red-500 font-bold"><RotateCcw size={18} /></button></div>
                         <div className="flex gap-2">
                              <button onClick={registerKeyframe} className="bg-[#209ad6] text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg flex items-center gap-2"><CircleDot size={16}/> 키프레임 등록</button>
                              <button onClick={handlePlayPauseSim} className="bg-white border border-slate-300 text-slate-700 px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm">{isAdvPlaying ? <Pause size={16}/> : <Play size={16}/>} {isAdvPlaying ? '중지' : '재생'}</button>
@@ -226,13 +271,13 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                                 <select value={synthType} onChange={e=>setSynthType(e.target.value)} className="w-24 text-[10px] p-1.5 rounded border border-slate-200"><option value="sawtooth">톱니파</option><option value="sine">사인파</option><option value="square">사각파</option><option value="triangle">삼각파</option><option value="noise">노이즈</option></select>
                                 <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="flex-1 text-[10px] p-1.5 rounded border border-slate-200"><option value="">기본 신디</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                              </div>
-                             <div className="flex justify-between items-center text-xs text-slate-500 font-black mt-2"><span>반복 횟수</span><input type="number" min="1" step="1" value={loopCount} onChange={e => setLoopCount(parseInt(e.target.value) || 1)} className="w-12 border rounded px-1 text-center font-sans font-bold"/></div>
+                             <div className="flex justify-between items-center text-xs text-slate-500 font-black mt-2 font-sans"><span>반복 횟수</span><input type="number" min="1" step="1" value={loopCount} onChange={e => setLoopCount(parseInt(e.target.value) || 1)} className="w-12 border rounded px-1 text-center font-sans font-bold"/></div>
                         </div>
                     </div>
                 </div>
             </div>
             <div className="h-48 bg-white/40 rounded-3xl border border-slate-300 p-3 flex flex-col gap-2 shadow-inner relative overflow-hidden font-sans font-bold">
-                <canvas ref={waveCanvasRef} width={1000} height={192} className="absolute inset-0 w-full h-full pointer-events-none opacity-90 z-0" />
+                <canvas ref={waveCanvasRef} width={1000} height={192} className="absolute inset-0 w-full h-full pointer-events-none z-0" />
                 <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar z-10">
                     {advTracks.map(t => <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-4 py-1.5 text-xs rounded-full border transition-all whitespace-nowrap ${selectedTrackId === t.id ? 'bg-[#209ad6] text-white border-[#209ad6] shadow-md' : 'bg-white/80 text-slate-500 border-slate-200 hover:border-slate-300 font-sans font-bold'}`}>{t.name}</button>)}
                 </div>
