@@ -3,6 +3,7 @@ import {
   Library, LayoutGrid, Mic2, Activity, 
   Undo2, Redo2, Save, Trash2, Download 
 } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 import FileRack from './components/FileRack';
 import StudioTab from './components/StudioTab';
 import ConsonantTab from './components/ConsonantTab';
@@ -63,6 +64,7 @@ export default function App() {
           <div className={`absolute inset-0 ${activeTab === 'simulator' ? 'block' : 'hidden'}`}><SimulatorTab files={files} onAddToRack={handleAddToRack} /></div>
         </div>
       </main>
+      <Analytics />
     </div>
   );
 }
