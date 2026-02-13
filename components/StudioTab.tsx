@@ -203,39 +203,82 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-2 font-bold font-sans">
                      <h4 className="text-[10px] font-black text-purple-500 uppercase flex items-center gap-2 font-black font-sans"><Sparkles size={14}/> 이펙트</h4>
                      <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-500 uppercase font-bold font-sans">
-                        <div><span>Reverb</span><input type="range" min="0" max="1" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-full h-1 accent-purple-400 font-bold"/></div>
-                        <div><span>Delay</span><input type="range" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1 accent-purple-400 font-bold"/></div>
-                        <div><span>Comp</span><input type="range" min="-60" max="0" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-full h-1 accent-blue-400 font-bold"/></div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>Reverb</span><input type="number" min="0" max="1" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
+                            <input type="range" min="0" max="1" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-full h-1 accent-purple-400 font-bold"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>Delay</span><input type="number" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
+                            <input type="range" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1 accent-purple-400 font-bold"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>Comp</span><input type="number" min="-60" max="0" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
+                            <input type="range" min="-60" max="0" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-full h-1 accent-blue-400 font-bold"/>
+                        </div>
                         <button onClick={async () => { if(!activeBuffer) return; pushUndo(); onUpdateFile(AudioUtils.reverseBuffer(audioContext, activeBuffer)); }} className="py-1 bg-slate-200 text-slate-600 rounded flex items-center justify-center gap-1 transition-all font-bold font-sans"><FlipHorizontal size={10}/> Reverse</button>
                      </div>
                 </div>
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-2 font-bold font-sans font-bold">
                     <h4 className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-2 font-black font-sans font-black font-sans"><Activity size={14}/> 포먼트 & 비브라토</h4>
                     <div className="space-y-1 font-sans font-bold text-slate-500 uppercase text-[9px] font-bold">
-                        <div className="flex justify-between font-black font-sans"><span>f1</span><span>{formant.f1}Hz</span></div>
-                        <div className="flex justify-between font-black font-sans"><span>f2</span><span>{formant.f2}Hz</span></div>
-                        <div className="flex justify-between font-black font-sans"><span>f3</span><span>{formant.f3}Hz</span></div>
-                        <input type="range" min="1" max="20" step="0.1" value={formant.resonance} onChange={e=>setFormant({...formant, resonance:Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded accent-pink-500 font-sans"/>
-                        <div className="flex justify-between text-yellow-600 mt-1 font-black font-sans"><span>Singer's Fmt</span><span>{singerFormantGain}dB</span></div>
-                        <input type="range" min="0" max="24" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded accent-yellow-500 font-sans"/>
-                        <div className="flex justify-between text-pink-500 mt-1 font-black font-sans"><span>Vibrato (Depth)</span><span>{vibDepth}</span></div>
-                        <input type="range" min="0" max="100" value={vibDepth} onChange={e=>setVibDepth(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded accent-pink-500 font-sans"/>
+                        <div className="space-y-0.5">
+                            <div className="flex justify-between items-center"><span>f1</span><input type="number" min="200" max="1200" value={formant.f1} onChange={e=>setFormant({...formant, f1: Number(e.target.value)})} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none"/></div>
+                            <input type="range" min="200" max="1200" step="10" value={formant.f1} onChange={e=>setFormant({...formant, f1: Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500"/>
+                        </div>
+                        <div className="space-y-0.5">
+                            <div className="flex justify-between items-center"><span>f2</span><input type="number" min="500" max="3000" value={formant.f2} onChange={e=>setFormant({...formant, f2: Number(e.target.value)})} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none"/></div>
+                            <input type="range" min="500" max="3000" step="10" value={formant.f2} onChange={e=>setFormant({...formant, f2: Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500"/>
+                        </div>
+                        <div className="space-y-0.5">
+                            <div className="flex justify-between items-center"><span>f3</span><input type="number" min="1500" max="4000" value={formant.f3} onChange={e=>setFormant({...formant, f3: Number(e.target.value)})} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none"/></div>
+                            <input type="range" min="1500" max="4000" step="10" value={formant.f3} onChange={e=>setFormant({...formant, f3: Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500"/>
+                        </div>
+                        <div className="space-y-0.5 pt-1 border-t border-slate-200/50">
+                             <div className="flex justify-between items-center"><span>Q</span><input type="number" min="0.1" max="20" step="0.1" value={formant.resonance} onChange={e=>setFormant({...formant, resonance: Number(e.target.value)})} className="w-8 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-pink-500 outline-none"/></div>
+                            <input type="range" min="0.1" max="20" step="0.1" value={formant.resonance} onChange={e=>setFormant({...formant, resonance:Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-pink-500"/>
+                        </div>
+                        <div className="space-y-0.5">
+                             <div className="flex justify-between items-center text-yellow-600"><span>Singer's</span><input type="number" min="0" max="24" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-8 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-yellow-500 outline-none"/></div>
+                            <input type="range" min="0" max="24" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded appearance-none accent-yellow-500"/>
+                        </div>
+                        <div className="space-y-0.5">
+                             <div className="flex justify-between items-center text-pink-500"><span>Vibrato</span><input type="number" min="0" max="100" value={vibDepth} onChange={e=>setVibDepth(Number(e.target.value))} className="w-8 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-pink-500 outline-none"/></div>
+                            <input type="range" min="0" max="100" value={vibDepth} onChange={e=>setVibDepth(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded appearance-none accent-pink-500"/>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-2 font-bold font-sans font-black font-bold">
                     <h4 className="text-[10px] font-black text-indigo-500 uppercase flex items-center gap-2 font-black font-sans font-bold"><SlidersHorizontal size={14}/> 밴드 EQ</h4>
                     <div className="space-y-3 uppercase font-black text-slate-500 text-[9px] font-bold font-sans">
-                        <div><div className="flex justify-between"><span>low</span><span>{eq.low}dB</span></div><input type="range" min="-24" max="24" value={eq.low} onChange={e=>setEq({...eq, low: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/></div>
-                        <div><div className="flex justify-between"><span>mid</span><span>{eq.mid}dB</span></div><input type="range" min="-24" max="24" value={eq.mid} onChange={e=>setEq({...eq, mid: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/></div>
-                        <div><div className="flex justify-between"><span>high</span><span>{eq.high}dB</span></div><input type="range" min="-24" max="24" value={eq.high} onChange={e=>setEq({...eq, high: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/></div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>low</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.low} onChange={e=>setEq({...eq, low: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>dB</span></div></div>
+                            <input type="range" min="-24" max="24" value={eq.low} onChange={e=>setEq({...eq, low: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>mid</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.mid} onChange={e=>setEq({...eq, mid: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>dB</span></div></div>
+                            <input type="range" min="-24" max="24" value={eq.mid} onChange={e=>setEq({...eq, mid: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>high</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.high} onChange={e=>setEq({...eq, high: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>dB</span></div></div>
+                            <input type="range" min="-24" max="24" value={eq.high} onChange={e=>setEq({...eq, high: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-3 font-bold font-sans font-black font-bold">
                     <h4 className="text-[10px] font-black text-pink-500 uppercase flex items-center gap-2 font-black font-sans font-bold"><Music size={14}/> 피치 & 젠더</h4>
                     <div className="space-y-2 text-[9px] uppercase font-black text-slate-500 font-bold font-sans font-bold">
-                        <div className="flex justify-between font-sans"><span>Pitch</span><span>{pitchCents}</span></div><input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1 accent-blue-500 font-sans transition-all"/>
-                        <div className="flex justify-between font-black font-sans"><span>Gender Shift</span><span>{genderShift.toFixed(2)}x</span></div><input type="range" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-full h-1 accent-pink-400 font-sans transition-all"/>
-                        <div className="flex justify-between font-black font-sans"><span>Volume</span><span>{Math.round(masterGain*100)}%</span></div><input type="range" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500 font-sans transition-all"/>
+                        <div>
+                            <div className="flex justify-between items-center"><span>Pitch</span><input type="number" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
+                            <input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1 accent-blue-500 font-sans transition-all"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>Gender</span><div className="flex items-center"><input type="number" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>x</span></div></div>
+                            <input type="range" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-full h-1 accent-pink-400 font-sans transition-all"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center"><span>Volume</span><div className="flex items-center"><input type="number" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>x</span></div></div>
+                            <input type="range" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500 font-sans transition-all"/>
+                        </div>
                     </div>
                     <div className="mt-auto flex gap-2 font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold"><button onClick={handleStop} className="p-2 bg-slate-200 rounded text-slate-600 transition-all font-bold hover:bg-slate-300 font-sans font-bold"><Square size={14} fill="currentColor"/></button><button onClick={handlePlayPause} className="flex-1 py-1.5 bg-[#209ad6] text-white rounded font-bold text-[10px] flex items-center justify-center gap-1 shadow-sm transition-all hover:bg-[#1a85b9] font-sans font-bold">{isPlaying ? <Pause size={12} fill="currentColor"/> : <Play size={12} fill="currentColor"/>} {isPlaying ? 'PAUSE' : 'PLAY'}</button></div>
                 </div>

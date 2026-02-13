@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Wand2, Play, Save, Sliders, Activity, Volume2, Waves, RotateCcw, Mic2 } from 'lucide-react';
+import { Wand2, Play, Save, Sliders, Activity, Volume2, Waves, RotateCcw, Mic2, FileAudio } from 'lucide-react';
+import { AudioFile } from '../types';
 
 interface ConsonantGeneratorTabProps {
   audioContext: AudioContext;
+  files: AudioFile[];
   onAddToRack: (buffer: AudioBuffer, name: string) => void;
 }
 
-const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioContext, onAddToRack }) => {
+const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioContext, files, onAddToRack }) => {
     // Envelope Params
     const [duration, setDuration] = useState(200); // Total duration in ms
     const [attack, setAttack] = useState(10); // ms
@@ -22,9 +24,13 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [noiseType, setNoiseType] = useState<'white' | 'pink'>('white');
 
     // Voice Source Params
+    const [baseSource, setBaseSource] = useState<'synth' | 'file'>('synth');
     const [sourceMix, setSourceMix] = useState(0); // 0 = Noise only, 1 = Voice only
     const [voiceFreq, setVoiceFreq] = useState(120);
     const [voiceWave, setVoiceWave] = useState<OscillatorType>('sawtooth');
+    
+    // File Source Params
+    const [selectedFileId, setSelectedFileId] = useState("");
 
     const [isPlaying, setIsPlaying] = useState(false);
     const [generatedBuffer, setGeneratedBuffer] = useState<AudioBuffer | null>(null);
@@ -33,6 +39,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
     // Preset configurations
     const loadPreset = (type: 's' | 'sh' | 't' | 'k' | 'h' | 'g' | 'n' | 'm' | 'z') => {
+        setBaseSource('synth');
         if(type === 's') {
             setFilterType('highpass'); setFrequency(4500); setQ(2); setDuration(250); setAttack(20); setDecay(50); setSustain(0.8); setRelease(100); setNoiseType('white'); setSourceMix(0);
         } else if (type === 'sh') {
@@ -65,49 +72,61 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         // Mix Node
         const mixNode = offline.createGain();
 
-        // 1. Noise Source
-        if (sourceMix < 1.0) {
-            const bufferSize = sr * totalDurationSec;
-            const buffer = offline.createBuffer(1, bufferSize, sr);
-            const data = buffer.getChannelData(0);
-            
-            if (noiseType === 'white') {
-                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-            } else {
-                // Pink Noise
-                let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
-                for (let i = 0; i < bufferSize; i++) {
-                    const white = Math.random() * 2 - 1;
-                    b0 = 0.99886 * b0 + white * 0.0555179;
-                    b1 = 0.99332 * b1 + white * 0.0750759;
-                    b2 = 0.96900 * b2 + white * 0.1538520;
-                    b3 = 0.86650 * b3 + white * 0.3104856;
-                    b4 = 0.55000 * b4 + white * 0.5329522;
-                    b5 = -0.7616 * b5 - white * 0.0168980;
-                    data[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-                    data[i] *= 0.11; 
-                    b6 = white * 0.115926;
+        if (baseSource === 'file') {
+             // File Source
+             const file = files.find(f => f.id === selectedFileId);
+             if (file?.buffer) {
+                 const src = offline.createBufferSource();
+                 src.buffer = file.buffer;
+                 src.connect(mixNode);
+                 src.start(0);
+             }
+        } else {
+             // Synth Source (Noise + Osc)
+            // 1. Noise Source
+            if (sourceMix < 1.0) {
+                const bufferSize = sr * totalDurationSec;
+                const buffer = offline.createBuffer(1, bufferSize, sr);
+                const data = buffer.getChannelData(0);
+                
+                if (noiseType === 'white') {
+                    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                } else {
+                    // Pink Noise
+                    let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
+                    for (let i = 0; i < bufferSize; i++) {
+                        const white = Math.random() * 2 - 1;
+                        b0 = 0.99886 * b0 + white * 0.0555179;
+                        b1 = 0.99332 * b1 + white * 0.0750759;
+                        b2 = 0.96900 * b2 + white * 0.1538520;
+                        b3 = 0.86650 * b3 + white * 0.3104856;
+                        b4 = 0.55000 * b4 + white * 0.5329522;
+                        b5 = -0.7616 * b5 - white * 0.0168980;
+                        data[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+                        data[i] *= 0.11; 
+                        b6 = white * 0.115926;
+                    }
                 }
+                const noiseSrc = offline.createBufferSource();
+                noiseSrc.buffer = buffer;
+                const noiseGain = offline.createGain();
+                noiseGain.gain.value = 1.0 - sourceMix;
+                noiseSrc.connect(noiseGain);
+                noiseGain.connect(mixNode);
+                noiseSrc.start(0);
             }
-            const noiseSrc = offline.createBufferSource();
-            noiseSrc.buffer = buffer;
-            const noiseGain = offline.createGain();
-            noiseGain.gain.value = 1.0 - sourceMix;
-            noiseSrc.connect(noiseGain);
-            noiseGain.connect(mixNode);
-            noiseSrc.start(0);
-        }
 
-        // 2. Voice Source (Oscillator)
-        if (sourceMix > 0.0) {
-            const osc = offline.createOscillator();
-            osc.type = voiceWave;
-            osc.frequency.value = voiceFreq;
-            const oscGain = offline.createGain();
-            oscGain.gain.value = sourceMix;
-            osc.connect(oscGain);
-            oscGain.connect(mixNode);
-            osc.start(0);
+            // 2. Voice Source (Oscillator)
+            if (sourceMix > 0.0) {
+                const osc = offline.createOscillator();
+                osc.type = voiceWave;
+                osc.frequency.value = voiceFreq;
+                const oscGain = offline.createGain();
+                oscGain.gain.value = sourceMix;
+                osc.connect(oscGain);
+                oscGain.connect(mixNode);
+                osc.start(0);
+            }
         }
 
         // Filter
@@ -123,9 +142,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         const tDec = decay / 1000;
         const tRel = release / 1000;
         
-        // Calculate sustain time
-        // Sustain duration is simply the gap between decay end and release start
-        // If total duration is too short, we cut off sustain.
         const decayEndTime = t0 + tAtt + tDec;
         const releaseStartTime = Math.max(decayEndTime, totalDurationSec - tRel);
 
@@ -214,12 +230,11 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             ctx.stroke();
         };
         draw();
-    }, [duration, attack, decay, sustain, release, filterType, frequency, Q, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer]);
+    }, [duration, attack, decay, sustain, release, filterType, frequency, Q, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId]);
 
-    // Invalidate buffer when params change
     useEffect(() => {
         setGeneratedBuffer(null);
-    }, [duration, attack, decay, sustain, release, filterType, frequency, Q, gain, noiseType, sourceMix, voiceFreq, voiceWave]);
+    }, [duration, attack, decay, sustain, release, filterType, frequency, Q, gain, noiseType, sourceMix, voiceFreq, voiceWave, baseSource, selectedFileId]);
 
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold">
@@ -253,50 +268,71 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                  </div>
 
                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-0">
-                    {/* Controls Column */}
                     <div className="lg:col-span-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2">
                         
-                        {/* Source Mix Section */}
+                        {/* Source Selection & Settings */}
                         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                             <h3 className="text-xs font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={14}/> 소스 믹스 (Source)</h3>
-                             <div className="space-y-4">
-                                <div className="space-y-1">
-                                    <div className="flex justify-between text-[10px] text-slate-500 font-bold">
-                                        <span className={sourceMix < 0.5 ? 'text-cyan-600' : ''}>Noise</span>
-                                        <span className={sourceMix > 0.5 ? 'text-indigo-600' : ''}>Voice</span>
-                                    </div>
-                                    <input type="range" min="0" max="1" step="0.05" value={sourceMix} onChange={e=>setSourceMix(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
-                                    <div className="flex justify-between text-[9px] text-slate-400">
-                                        <span>{Math.round((1-sourceMix)*100)}%</span>
-                                        <span>{Math.round(sourceMix*100)}%</span>
-                                    </div>
-                                </div>
-
-                                {/* Voice Settings - Show only if mix > 0 */}
-                                <div className={`space-y-3 transition-opacity ${sourceMix === 0 ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                                    <div className="flex gap-1">
-                                        {['sine', 'triangle', 'sawtooth', 'square'].map(t => (
-                                            <button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`flex-1 py-1 text-[8px] rounded border font-bold uppercase transition-all ${voiceWave===t ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-                                                {t.substr(0,3)}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <div className="space-y-1">
-                                        <div className="flex justify-between text-[10px] text-slate-500 font-bold"><span>Voice Pitch</span><span>{voiceFreq} Hz</span></div>
-                                        <input type="range" min="50" max="400" step="1" value={voiceFreq} onChange={e=>setVoiceFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
-                                    </div>
-                                </div>
-                                
-                                {/* Noise Settings - Show only if mix < 1 */}
-                                <div className={`flex gap-4 pt-1 border-t border-slate-100 transition-opacity ${sourceMix === 1 ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                                    <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
-                                        <input type="radio" checked={noiseType==='white'} onChange={()=>setNoiseType('white')} className="accent-cyan-500"/> White
-                                    </label>
-                                    <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
-                                        <input type="radio" checked={noiseType==='pink'} onChange={()=>setNoiseType('pink')} className="accent-cyan-500"/> Pink
-                                    </label>
+                             <div className="flex items-center justify-between">
+                                <h3 className="text-xs font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={14}/> 소스 (Source)</h3>
+                                <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                    <button onClick={()=>setBaseSource('synth')} className={`px-3 py-1 text-[9px] rounded-md font-bold transition-all ${baseSource==='synth'?'bg-white shadow text-slate-800':'text-slate-400'}`}>합성</button>
+                                    <button onClick={()=>setBaseSource('file')} className={`px-3 py-1 text-[9px] rounded-md font-bold transition-all ${baseSource==='file'?'bg-white shadow text-slate-800':'text-slate-400'}`}>파일</button>
                                 </div>
                              </div>
+
+                             {baseSource === 'synth' ? (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[10px] text-slate-500 font-bold">
+                                            <span className={sourceMix < 0.5 ? 'text-cyan-600' : ''}>Noise</span>
+                                            <span className={sourceMix > 0.5 ? 'text-indigo-600' : ''}>Voice</span>
+                                        </div>
+                                        <input type="range" min="0" max="1" step="0.05" value={sourceMix} onChange={e=>setSourceMix(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
+                                        <div className="flex justify-between text-[9px] text-slate-400">
+                                            <span>{Math.round((1-sourceMix)*100)}%</span>
+                                            <span>{Math.round(sourceMix*100)}%</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Voice Settings */}
+                                    <div className={`space-y-3 transition-opacity ${sourceMix === 0 ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                                        <div className="flex gap-1">
+                                            {['sine', 'triangle', 'sawtooth', 'square'].map(t => (
+                                                <button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`flex-1 py-1 text-[8px] rounded border font-bold uppercase transition-all ${voiceWave===t ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                                                    {t.substr(0,3)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="space-y-1">
+                                            <div className="flex justify-between text-[10px] text-slate-500 font-bold"><span>Voice Pitch</span><span>{voiceFreq} Hz</span></div>
+                                            <input type="range" min="50" max="400" step="1" value={voiceFreq} onChange={e=>setVoiceFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Noise Settings */}
+                                    <div className={`flex gap-4 pt-1 border-t border-slate-100 transition-opacity ${sourceMix === 1 ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                                        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
+                                            <input type="radio" checked={noiseType==='white'} onChange={()=>setNoiseType('white')} className="accent-cyan-500"/> White
+                                        </label>
+                                        <label className="flex items-center gap-2 text-[10px] font-bold text-slate-600 cursor-pointer">
+                                            <input type="radio" checked={noiseType==='pink'} onChange={()=>setNoiseType('pink')} className="accent-cyan-500"/> Pink
+                                        </label>
+                                    </div>
+                                </div>
+                             ) : (
+                                <div className="space-y-4 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1"><FileAudio size={12}/> 파일 선택</label>
+                                        <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded text-xs font-bold text-slate-700 outline-none focus:border-indigo-400">
+                                            <option value="">파일 선택 안 함</option>
+                                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                                        선택한 오디오 파일을 소스로 사용하여 필터와 엔벨로프를 적용합니다. 자음 샘플이나 타악기 소리를 불러와 가공해보세요.
+                                    </p>
+                                </div>
+                             )}
                         </div>
 
                         {/* Filter Section */}
@@ -359,7 +395,8 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                              <div className="absolute top-4 right-4 flex flex-col items-end gap-1">
                                 <span className="bg-black/50 text-white px-2 py-1 rounded text-[10px] backdrop-blur font-mono">{duration}ms</span>
                                 <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-[10px] backdrop-blur font-mono">{filterType.toUpperCase()} {frequency}Hz</span>
-                                {sourceMix > 0 && <span className="bg-black/50 text-indigo-400 px-2 py-1 rounded text-[10px] backdrop-blur font-mono">VOICE {voiceFreq}Hz</span>}
+                                {baseSource === 'synth' && sourceMix > 0 && <span className="bg-black/50 text-indigo-400 px-2 py-1 rounded text-[10px] backdrop-blur font-mono">VOICE {voiceFreq}Hz</span>}
+                                {baseSource === 'file' && <span className="bg-black/50 text-orange-400 px-2 py-1 rounded text-[10px] backdrop-blur font-mono">FILE SOURCE</span>}
                              </div>
                         </div>
                         <div className="h-20 bg-white rounded-2xl border border-slate-300 p-4 flex items-center justify-between shadow-sm">
