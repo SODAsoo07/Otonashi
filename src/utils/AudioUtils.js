@@ -1,5 +1,5 @@
 /**
- * OTONASHI Audio Engine Utils (v95 Optimized)
+ * OTONASHI Audio Engine Utils
  */
 
 export const cloneBuffer = (audioBuffer) => {
@@ -14,7 +14,36 @@ export const cloneBuffer = (audioBuffer) => {
   return newBuffer;
 };
 
-// 고속 렌더링 헬퍼
+// 빌드 에러 해결: reverseBuffer 추가
+export const reverseBuffer = (buffer) => {
+  const newBuffer = cloneBuffer(buffer);
+  for (let i = 0; i < newBuffer.numberOfChannels; i++) {
+    newBuffer.getChannelData(i).reverse();
+  }
+  return newBuffer;
+};
+
+// 빌드 에러 해결: concatBuffers 추가 (SimulatorTab에서 사용)
+export const concatBuffers = (buffer1, buffer2, audioCtx) => {
+  if (!buffer1) return buffer2;
+  if (!buffer2) return buffer1;
+  
+  const numberOfChannels = Math.max(buffer1.numberOfChannels, buffer2.numberOfChannels);
+  const tmpCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  const newBuffer = tmpCtx.createBuffer(
+    numberOfChannels,
+    buffer1.length + buffer2.length,
+    buffer1.sampleRate
+  );
+
+  for (let i = 0; i < numberOfChannels; i++) {
+    const channelData = newBuffer.getChannelData(i);
+    if (i < buffer1.numberOfChannels) channelData.set(buffer1.getChannelData(i), 0);
+    if (i < buffer2.numberOfChannels) channelData.set(buffer2.getChannelData(i), buffer1.length);
+  }
+  return newBuffer;
+};
+
 const renderEffect = async (sourceBuffer, effectChainFn) => {
   const offlineCtx = new OfflineAudioContext(
     sourceBuffer.numberOfChannels,
@@ -69,37 +98,21 @@ export const applyDelay = async (buffer, time = 0.3, feedback = 0.4) => {
   });
 };
 
-// WAV 다운로드 (Worker 활용)
 export const downloadWav = (buffer, filename = "otonashi_export.wav") => {
-  // 복수 채널 데이터를 단일 평면 배열로 병합 (Interleaved PCM)
   const numChannels = buffer.numberOfChannels;
   const length = buffer.length * numChannels;
   const result = new Float32Array(length);
-  
   for (let i = 0; i < buffer.numberOfChannels; i++) {
     const channelData = buffer.getChannelData(i);
-    for (let j = 0; j < buffer.length; j++) {
-      result[j * numChannels + i] = channelData[j];
-    }
+    for (let j = 0; j < buffer.length; j++) result[j * numChannels + i] = channelData[j];
   }
-
-  // Vite 전용 워커 로드 방식
   const worker = new Worker(new URL('./wavWorker.js', import.meta.url), { type: 'module' });
-  
-  worker.postMessage({
-    bufferData: result,
-    numChannels: numChannels,
-    sampleRate: buffer.sampleRate
-  }, [result.buffer]);
-
+  worker.postMessage({ bufferData: result, numChannels, sampleRate: buffer.sampleRate }, [result.buffer]);
   worker.onmessage = (e) => {
     const blob = new Blob([e.data], { type: 'audio/wav' });
     const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    worker.terminate();
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url); worker.terminate();
   };
 };
