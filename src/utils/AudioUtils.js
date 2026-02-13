@@ -1,7 +1,3 @@
-/**
- * OTONASHI Audio Engine Utils (v95 Optimized)
- */
-
 export const cloneBuffer = (audioBuffer) => {
   const newBuffer = new AudioBuffer({
     length: audioBuffer.length,
@@ -14,7 +10,6 @@ export const cloneBuffer = (audioBuffer) => {
   return newBuffer;
 };
 
-// 빌드 에러 해결: reverseBuffer
 export const reverseBuffer = (buffer) => {
   const newBuffer = cloneBuffer(buffer);
   for (let i = 0; i < newBuffer.numberOfChannels; i++) {
@@ -23,7 +18,6 @@ export const reverseBuffer = (buffer) => {
   return newBuffer;
 };
 
-// 빌드 에러 해결: concatBuffers (SimulatorTab 연동)
 export const concatBuffers = (audioCtx, buffer1, buffer2) => {
   if (!buffer1) return buffer2;
   if (!buffer2) return buffer1;
@@ -41,7 +35,6 @@ export const concatBuffers = (audioCtx, buffer1, buffer2) => {
   return newBuffer;
 };
 
-// 고속 렌더링 래퍼
 const renderEffect = async (sourceBuffer, effectChainFn) => {
   const offlineCtx = new OfflineAudioContext(
     sourceBuffer.numberOfChannels,
@@ -70,8 +63,7 @@ export const applyReverb = async (buffer, wetLevel = 0.3) => {
     convolver.buffer = impulse;
     dry.gain.value = 1 - wetLevel;
     wet.gain.value = wetLevel;
-    source.connect(dry);
-    source.connect(convolver);
+    source.connect(dry); source.connect(convolver);
     convolver.connect(wet);
     const out = ctx.createGain();
     dry.connect(out); wet.connect(out);
@@ -85,12 +77,9 @@ export const applyDelay = async (buffer, time = 0.3, feedback = 0.4) => {
     delay.delayTime.value = time;
     const fb = ctx.createGain();
     fb.gain.value = feedback;
-    source.connect(delay);
-    delay.connect(fb);
-    fb.connect(delay);
+    source.connect(delay); delay.connect(fb); fb.connect(delay);
     const out = ctx.createGain();
-    source.connect(out);
-    delay.connect(out);
+    source.connect(out); delay.connect(out);
     return out;
   });
 };
