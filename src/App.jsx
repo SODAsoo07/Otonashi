@@ -45,21 +45,21 @@ const App = () => {
     }));
   }, []);
 
-  const handleUndo = useCallback((id) => {
+  const handleUndo = (id) => {
     setFiles(prev => prev.map(f => {
       if (f.id !== id || f.historyIndex <= 0) return f;
       const newIdx = f.historyIndex - 1;
       return { ...f, buffer: f.history[newIdx].data, historyIndex: newIdx };
     }));
-  }, []);
+  };
 
-  const handleRedo = useCallback((id) => {
+  const handleRedo = (id) => {
     setFiles(prev => prev.map(f => {
       if (f.id !== id || !f.history || f.historyIndex >= f.history.length - 1) return f;
       const newIdx = f.historyIndex + 1;
       return { ...f, buffer: f.history[newIdx].data, historyIndex: newIdx };
     }));
-  }, []);
+  };
 
   const exportProject = async () => {
     const data = {
@@ -113,16 +113,16 @@ const App = () => {
             <span className="text-[8px] text-slate-400 font-bold uppercase tracking-tight">Vocal-Tract Workstation</span>
           </div>
         </div>
-        <nav className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-          <button onClick={()=>setActiveTab('editor')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab==='editor'?'bg-white text-[#209ad6] shadow-sm border border-slate-200 font-sans font-bold':'text-slate-500 hover:text-slate-800'}`}>스튜디오</button>
-          <button onClick={()=>setActiveTab('consonant')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab==='consonant'?'bg-white text-[#209ad6] shadow-sm border border-slate-200 font-sans font-bold':'text-slate-500 hover:text-slate-800'}`}>자음 합성</button>
-          <button onClick={()=>setActiveTab('sim')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all ${activeTab==='sim'?'bg-white text-[#209ad6] shadow-sm border border-slate-200 font-sans font-bold':'text-slate-500 hover:text-slate-800'}`}>시뮬레이터</button>
+        <nav className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 font-black">
+          <button onClick={()=>setActiveTab('editor')} className={`px-5 py-2 rounded-lg text-sm transition-all ${activeTab==='editor'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>스튜디오</button>
+          <button onClick={()=>setActiveTab('consonant')} className={`px-5 py-2 rounded-lg text-sm transition-all ${activeTab==='consonant'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>자음 합성</button>
+          <button onClick={()=>setActiveTab('sim')} className={`px-5 py-2 rounded-lg text-sm transition-all ${activeTab==='sim'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>시뮬레이터</button>
         </nav>
-        <div className="flex items-center gap-3 font-bold font-sans">
-          <button onClick={() => setShowHistory(true)} className="flex items-center gap-1 p-2.5 bg-slate-100 border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] hover:bg-white shadow-sm transition-all"><History size={18}/> <span className="text-xs hidden md:inline font-black">History</span></button>
-          <button onClick={exportProject} className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] shadow-sm transition-all font-sans font-black"><DownloadCloud size={20}/></button>
-          <label className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] shadow-sm cursor-pointer transition-all font-sans font-bold"><UploadCloud size={20}/><input type="file" className="hidden" accept=".json" onChange={importProject}/></label>
-          <button onClick={() => setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors font-sans"><Settings size={22}/></button>
+        <div className="flex items-center gap-3 font-bold">
+          <button onClick={() => setShowHistory(true)} className="flex items-center gap-1 p-2.5 bg-slate-100 border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] hover:bg-white shadow-sm transition-all"><History size={18}/> <span className="text-xs hidden md:inline">History</span></button>
+          <button onClick={exportProject} className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] shadow-sm transition-all"><DownloadCloud size={20}/></button>
+          <label className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] shadow-sm cursor-pointer transition-all"><UploadCloud size={20}/><input type="file" className="hidden" accept=".json" onChange={importProject}/></label>
+          <button onClick={() => setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors"><Settings size={22}/></button>
           <div className="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner font-sans font-black transition-all font-sans font-bold"><User size={24} className="text-slate-400 font-sans font-black"/></div>
         </div>
       </header>
