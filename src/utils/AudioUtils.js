@@ -1,5 +1,5 @@
 /**
- * OTONASHI Audio Engine Utils
+ * OTONASHI Audio Engine Utils (v95 Optimized)
  */
 
 export const cloneBuffer = (audioBuffer) => {
@@ -14,7 +14,7 @@ export const cloneBuffer = (audioBuffer) => {
   return newBuffer;
 };
 
-// 빌드 에러 해결: reverseBuffer 추가
+// 빌드 에러 해결: reverseBuffer
 export const reverseBuffer = (buffer) => {
   const newBuffer = cloneBuffer(buffer);
   for (let i = 0; i < newBuffer.numberOfChannels; i++) {
@@ -23,19 +23,16 @@ export const reverseBuffer = (buffer) => {
   return newBuffer;
 };
 
-// 빌드 에러 해결: concatBuffers 추가 (SimulatorTab에서 사용)
-export const concatBuffers = (buffer1, buffer2, audioCtx) => {
+// 빌드 에러 해결: concatBuffers (SimulatorTab 연동)
+export const concatBuffers = (audioCtx, buffer1, buffer2) => {
   if (!buffer1) return buffer2;
   if (!buffer2) return buffer1;
-  
   const numberOfChannels = Math.max(buffer1.numberOfChannels, buffer2.numberOfChannels);
-  const tmpCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-  const newBuffer = tmpCtx.createBuffer(
+  const newBuffer = audioCtx.createBuffer(
     numberOfChannels,
     buffer1.length + buffer2.length,
     buffer1.sampleRate
   );
-
   for (let i = 0; i < numberOfChannels; i++) {
     const channelData = newBuffer.getChannelData(i);
     if (i < buffer1.numberOfChannels) channelData.set(buffer1.getChannelData(i), 0);
@@ -44,6 +41,7 @@ export const concatBuffers = (buffer1, buffer2, audioCtx) => {
   return newBuffer;
 };
 
+// 고속 렌더링 래퍼
 const renderEffect = async (sourceBuffer, effectChainFn) => {
   const offlineCtx = new OfflineAudioContext(
     sourceBuffer.numberOfChannels,
@@ -76,8 +74,7 @@ export const applyReverb = async (buffer, wetLevel = 0.3) => {
     source.connect(convolver);
     convolver.connect(wet);
     const out = ctx.createGain();
-    dry.connect(out);
-    wet.connect(out);
+    dry.connect(out); wet.connect(out);
     return out;
   });
 };
@@ -102,7 +99,7 @@ export const downloadWav = (buffer, filename = "otonashi_export.wav") => {
   const numChannels = buffer.numberOfChannels;
   const length = buffer.length * numChannels;
   const result = new Float32Array(length);
-  for (let i = 0; i < buffer.numberOfChannels; i++) {
+  for (let i = 0; i < numChannels; i++) {
     const channelData = buffer.getChannelData(i);
     for (let j = 0; j < buffer.length; j++) result[j * numChannels + i] = channelData[j];
   }
