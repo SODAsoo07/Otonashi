@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { 
-  FolderAudio, LayoutGrid, Mic2, Activity, 
+  Library, LayoutGrid, Mic2, Activity, // FolderAudio -> Library 변경
   Undo2, Redo2, Save, Trash2, Download 
 } from 'lucide-react';
 import FileRack from './components/FileRack';
@@ -42,11 +42,10 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
-      {/* Sidebar */}
       <aside className="w-64 border-r border-slate-800 bg-slate-900/50 flex flex-col">
         <div className="p-4 flex items-center gap-2 border-b border-slate-800">
-          <FolderAudio className="text-blue-400" size={20} />
-          <h1 className="font-bold tracking-tighter text-lg underline decoration-blue-500/50">OTONASHI <span className="text-[10px] opacity-50">v95</span></h1>
+          <Library className="text-blue-400" size={20} /> {/* FolderAudio 대신 Library 사용 */}
+          <h1 className="font-bold tracking-tighter text-lg">OTONASHI <span className="text-[10px] opacity-50">v95</span></h1>
         </div>
         
         <div className="flex-1 overflow-y-auto">
