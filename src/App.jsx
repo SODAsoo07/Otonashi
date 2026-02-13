@@ -129,7 +129,7 @@ const App = () => {
       <main className="flex-1 flex overflow-hidden">
         <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={async (e) => { if (!audioContext) return; for (const file of Array.from(e.target.files)) { const buffer = await audioContext.decodeAudioData(await file.arrayBuffer()); addToRack(buffer, file.name); } }} removeFile={useCallback((id)=>setFiles(p=>p.filter(f=>f.id!==id)), [])} renameFile={useCallback((id, n)=>setFiles(p=>p.map(f=>f.id===id?{...f, name:n}:f)), [])} />
         <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto relative shadow-inner">
-          <div className={activeTab === 'editor' ? 'block h-full' : 'hidden'}><StudioTab audioContext={audioContext} activeFile={activeFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} onEdit={handleFileEdit} onUndo={handleUndo} onRedo={handleRedo} /></div>
+          <div className={activeTab === 'editor' ? 'block h-full' : 'hidden'}><StudioTab audioContext={audioContext} activeFile={activeFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} onEdit={handleFileEdit} onUndo={handleUndo} onRedo={handleRedo} onJumpHistory={handleJumpHistory} /></div>
           <div className={activeTab === 'consonant' ? 'block h-full' : 'hidden'}><ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} /></div>
           <div className={activeTab === 'sim' ? 'block h-full' : 'hidden'}><SimulatorTab audioContext={audioContext} files={files} onAddToRack={addToRack} /></div>
         </div>
