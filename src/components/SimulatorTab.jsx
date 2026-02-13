@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Undo2, RotateCcw, CircleDot, Pause, Play, LogIn, Sliders, X, Check } from 'lucide-react';
-import { AudioUtils } from '../utils/AudioUtils';
+import * as AudioUtils from '../utils/AudioUtils';
 
 const BASE_DURATION = 2.0;
 const RULER_HEIGHT = 24;
