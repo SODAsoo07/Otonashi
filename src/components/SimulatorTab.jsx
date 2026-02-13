@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Undo2, Redo2, RotateCcw, CircleDot, Pause, Play, LogIn, Sliders, X, Check, History } from 'lucide-react';
+import { Undo2, RotateCcw, CircleDot, Pause, Play, LogIn, Sliders } from 'lucide-react';
 import { AudioUtils } from '../utils/AudioUtils';
-
 
 const BASE_DURATION = 2.0;
 const RULER_HEIGHT = 24;
@@ -57,7 +56,7 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                 case 'volume': val = liveTract.volume; break;
                 default: return tr;
             }
-            const idx = tr.points.findIndex(p => Math.abs(p.t - playHeadPos) < 0.02);
+            const threshold = 0.02; const idx = tr.points.findIndex(p => Math.abs(p.t - playHeadPos) < threshold);
             let n = [...tr.points]; if (idx !== -1) n[idx] = { ...n[idx], v: val }; else { n.push({ t: playHeadPos, v: val }); n.sort((a,b) => a.t - b.t); }
             return { ...tr, points: n };
         }));
@@ -122,7 +121,7 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
         if(!analyserRef.current || !waveCanvasRef.current) return;
         const data = new Uint8Array(analyserRef.current.frequencyBinCount); analyserRef.current.getByteTimeDomainData(data);
         const ctx = waveCanvasRef.current.getContext('2d'); const w = waveCanvasRef.current.width, h = waveCanvasRef.current.height;
-        ctx.clearRect(0,0,w,h); ctx.lineWidth=2; ctx.strokeStyle='#94a3b8'; ctx.beginPath();
+        ctx.clearRect(0,0,w,h); ctx.lineWidth=4; ctx.strokeStyle='#3b82f6'; ctx.beginPath();
         const slice = w * 1.0 / data.length; let x = 0;
         for(let i=0; i<data.length; i++) { const v = data[i]/128.0; const y = v*h/2; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); x+=slice; } ctx.stroke();
     };
@@ -154,7 +153,7 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
 
     return (
         <div className="flex-1 flex flex-col p-4 gap-4 animate-in fade-in overflow-hidden font-sans bg-slate-50 font-bold" onMouseUp={() => { setDragPart(null); }}>
-            <div className="flex-[3] flex gap-4 min-h-0 overflow-hidden font-sans">
+            <div className="flex-[3] flex gap-4 min-h-0 overflow-hidden">
                 <div className="flex-1 bg-white rounded-2xl border border-slate-300 relative overflow-hidden shadow-sm flex flex-col">
                     <div className="flex-1 relative flex items-center justify-center p-4 bg-slate-100/50">
                         <svg viewBox="0 0 400 400" className="w-full h-full max-w-[380px] drop-shadow-2xl">
@@ -180,7 +179,7 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                         />
                     </div>
                     <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center font-bold">
-                        <div className="flex gap-2"><button onClick={handleSimUndo} disabled={simUndoStack.length === 0} className="p-2 bg-white rounded-xl border border-slate-300 disabled:opacity-30"><Undo2 size={18} /></button><button onClick={() => { pushSimUndo(); setAdvTracks(prev => prev.map(t => ({ ...t, points: [{ t: 0, v: t.id === 'pitch' ? 220 : t.id === 'volume' ? 1 : 0.5 }, { t: 1, v: t.id === 'pitch' ? 220 : t.id === 'volume' ? 1 : 0.5 }] }))); setManualPose(false); }} className="p-2 bg-white rounded-xl border border-slate-300 text-red-500 font-bold"><RotateCcw size={18} /></button></div>
+                        <div className="flex gap-2"><button onClick={handleSimUndo} disabled={simUndoStack.length === 0} className="p-2 bg-white rounded-xl border border-slate-300 disabled:opacity-30"><Undo2 size={18} /></button><button onClick={() => { pushSimUndo(); setAdvTracks(prev => prev.map(t => ({ ...t, points: [{ t: 0, v: t.id === 'pitch' ? 220 : t.id === 'volume' ? 1 : 0.5 }, { t: 1, v: t.id === 'pitch' ? 220 : t.id === 'volume' ? 1 : 0.5 }] }))); setManualPose(false); }} className="p-2 bg-white rounded-xl border border-slate-300 text-red-500 font-bold font-sans"><RotateCcw size={18} /></button></div>
                         <div className="flex gap-2">
                             <button onClick={registerKeyframe} className="bg-[#209ad6] text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-lg active:scale-95 transition-all flex items-center gap-2"><CircleDot size={16} /> 키프레임 등록</button>
                             <button onClick={handlePlayPauseSim} className="bg-white border border-slate-300 text-slate-700 px-5 py-2.5 rounded-xl font-bold text-xs shadow-sm active:scale-95 transition-all flex items-center gap-2">{isAdvPlaying ? <Pause size={16} /> : <Play size={16} />} {isAdvPlaying ? '중지' : '재생'}</button>
@@ -189,14 +188,14 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                     </div>
                 </div>
                 <div className="w-72 bg-white/40 rounded-2xl border border-slate-300 p-3 flex flex-col gap-4 overflow-y-auto custom-scrollbar font-bold">
-                    <h3 className="font-black text-slate-600 uppercase tracking-widest flex items-center gap-2 text-xs"><Sliders size={18} className="text-[#209ad6]" /> 파라미터</h3>
+                    <h3 className="font-black text-slate-600 uppercase tracking-widest flex items-center gap-2 text-xs font-sans"><Sliders size={18} className="text-[#209ad6]"/> 파라미터</h3>
                     <div className="space-y-3">
-                        <div className="flex gap-2 mb-2 font-sans">{['A','E','I','O','U'].map(v => <button key={v} onClick={() => applyPreset(v)} className="flex-1 h-8 rounded-lg bg-white border border-slate-300 font-bold text-xs hover:bg-[#209ad6] hover:text-white transition-all">{v}</button>)}</div>
+                        <div className="flex gap-2 mb-2">{['A','E','I','O','U'].map(v => <button key={v} onClick={() => applyPreset(v)} className="flex-1 h-8 rounded-lg bg-white border border-slate-300 font-bold text-xs hover:bg-[#209ad6] hover:text-white transition-all">{v}</button>)}</div>
                         <div className="space-y-1 mb-2 font-sans"><div className="flex justify-between text-xs text-slate-700 font-black"><span>음량</span><span>{Math.round(liveTract.volume * 100)}%</span></div><input type="range" min="0" max="2" step="0.01" value={liveTract.volume} onChange={e => { setManualPose(true); setLiveTract(prev => ({ ...prev, volume: Number(e.target.value) })); }} className="w-full h-1.5 bg-slate-300 rounded-full accent-emerald-500" /></div>
                         {[{id:'lips',label:'입술 열기'},{id:'lipLen',label:'입술 길이'},{id:'throat',label:'목 조임'},{id:'nasal',label:'비성'}].map(p => (<div key={p.id} className="space-y-1 font-sans"><div className="flex justify-between text-xs text-slate-500 font-black"><span>{p.label}</span><span>{Math.round(liveTract[p.id]*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value={liveTract[p.id]} onChange={e=>{setManualPose(true); setLiveTract(prev=>({...prev,[p.id]:Number(e.target.value)}));}} className="w-full h-1 bg-slate-300 rounded-full accent-[#209ad6]" /></div>))}
-                        <div className="pt-2 border-t border-slate-200 font-sans font-bold">
+                        <div className="pt-2 border-t border-slate-200">
                              <div className="flex justify-between text-xs font-black text-slate-400 uppercase tracking-widest mb-1"><span>소스 설정</span></div>
-                             <div className="flex gap-2">
+                             <div className="flex gap-2 font-sans">
                                 <select value={synthType} onChange={e=>setSynthType(e.target.value)} className="w-24 text-[10px] p-1.5 rounded border border-slate-200"><option value="sawtooth">톱니파</option><option value="sine">사인파</option><option value="square">사각파</option><option value="triangle">삼각파</option><option value="noise">노이즈</option></select>
                                 <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="flex-1 text-[10px] p-1.5 rounded border border-slate-200"><option value="">기본 신디</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                              </div>
@@ -206,9 +205,9 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                 </div>
             </div>
             <div className="h-48 bg-white/40 rounded-3xl border border-slate-300 p-3 flex flex-col gap-2 shadow-inner relative overflow-hidden font-sans font-bold">
-                <canvas ref={waveCanvasRef} width={1000} height={192} className="absolute inset-0 w-full h-full pointer-events-none opacity-20 z-0" />
+                <canvas ref={waveCanvasRef} width={1000} height={192} className="absolute inset-0 w-full h-full pointer-events-none opacity-80 z-0" />
                 <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar z-10">
-                    {advTracks.map(t => <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-4 py-1.5 text-xs font-black rounded-full border transition-all whitespace-nowrap ${selectedTrackId === t.id ? 'bg-[#209ad6] text-white border-[#209ad6] shadow-md' : 'bg-white/80 text-slate-500 border-slate-200 hover:border-slate-300'}`}>{t.name}</button>)}
+                    {advTracks.map(t => <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-4 py-1.5 text-xs rounded-full border transition-all whitespace-nowrap font-sans font-black ${selectedTrackId === t.id ? 'bg-[#209ad6] text-white border-[#209ad6] shadow-md font-sans font-bold' : 'bg-white/80 text-slate-500 border-slate-200 hover:border-slate-300'}`}>{t.name}</button>)}
                 </div>
                 <div className="flex-1 rounded-2xl border border-slate-200 relative overflow-hidden z-10 bg-white/50 backdrop-blur-[1px]" onContextMenu={e=>e.preventDefault()}>
                     <canvas ref={canvasRef} width={1000} height={150} className="w-full h-full cursor-crosshair font-black" 
@@ -220,105 +219,22 @@ export const SimulatorTab = ({ audioContext, files, onAddToRack }) => {
                             if(hitIdx!==-1) setDraggingKeyframe({ index: hitIdx, trackId: selectedTrackId });
                             else { const nv = track.min+(1-(my-RULER_HEIGHT)/(150-RULER_HEIGHT))*(track.max-track.min); setAdvTracks(prev=>prev.map(tr=>tr.id===selectedTrackId?{...tr,points:[...tr.points, {t,v:nv}].sort((a,b)=>a.t-b.t)}:tr)); }
                         }}
+                        onMouseMove={(e)=> {
+                            if(!draggingKeyframe) return; const rect = canvasRef.current.getBoundingClientRect(); const mx = (e.clientX-rect.left)*(1000/rect.width), my = (e.clientY-rect.top)*(150/rect.height);
+                            const t = Math.max(0, Math.min(1, mx / 1000)); const track = advTracks.find(tr => tr.id === draggingKeyframe.trackId);
+                            const nv = Math.max(track.min, Math.min(track.max, track.min+(1-(my-RULER_HEIGHT)/(150-RULER_HEIGHT))*(track.max-track.min)));
+                            setAdvTracks(prev=>prev.map(tr=>tr.id===draggingKeyframe.trackId?{...tr,points:tr.points.map((p,i)=>i===draggingKeyframe.index?{t,v:nv}:p).sort((a,b)=>a.t-b.t)}:tr));
+                        }}
+                        onMouseUp={()=>setDraggingKeyframe(null)}
+                        onContextMenu={(e)=> {
+                            e.preventDefault(); const rect = canvasRef.current.getBoundingClientRect(); const mx = (e.clientX-rect.left)*(1000/rect.width), my = (e.clientY-rect.top)*(150/rect.height);
+                            const track = advTracks.find(tr => tr.id === selectedTrackId);
+                            const hitIdx = track.points.findIndex(p => Math.hypot(p.t*1000-mx, RULER_HEIGHT+(1-(p.v-track.min)/(track.max-track.min))*(150-RULER_HEIGHT)-my) < 15);
+                            if(hitIdx!==-1 && track.points.length > 2) setAdvTracks(prev=>prev.map(tr=>tr.id===selectedTrackId?{...tr,points:tr.points.filter((_,i)=>i!==hitIdx)}:tr));
+                        }}
                     />
                 </div>
             </div>
         </div>
     );
 };
-
-// ==========================================
-// 6. Main App Component
-// ==========================================
-
-const App = () => {
-    const [audioContext, setAudioContext] = useState(null);
-    const [files, setFiles] = useState([]);
-    const [activeFileId, setActiveFileId] = useState(null);
-    const [activeTab, setActiveTab] = useState('editor');
-    const [showHelp, setShowHelp] = useState(false);
-    const [showHistory, setShowHistory] = useState(false);
-
-    useEffect(() => { if (typeof window !== 'undefined') { const Ctx = window.AudioContext || window.webkitAudioContext; if (Ctx) setAudioContext(new Ctx()); } }, []);
-
-    const addToRack = (buffer, name) => { 
-        const newFile = { id: Math.random().toString(36).substr(2, 9), name: name || "새 오디오", buffer, history: [{ label: "원본", data: buffer, timestamp: Date.now() }], historyIndex: 0 }; 
-        setFiles(prev => [...prev, newFile]); setActiveFileId(newFile.id); 
-    };
-
-    const handleFileEdit = (id, newBuffer, label) => {
-        setFiles(prev => prev.map(f => {
-            if (f.id !== id) return f;
-            const currentHistory = f.history.slice(0, f.historyIndex + 1);
-            const newHistory = [...currentHistory, { label, data: newBuffer, timestamp: Date.now() }];
-            if (newHistory.length > 20) newHistory.shift();
-            return { ...f, buffer: newBuffer, history: newHistory, historyIndex: newHistory.length - 1 };
-        }));
-    };
-
-    const handleUndo = (id) => { setFiles(prev => prev.map(f => { if (f.id !== id || f.historyIndex <= 0) return f; const newIndex = f.historyIndex - 1; return { ...f, buffer: f.history[newIndex].data, historyIndex: newIndex }; })); };
-    const handleRedo = (id) => { setFiles(prev => prev.map(f => { if (f.id !== id || f.historyIndex >= f.history.length - 1) return f; const newIndex = f.historyIndex + 1; return { ...f, buffer: f.history[newIndex].data, historyIndex: newIndex }; })); };
-
-    const handleFileUpload = async (e) => { if(!audioContext) return; for(const file of Array.from(e.target.files)) { const buffer = await audioContext.decodeAudioData(await file.arrayBuffer()); addToRack(buffer, file.name); } };
-
-    const exportProject = async () => {
-        const data = { files: await Promise.all(files.map(async f => ({ id: f.id, name: f.name, history: f.history.map(h => ({ label: h.label, timestamp: h.timestamp, data: AudioUtils.serializeBuffer(h.data) })), historyIndex: f.historyIndex }))), exportDate: new Date().toISOString() };
-        const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
-        const a = document.createElement('a'); a.href = url; a.download = `otonashi_project.json`; a.click();
-    };
-
-    const importProject = async (e) => {
-        const file = e.target.files[0]; if(!file || !audioContext) return;
-        const reader = new FileReader(); reader.onload = async (re) => {
-            try {
-                const data = JSON.parse(re.target.result);
-                const loaded = await Promise.all(data.files.map(async f => {
-                    const h = await Promise.all(f.history.map(async item => ({ label: item.label, timestamp: item.timestamp, data: await AudioUtils.deserializeBuffer(audioContext, item.data) })));
-                    return { id: f.id, name: f.name, buffer: h[f.historyIndex].data, history: h, historyIndex: f.historyIndex };
-                }));
-                setFiles(loaded); if (loaded.length > 0) setActiveFileId(loaded[0].id);
-            } catch (err) { alert("파일을 불러올 수 없습니다."); }
-        }; reader.readAsText(file);
-    };
-
-    const activeFile = files.find(f => f.id === activeFileId);
-
-    return (
-        <div className="h-screen w-full bg-[#f8f8f6] text-[#1f1e1d] flex flex-col font-sans overflow-hidden font-sans font-bold">
-            {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
-            {showHistory && activeFile && <HistoryModal history={activeFile.history} currentIndex={activeFile.historyIndex} onJump={(idx) => { setFiles(prev=>prev.map(f=>f.id===activeFile.id?{...f,buffer:f.history[idx].data,historyIndex:idx}:f)); setShowHistory(false); }} onClose={() => setShowHistory(false)} />}
-            <style>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }`}</style>
-            <header className="h-14 border-b border-slate-300 bg-white flex items-center justify-between px-6 shrink-0 z-10 shadow-sm font-sans">
-                <div className="flex items-center gap-3">
-                    <div className="bg-[#209ad6] p-1.5 rounded-lg text-white shadow-lg"><Activity size={24}/></div>
-                    <div className="flex flex-col font-bold font-sans">
-                        <h1 className="font-black text-2xl tracking-tighter leading-none bg-clip-text text-transparent bg-gradient-to-r from-[#b2d4ed] via-[#3c78e8] to-[#e3daf5] font-sans">OTONASHI</h1>
-                        <span className="text-[8px] text-slate-400 font-bold uppercase tracking-tight">AUgmented vocal-TracT and Nasal SImulator</span>
-                    </div>
-                </div>
-                <nav className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 font-bold font-sans">
-                    <button onClick={()=>setActiveTab('editor')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all font-sans ${activeTab==='editor'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>스튜디오</button>
-                    <button onClick={()=>setActiveTab('consonant')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all font-sans ${activeTab==='consonant'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>자음 합성</button>
-                    <button onClick={()=>setActiveTab('sim')} className={`px-5 py-2 rounded-lg text-sm font-black transition-all font-sans ${activeTab==='sim'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>성도 시뮬레이터</button>
-                </nav>
-                <div className="flex items-center gap-3 font-sans font-bold font-sans">
-                    <button onClick={() => setShowHistory(true)} className="flex items-center gap-1 p-2.5 bg-slate-100 border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] hover:bg-white shadow-sm transition-all font-sans"><History size={18}/> <span className="text-xs hidden md:inline font-black font-sans">History</span></button>
-                    <button onClick={exportProject} className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] shadow-sm transition-all font-sans"><DownloadCloud size={20}/></button>
-                    <label className="p-2.5 bg-white border border-slate-300 rounded-xl text-slate-600 hover:text-[#209ad6] shadow-sm cursor-pointer transition-all font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans"><UploadCloud size={20}/><input type="file" className="hidden" accept=".json" onChange={importProject}/></label>
-                    <button onClick={() => setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors font-sans"><Settings size={22}/></button>
-                    <div className="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner font-sans font-black font-sans"><User size={24} className="text-slate-400 font-sans font-black"/></div>
-                </div>
-            </header>
-            <main className="flex-1 flex overflow-hidden">
-                <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
-                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto relative shadow-inner custom-scrollbar h-full font-sans font-bold">
-                    <div className={activeTab === 'editor' ? 'block h-full' : 'hidden'}><StudioTab audioContext={audioContext} activeFile={activeFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} onEdit={handleFileEdit} onUndo={handleUndo} onRedo={handleRedo} /></div>
-                    <div className={activeTab === 'consonant' ? 'block h-full' : 'hidden'}><ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} /></div>
-                    <div className={activeTab === 'sim' ? 'block h-full' : 'hidden'}><AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} /></div>
-                </div>
-            </main>
-        </div>
-    );
-};
-
-export default App;
