@@ -130,8 +130,7 @@ export const AudioUtils = {
         sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
         view.setInt16(offset, sample, true); offset += 2;
     }
-    const blob = new Blob([view], { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([view], { type: 'audio/wav' }));
     const a = document.createElement('a'); a.href = url; a.download = `${name}.wav`; a.click();
     URL.revokeObjectURL(url);
   }
