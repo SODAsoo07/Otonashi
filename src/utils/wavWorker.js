@@ -1,4 +1,3 @@
-// src/utils/wavWorker.js
 self.onmessage = (e) => {
   const { bufferData, numChannels, sampleRate } = e.data;
   const wavBuffer = encodeWAV(bufferData, numChannels, sampleRate);
@@ -8,36 +7,20 @@ self.onmessage = (e) => {
 function encodeWAV(samples, numChannels, sampleRate) {
   const buffer = new ArrayBuffer(44 + samples.length * 2);
   const view = new DataView(buffer);
-
-  /* RIFF identifier */
   writeString(view, 0, 'RIFF');
-  /* file length */
   view.setUint32(4, 32 + samples.length * 2, true);
-  /* RIFF type */
   writeString(view, 8, 'WAVE');
-  /* format chunk identifier */
   writeString(view, 12, 'fmt ');
-  /* format chunk length */
   view.setUint32(16, 16, true);
-  /* sample format (raw) */
   view.setUint16(20, 1, true);
-  /* channel count */
   view.setUint16(22, numChannels, true);
-  /* sample rate */
   view.setUint32(24, sampleRate, true);
-  /* byte rate (sample rate * block align) */
   view.setUint32(28, sampleRate * numChannels * 2, true);
-  /* block align (channel count * bytes per sample) */
   view.setUint16(32, numChannels * 2, true);
-  /* bits per sample */
   view.setUint16(34, 16, true);
-  /* data chunk identifier */
   writeString(view, 36, 'data');
-  /* data chunk length */
   view.setUint32(40, samples.length * 2, true);
-
   floatTo16BitPCM(view, 44, samples);
-
   return buffer;
 }
 
