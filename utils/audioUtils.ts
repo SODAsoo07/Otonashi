@@ -1,3 +1,4 @@
+
 export const RULER_HEIGHT = 24;
 
 export const AudioUtils = {
@@ -130,8 +131,7 @@ export const AudioUtils = {
     return newBuf;
   },
 
-  downloadWav: (buffer: AudioBuffer, name: string) => {
-    if (!buffer) return;
+  bufferToWavBlob: (buffer: AudioBuffer): Blob => {
     const length = buffer.length * buffer.numberOfChannels * 2 + 44;
     const bufferArr = new ArrayBuffer(length); const view = new DataView(bufferArr);
     let pos = 0; 
@@ -150,7 +150,22 @@ export const AudioUtils = {
         } 
         offset++; 
     }
-    const blob=new Blob([bufferArr],{type:'audio/wav'}); const url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download=name; a.click();
+    return new Blob([bufferArr],{type:'audio/wav'});
+  },
+
+  downloadWav: (buffer: AudioBuffer, name: string) => {
+    if (!buffer) return;
+    const blob = AudioUtils.bufferToWavBlob(buffer);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+  },
+
+  blobToBase64: (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 };

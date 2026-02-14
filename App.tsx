@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Activity, HelpCircle, Settings, User } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Activity, HelpCircle, Settings, User, Download, Upload, FileJson } from 'lucide-react';
 import FileRack from './components/FileRack';
 import StudioTab from './components/StudioTab';
 import ConsonantTab from './components/ConsonantTab';
@@ -7,6 +7,7 @@ import AdvancedTractTab from './components/AdvancedTractTab';
 import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
 import HelpModal from './components/HelpModal';
 import { AudioFile } from './types';
+import { AudioUtils } from './utils/audioUtils';
 
 const App: React.FC = () => {
     const [audioContext] = useState(() => new (window.AudioContext || (window as any).webkitAudioContext)());
@@ -14,6 +15,7 @@ const App: React.FC = () => {
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'editor' | 'consonant' | 'generator' | 'sim'>('editor');
     const [showHelp, setShowHelp] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const activeFile = useMemo(() => files.find(f => f.id === activeFileId), [files, activeFileId]);
 
@@ -27,6 +29,52 @@ const App: React.FC = () => {
             setFiles(prev => [...prev, newFile]);
             if(!activeFileId) setActiveFileId(newFile.id);
         }
+    };
+
+    const handleProjectExport = async () => {
+        const fileData = await Promise.all(files.map(async (f) => {
+            const blob = AudioUtils.bufferToWavBlob(f.buffer);
+            const base64 = await AudioUtils.blobToBase64(blob);
+            return { id: f.id, name: f.name, data: base64 };
+        }));
+        const projectData = {
+            version: '1.0',
+            timestamp: new Date().toISOString(),
+            files: fileData
+        };
+        const jsonString = JSON.stringify(projectData);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `otonashi_project_${new Date().getTime()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleProjectImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (data.files && Array.isArray(data.files)) {
+                const newFiles: AudioFile[] = [];
+                for (const f of data.files) {
+                    const res = await fetch(f.data);
+                    const buf = await res.arrayBuffer();
+                    const audioBuf = await audioContext.decodeAudioData(buf);
+                    newFiles.push({ id: f.id, name: f.name, buffer: audioBuf });
+                }
+                setFiles(newFiles);
+                if(newFiles.length > 0) setActiveFileId(newFiles[0].id);
+                alert("프로젝트를 성공적으로 불러왔습니다.");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("프로젝트 파일을 불러오는 중 오류가 발생했습니다.");
+        }
+        if(fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const addToRack = (buffer: AudioBuffer, name: string) => { 
@@ -71,6 +119,12 @@ const App: React.FC = () => {
                     <button onClick={()=>setActiveTab('sim')} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab==='sim'?'bg-white text-[#209ad6] shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>성도 시뮬레이터</button>
                 </nav>
                 <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 border border-slate-200">
+                      <button onClick={handleProjectExport} title="프로젝트 저장 (.json)" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all"><Download size={16}/></button>
+                      <button onClick={()=>fileInputRef.current?.click()} title="프로젝트 열기" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all"><Upload size={16}/></button>
+                      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleProjectImport}/>
+                  </div>
+                  <div className="w-px h-6 bg-slate-300 mx-1"></div>
                   <button onClick={()=>setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors"><HelpCircle size={20}/></button>
                   <button className="text-slate-400 hover:text-slate-600 transition-colors"><Settings size={20}/></button>
                   <div className="w-8 h-8 rounded-full bg-slate-200 border border-slate-300 overflow-hidden flex items-center justify-center shadow-inner">
@@ -82,7 +136,7 @@ const App: React.FC = () => {
                 <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
                 <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto custom-scrollbar">
                     {activeTab === 'editor' && <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} />}
-                    {activeTab === 'generator' && <ConsonantGeneratorTab audioContext={audioContext} onAddToRack={addToRack} />}
+                    {activeTab === 'generator' && <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
                     {activeTab === 'consonant' && <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
                     {activeTab === 'sim' && <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
                 </div>

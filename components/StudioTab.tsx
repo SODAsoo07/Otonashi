@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
-  Undo2, Scissors, Copy, Clipboard, Layers, TrendingUp, TrendingDown, 
+  Undo2, Redo2, Scissors, Copy, Clipboard, Layers, TrendingUp, TrendingDown, 
   Eraser, MoveHorizontal, Zap, LogIn, Upload, Sparkles, FlipHorizontal, 
-  Activity, SlidersHorizontal, Music, Square, Play, Pause 
+  Activity, SlidersHorizontal, Music, Square, Play, Pause, History, Save, FilePlus 
 } from 'lucide-react';
 import { AudioFile, KeyframePoint, FormantParams, EQParams } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
@@ -16,6 +16,11 @@ interface StudioTabProps {
   setActiveFileId: (id: string) => void;
 }
 
+interface UndoState {
+    buffer: AudioBuffer;
+    label: string;
+}
+
 const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId }) => {
     const [editTrim, setEditTrim] = useState({ start: 0, end: 1 });
     const [isPlaying, setIsPlaying] = useState(false);
@@ -26,8 +31,12 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [stretchRatio, setStretchRatio] = useState(100);
     const [showStretchModal, setShowStretchModal] = useState(false);
     const [showAutomation, setShowAutomation] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
-    const [undoStack, setUndoStack] = useState<AudioBuffer[]>([]);
+    
+    // History Stacks
+    const [undoStack, setUndoStack] = useState<UndoState[]>([]);
+    const [redoStack, setRedoStack] = useState<UndoState[]>([]);
     
     // Params
     const [track2Id, setTrack2Id] = useState("");
@@ -53,13 +62,28 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const animationRef = useRef<number | null>(null);
     const activeBuffer = activeFile ? activeFile.buffer : null;
 
-    const pushUndo = useCallback(() => { if (activeBuffer) setUndoStack(prev => [...prev.slice(-19), activeBuffer]); }, [activeBuffer]);
+    const pushUndo = useCallback((label: string = "편집") => { 
+        if (activeBuffer) {
+            setUndoStack(prev => [...prev.slice(-9), { buffer: activeBuffer, label }]); 
+            setRedoStack([]);
+        }
+    }, [activeBuffer]);
+
     const handleUndo = useCallback(() => { 
-        if (undoStack.length === 0) return; 
-        const prevBuf = undoStack[undoStack.length - 1]; 
-        setUndoStack(prev => prev.slice(0, -1)); 
-        onUpdateFile(prevBuf); 
-    }, [undoStack, onUpdateFile]);
+        if (undoStack.length === 0 || !activeBuffer) return; 
+        const prev = undoStack[undoStack.length - 1]; 
+        setRedoStack(prevSt => [...prevSt.slice(-9), { buffer: activeBuffer, label: prev.label }]);
+        setUndoStack(prevSt => prevSt.slice(0, -1)); 
+        onUpdateFile(prev.buffer); 
+    }, [undoStack, onUpdateFile, activeBuffer]);
+
+    const handleRedo = useCallback(() => { 
+        if (redoStack.length === 0 || !activeBuffer) return; 
+        const next = redoStack[redoStack.length - 1]; 
+        setUndoStack(prevSt => [...prevSt.slice(-9), { buffer: activeBuffer, label: next.label }]);
+        setRedoStack(prevSt => prevSt.slice(0, -1)); 
+        onUpdateFile(next.buffer); 
+    }, [redoStack, onUpdateFile, activeBuffer]);
 
     const handleStop = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
@@ -149,7 +173,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     
     const handleFade = async (type: 'in' | 'out') => { 
         if(!activeBuffer) return; 
-        pushUndo(); 
+        pushUndo("페이드 " + (type==='in'?'인':'아웃')); 
         const res = await AudioUtils.applyFade(audioContext, activeBuffer, type, editTrim.start, editTrim.end); 
         if (res) onUpdateFile(res); 
     };
@@ -170,25 +194,43 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     }, [activeBuffer, editTrim, showAutomation, volumeKeyframes, playheadPos]);
 
     return (
-        <div className="flex-1 flex flex-col gap-4 animate-in fade-in p-4 font-sans font-bold" onMouseUp={()=>setDragTarget(null)} onDragOver={(e)=>e.preventDefault()} onDrop={handleDrop}>
+        <div className="flex-1 flex flex-col gap-4 animate-in fade-in p-6 font-sans font-bold" onMouseUp={()=>setDragTarget(null)} onDragOver={(e)=>e.preventDefault()} onDrop={handleDrop}>
             <div className="flex-[3] flex flex-col gap-4 min-h-[300px]">
-                <div className="bg-white/50 rounded-xl border border-slate-300 p-2 flex justify-between items-center shadow-sm">
-                    <div className="flex gap-1 font-sans">
-                        <button onClick={handleUndo} disabled={undoStack.length === 0} title="실행 취소" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30 transition-colors"><Undo2 size={14}/></button>
-                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                        <button onClick={() => { if(!activeBuffer) return; pushUndo(); setClipboard(AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end)); onUpdateFile(AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end) as AudioBuffer); setEditTrim({start:0, end:0}); }} title="잘라내기" className="p-2 hover:bg-slate-200 rounded text-slate-600 transition-colors"><Scissors size={14}/></button>
-                        <button onClick={() => { if(activeBuffer) setClipboard(AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end)); }} title="복사" className="p-2 hover:bg-slate-200 rounded text-slate-600 transition-colors"><Copy size={14}/></button>
-                        <button onClick={() => { if(!activeBuffer || !clipboard) return; pushUndo(); const pre = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, 0, editTrim.start); const post = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, 1); onUpdateFile(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, clipboard), post) as AudioBuffer); }} disabled={!clipboard} title="붙여넣기" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30 transition-colors"><Clipboard size={14}/></button>
-                        <button onClick={() => { if(!activeBuffer || !clipboard) return; pushUndo(); onUpdateFile(AudioUtils.mixBuffers(audioContext, activeBuffer, clipboard, editTrim.start) as AudioBuffer); }} disabled={!clipboard} title="오버레이" className="p-2 hover:bg-slate-200 rounded text-indigo-500 disabled:opacity-30 transition-colors"><Layers size={14}/></button>
-                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                        <button onClick={() => handleFade('in')} title="페이드 인" className="p-2 hover:bg-slate-200 rounded text-emerald-500 transition-colors"><TrendingUp size={14}/></button>
-                        <button onClick={() => handleFade('out')} title="페이드 아웃" className="p-2 hover:bg-slate-200 rounded text-rose-500 transition-colors"><TrendingDown size={14}/></button>
-                        <button onClick={() => { if(!activeBuffer) return; pushUndo(); const pre = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, 0, editTrim.start); const post = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.end, 100); const dur = (activeBuffer.duration * (editTrim.end - editTrim.start) / 100); onUpdateFile(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, AudioUtils.createSilence(audioContext, dur)), post) as AudioBuffer); }} title="침묵" className="p-2 hover:bg-slate-200 rounded text-slate-400 transition-colors"><Eraser size={14}/></button>
-                        <button onClick={()=>setShowStretchModal(true)} title="시간 조절" className="p-2 hover:bg-slate-200 rounded text-[#209ad6] transition-colors"><MoveHorizontal size={14}/></button>
-                        <button onClick={()=>setShowAutomation(!showAutomation)} className={`p-2 rounded flex gap-1 items-center transition-all ${showAutomation?'bg-yellow-100 text-yellow-700 font-bold':'hover:bg-slate-200'}`}><Zap size={14}/><span className="text-xs font-bold">오토메이션</span></button>
+                <div className="bg-white/50 rounded-xl border border-slate-300 p-3 flex justify-between items-center shadow-sm relative">
+                    <div className="flex gap-2 font-sans">
+                        <button onClick={handleUndo} disabled={undoStack.length === 0} title="실행 취소" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30 transition-colors"><Undo2 size={16}/></button>
+                        <button onClick={handleRedo} disabled={redoStack.length === 0} title="다시 실행" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30 transition-colors"><Redo2 size={16}/></button>
+                        <div className="relative">
+                            <button onClick={()=>setShowHistory(!showHistory)} title="편집 내역" className={`p-2 rounded text-slate-600 transition-colors ${showHistory ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-slate-200'}`}><History size={16}/></button>
+                            {showHistory && <div className="absolute top-10 left-0 bg-white border border-slate-200 rounded-lg shadow-xl w-48 z-50 p-2 text-xs">
+                                <h4 className="font-black text-slate-400 px-2 py-1 uppercase text-[10px]">History</h4>
+                                <div className="space-y-1 max-h-60 overflow-y-auto custom-scrollbar">
+                                    {undoStack.length === 0 && <div className="p-2 text-slate-400 italic">내역 없음</div>}
+                                    {undoStack.slice().reverse().map((u, i) => (
+                                        <div key={i} className="p-2 hover:bg-slate-50 rounded flex justify-between">
+                                            <span>{u.label}</span>
+                                            <span className="text-[9px] text-slate-400">{i+1}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>}
+                        </div>
+                        <div className="w-px h-8 bg-slate-300 mx-1"></div>
+                        <button onClick={() => { if(!activeBuffer) return; pushUndo("잘라내기"); setClipboard(AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end)); onUpdateFile(AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end) as AudioBuffer); setEditTrim({start:0, end:0}); }} title="잘라내기" className="p-2 hover:bg-slate-200 rounded text-slate-600 transition-colors"><Scissors size={16}/></button>
+                        <button onClick={() => { if(activeBuffer) setClipboard(AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end)); }} title="복사" className="p-2 hover:bg-slate-200 rounded text-slate-600 transition-colors"><Copy size={16}/></button>
+                        <button onClick={() => { if(!activeBuffer || !clipboard) return; pushUndo("붙여넣기"); const pre = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, 0, editTrim.start); const post = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, 1); onUpdateFile(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, clipboard), post) as AudioBuffer); }} disabled={!clipboard} title="붙여넣기" className="p-2 hover:bg-slate-200 rounded text-slate-600 disabled:opacity-30 transition-colors"><Clipboard size={16}/></button>
+                        <button onClick={() => { if(!activeBuffer || !clipboard) return; pushUndo("오버레이"); onUpdateFile(AudioUtils.mixBuffers(audioContext, activeBuffer, clipboard, editTrim.start) as AudioBuffer); }} disabled={!clipboard} title="오버레이" className="p-2 hover:bg-slate-200 rounded text-indigo-500 disabled:opacity-30 transition-colors"><Layers size={16}/></button>
+                        <div className="w-px h-8 bg-slate-300 mx-1"></div>
+                        <button onClick={() => handleFade('in')} title="페이드 인" className="p-2 hover:bg-slate-200 rounded text-emerald-500 transition-colors"><TrendingUp size={16}/></button>
+                        <button onClick={() => handleFade('out')} title="페이드 아웃" className="p-2 hover:bg-slate-200 rounded text-rose-500 transition-colors"><TrendingDown size={16}/></button>
+                        <button onClick={() => { if(!activeBuffer) return; pushUndo("무음 처리"); const pre = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, 0, editTrim.start); const post = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.end, 100); const dur = (activeBuffer.duration * (editTrim.end - editTrim.start) / 100); onUpdateFile(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, AudioUtils.createSilence(audioContext, dur)), post) as AudioBuffer); }} title="침묵" className="p-2 hover:bg-slate-200 rounded text-slate-400 transition-colors"><Eraser size={16}/></button>
+                        <button onClick={()=>setShowStretchModal(true)} title="시간 조절" className="p-2 hover:bg-slate-200 rounded text-[#209ad6] transition-colors"><MoveHorizontal size={16}/></button>
+                        <button onClick={()=>setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded flex gap-2 items-center transition-all ${showAutomation?'bg-yellow-100 text-yellow-700 font-bold':'hover:bg-slate-200'}`}><Zap size={16}/><span className="text-xs font-bold">오토메이션</span></button>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={async () => { if(!activeBuffer) return; const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, (activeFile?.name || "Studio") + "_결과"); }} className="bg-[#a3cef0] hover:bg-[#209ad6] hover:text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1 shadow-sm transition-colors font-sans font-bold"><LogIn size={14}/> 보관함에 저장</button>
+                         <button onClick={() => { if(!activeBuffer) return; const sel = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end); if(sel) onAddToRack(sel, (activeFile?.name || "Clip") + "_선택영역"); }} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-2 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"><FilePlus size={16}/> 선택영역 저장</button>
+                         <button onClick={() => { if(!activeBuffer) return; onAddToRack(activeBuffer, (activeFile?.name || "Clip") + "_사본"); }} className="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 px-3 py-2 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors"><Save size={16}/> 복사본 저장</button>
+                        <button onClick={async () => { if(!activeBuffer) return; const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, (activeFile?.name || "Studio") + "_결과"); }} className="bg-[#a3cef0] hover:bg-[#209ad6] hover:text-white px-4 py-2 rounded text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors font-sans font-bold"><LogIn size={16}/> 결과물 저장</button>
                     </div>
                 </div>
                 <div className="flex-1 bg-white rounded-xl border border-slate-300 relative overflow-hidden shadow-inner font-sans">
@@ -200,90 +242,90 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             </div>
 
             <div className="flex-[2] grid grid-cols-1 md:grid-cols-4 gap-4 min-h-0 font-sans font-bold">
-                <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-2 font-bold font-sans">
-                     <h4 className="text-[10px] font-black text-purple-500 uppercase flex items-center gap-2 font-black font-sans"><Sparkles size={14}/> 이펙트</h4>
-                     <div className="grid grid-cols-2 gap-2 text-[9px] font-bold text-slate-500 uppercase font-bold font-sans">
-                        <div>
-                            <div className="flex justify-between items-center"><span>Reverb</span><input type="number" min="0" max="1" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
-                            <input type="range" min="0" max="1" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-full h-1 accent-purple-400 font-bold"/>
+                <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3 font-bold font-sans">
+                     <h4 className="text-xs font-black text-purple-500 uppercase flex items-center gap-2 font-black font-sans"><Sparkles size={14}/> 이펙트</h4>
+                     <div className="grid grid-cols-2 gap-x-3 gap-y-4 text-[10px] font-bold text-slate-500 uppercase font-bold font-sans">
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center"><span>Reverb</span><input type="number" min="0" max="1" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/></div>
+                            <input type="range" min="0" max="1" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-full h-1.5 accent-purple-400 font-bold"/>
                         </div>
-                        <div>
-                            <div className="flex justify-between items-center"><span>Delay</span><input type="number" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
-                            <input type="range" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1 accent-purple-400 font-bold"/>
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center"><span>Delay</span><input type="number" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/></div>
+                            <input type="range" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1.5 accent-purple-400 font-bold"/>
                         </div>
-                        <div>
-                            <div className="flex justify-between items-center"><span>Comp</span><input type="number" min="-60" max="0" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
-                            <input type="range" min="-60" max="0" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-full h-1 accent-blue-400 font-bold"/>
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center"><span>Comp</span><input type="number" min="-60" max="0" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/></div>
+                            <input type="range" min="-60" max="0" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-full h-1.5 accent-blue-400 font-bold"/>
                         </div>
-                        <button onClick={async () => { if(!activeBuffer) return; pushUndo(); onUpdateFile(AudioUtils.reverseBuffer(audioContext, activeBuffer)); }} className="py-1 bg-slate-200 text-slate-600 rounded flex items-center justify-center gap-1 transition-all font-bold font-sans"><FlipHorizontal size={10}/> Reverse</button>
+                        <button onClick={async () => { if(!activeBuffer) return; pushUndo("Reverse"); onUpdateFile(AudioUtils.reverseBuffer(audioContext, activeBuffer)); }} className="py-1 bg-slate-200 text-slate-600 rounded flex items-center justify-center gap-1 transition-all font-bold font-sans hover:bg-slate-300 text-xs"><FlipHorizontal size={12}/> Reverse</button>
                      </div>
                 </div>
-                <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-2 font-bold font-sans font-bold">
-                    <h4 className="text-[10px] font-black text-emerald-500 uppercase flex items-center gap-2 font-black font-sans font-black font-sans"><Activity size={14}/> 포먼트 & 비브라토</h4>
-                    <div className="space-y-1 font-sans font-bold text-slate-500 uppercase text-[9px] font-bold">
-                        <div className="space-y-0.5">
-                            <div className="flex justify-between items-center"><span>f1</span><input type="number" min="200" max="1200" value={formant.f1} onChange={e=>setFormant({...formant, f1: Number(e.target.value)})} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none"/></div>
-                            <input type="range" min="200" max="1200" step="10" value={formant.f1} onChange={e=>setFormant({...formant, f1: Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500"/>
+                <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3 font-bold font-sans font-bold">
+                    <h4 className="text-xs font-black text-emerald-500 uppercase flex items-center gap-2 font-black font-sans font-black font-sans"><Activity size={14}/> 포먼트 & 비브라토</h4>
+                    <div className="space-y-2 font-sans font-bold text-slate-500 uppercase text-[10px] font-bold">
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center"><span>f1</span><input type="number" min="200" max="1200" value={formant.f1} onChange={e=>setFormant({...formant, f1: Number(e.target.value)})} className="w-12 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none text-xs"/></div>
+                            <input type="range" min="200" max="1200" step="10" value={formant.f1} onChange={e=>setFormant({...formant, f1: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-emerald-500"/>
                         </div>
-                        <div className="space-y-0.5">
-                            <div className="flex justify-between items-center"><span>f2</span><input type="number" min="500" max="3000" value={formant.f2} onChange={e=>setFormant({...formant, f2: Number(e.target.value)})} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none"/></div>
-                            <input type="range" min="500" max="3000" step="10" value={formant.f2} onChange={e=>setFormant({...formant, f2: Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500"/>
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center"><span>f2</span><input type="number" min="500" max="3000" value={formant.f2} onChange={e=>setFormant({...formant, f2: Number(e.target.value)})} className="w-12 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none text-xs"/></div>
+                            <input type="range" min="500" max="3000" step="10" value={formant.f2} onChange={e=>setFormant({...formant, f2: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-emerald-500"/>
                         </div>
-                        <div className="space-y-0.5">
-                            <div className="flex justify-between items-center"><span>f3</span><input type="number" min="1500" max="4000" value={formant.f3} onChange={e=>setFormant({...formant, f3: Number(e.target.value)})} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none"/></div>
-                            <input type="range" min="1500" max="4000" step="10" value={formant.f3} onChange={e=>setFormant({...formant, f3: Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500"/>
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center"><span>f3</span><input type="number" min="1500" max="4000" value={formant.f3} onChange={e=>setFormant({...formant, f3: Number(e.target.value)})} className="w-12 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-emerald-500 outline-none text-xs"/></div>
+                            <input type="range" min="1500" max="4000" step="10" value={formant.f3} onChange={e=>setFormant({...formant, f3: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-emerald-500"/>
                         </div>
-                        <div className="space-y-0.5 pt-1 border-t border-slate-200/50">
-                             <div className="flex justify-between items-center"><span>Q</span><input type="number" min="0.1" max="20" step="0.1" value={formant.resonance} onChange={e=>setFormant({...formant, resonance: Number(e.target.value)})} className="w-8 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-pink-500 outline-none"/></div>
-                            <input type="range" min="0.1" max="20" step="0.1" value={formant.resonance} onChange={e=>setFormant({...formant, resonance:Number(e.target.value)})} className="w-full h-1 bg-slate-300 rounded appearance-none accent-pink-500"/>
+                        <div className="space-y-1 pt-1 border-t border-slate-200/50">
+                             <div className="flex justify-between items-center"><span>Q</span><input type="number" min="0.1" max="20" step="0.1" value={formant.resonance} onChange={e=>setFormant({...formant, resonance: Number(e.target.value)})} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-pink-500 outline-none text-xs"/></div>
+                            <input type="range" min="0.1" max="20" step="0.1" value={formant.resonance} onChange={e=>setFormant({...formant, resonance:Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-pink-500"/>
                         </div>
-                        <div className="space-y-0.5">
-                             <div className="flex justify-between items-center text-yellow-600"><span>Singer's</span><input type="number" min="0" max="24" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-8 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-yellow-500 outline-none"/></div>
-                            <input type="range" min="0" max="24" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded appearance-none accent-yellow-500"/>
+                        <div className="space-y-1">
+                             <div className="flex justify-between items-center text-yellow-600"><span>Singer's</span><input type="number" min="0" max="24" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-yellow-500 outline-none text-xs"/></div>
+                            <input type="range" min="0" max="24" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-yellow-500"/>
                         </div>
-                        <div className="space-y-0.5">
-                             <div className="flex justify-between items-center text-pink-500"><span>Vibrato</span><input type="number" min="0" max="100" value={vibDepth} onChange={e=>setVibDepth(Number(e.target.value))} className="w-8 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-pink-500 outline-none"/></div>
-                            <input type="range" min="0" max="100" value={vibDepth} onChange={e=>setVibDepth(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded appearance-none accent-pink-500"/>
-                        </div>
-                    </div>
-                </div>
-                <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-2 font-bold font-sans font-black font-bold">
-                    <h4 className="text-[10px] font-black text-indigo-500 uppercase flex items-center gap-2 font-black font-sans font-bold"><SlidersHorizontal size={14}/> 밴드 EQ</h4>
-                    <div className="space-y-3 uppercase font-black text-slate-500 text-[9px] font-bold font-sans">
-                        <div>
-                            <div className="flex justify-between items-center"><span>low</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.low} onChange={e=>setEq({...eq, low: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>dB</span></div></div>
-                            <input type="range" min="-24" max="24" value={eq.low} onChange={e=>setEq({...eq, low: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-center"><span>mid</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.mid} onChange={e=>setEq({...eq, mid: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>dB</span></div></div>
-                            <input type="range" min="-24" max="24" value={eq.mid} onChange={e=>setEq({...eq, mid: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-center"><span>high</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.high} onChange={e=>setEq({...eq, high: Number(e.target.value)})} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>dB</span></div></div>
-                            <input type="range" min="-24" max="24" value={eq.high} onChange={e=>setEq({...eq, high: Number(e.target.value)})} className="w-full h-1 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
+                        <div className="space-y-1">
+                             <div className="flex justify-between items-center text-pink-500"><span>Vibrato</span><input type="number" min="0" max="100" value={vibDepth} onChange={e=>setVibDepth(Number(e.target.value))} className="w-10 bg-transparent text-right border-b border-transparent hover:border-slate-300 focus:border-pink-500 outline-none text-xs"/></div>
+                            <input type="range" min="0" max="100" value={vibDepth} onChange={e=>setVibDepth(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-pink-500"/>
                         </div>
                     </div>
                 </div>
-                <div className="bg-white/40 rounded-xl border border-slate-300 p-3 flex flex-col gap-3 font-bold font-sans font-black font-bold">
-                    <h4 className="text-[10px] font-black text-pink-500 uppercase flex items-center gap-2 font-black font-sans font-bold"><Music size={14}/> 피치 & 젠더</h4>
-                    <div className="space-y-2 text-[9px] uppercase font-black text-slate-500 font-bold font-sans font-bold">
+                <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-3 font-bold font-sans font-black font-bold">
+                    <h4 className="text-xs font-black text-indigo-500 uppercase flex items-center gap-2 font-black font-sans font-bold"><SlidersHorizontal size={14}/> 밴드 EQ</h4>
+                    <div className="space-y-4 uppercase font-black text-slate-500 text-[10px] font-bold font-sans">
                         <div>
-                            <div className="flex justify-between items-center"><span>Pitch</span><input type="number" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/></div>
-                            <input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1 accent-blue-500 font-sans transition-all"/>
+                            <div className="flex justify-between items-center mb-1"><span>low</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.low} onChange={e=>setEq({...eq, low: Number(e.target.value)})} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/><span>dB</span></div></div>
+                            <input type="range" min="-24" max="24" value={eq.low} onChange={e=>setEq({...eq, low: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
                         </div>
                         <div>
-                            <div className="flex justify-between items-center"><span>Gender</span><div className="flex items-center"><input type="number" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>x</span></div></div>
-                            <input type="range" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-full h-1 accent-pink-400 font-sans transition-all"/>
+                            <div className="flex justify-between items-center mb-1"><span>mid</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.mid} onChange={e=>setEq({...eq, mid: Number(e.target.value)})} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/><span>dB</span></div></div>
+                            <input type="range" min="-24" max="24" value={eq.mid} onChange={e=>setEq({...eq, mid: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
                         </div>
                         <div>
-                            <div className="flex justify-between items-center"><span>Volume</span><div className="flex items-center"><input type="number" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-8 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors"/><span>x</span></div></div>
-                            <input type="range" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded appearance-none accent-emerald-500 font-sans transition-all"/>
+                            <div className="flex justify-between items-center mb-1"><span>high</span><div className="flex items-center"><input type="number" min="-24" max="24" value={eq.high} onChange={e=>setEq({...eq, high: Number(e.target.value)})} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/><span>dB</span></div></div>
+                            <input type="range" min="-24" max="24" value={eq.high} onChange={e=>setEq({...eq, high: Number(e.target.value)})} className="w-full h-1.5 bg-slate-300 appearance-none accent-indigo-500 font-sans transition-all"/>
                         </div>
                     </div>
-                    <div className="mt-auto flex gap-2 font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold"><button onClick={handleStop} className="p-2 bg-slate-200 rounded text-slate-600 transition-all font-bold hover:bg-slate-300 font-sans font-bold"><Square size={14} fill="currentColor"/></button><button onClick={handlePlayPause} className="flex-1 py-1.5 bg-[#209ad6] text-white rounded font-bold text-[10px] flex items-center justify-center gap-1 shadow-sm transition-all hover:bg-[#1a85b9] font-sans font-bold">{isPlaying ? <Pause size={12} fill="currentColor"/> : <Play size={12} fill="currentColor"/>} {isPlaying ? 'PAUSE' : 'PLAY'}</button></div>
+                </div>
+                <div className="bg-white/40 rounded-xl border border-slate-300 p-4 flex flex-col gap-4 font-bold font-sans font-black font-bold">
+                    <h4 className="text-xs font-black text-pink-500 uppercase flex items-center gap-2 font-black font-sans font-bold"><Music size={14}/> 피치 & 젠더</h4>
+                    <div className="space-y-3 text-[10px] uppercase font-black text-slate-500 font-bold font-sans font-bold">
+                        <div>
+                            <div className="flex justify-between items-center mb-1"><span>Pitch</span><input type="number" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-12 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/></div>
+                            <input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1.5 accent-blue-500 font-sans transition-all"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center mb-1"><span>Gender</span><div className="flex items-center"><input type="number" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/><span>x</span></div></div>
+                            <input type="range" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-full h-1.5 accent-pink-400 font-sans transition-all"/>
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center mb-1"><span>Volume</span><div className="flex items-center"><input type="number" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-10 bg-transparent text-right outline-none hover:bg-white/50 rounded transition-colors text-xs"/><span>x</span></div></div>
+                            <input type="range" min="0" max="2" step="0.1" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-300 rounded appearance-none accent-emerald-500 font-sans transition-all"/>
+                        </div>
+                    </div>
+                    <div className="mt-auto flex gap-2 font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold"><button onClick={handleStop} className="p-3 bg-slate-200 rounded text-slate-600 transition-all font-bold hover:bg-slate-300 font-sans font-bold"><Square size={16} fill="currentColor"/></button><button onClick={handlePlayPause} className="flex-1 py-2 bg-[#209ad6] text-white rounded font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all hover:bg-[#1a85b9] font-sans font-bold">{isPlaying ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} {isPlaying ? 'PAUSE' : 'PLAY'}</button></div>
                 </div>
             </div>
-            {showStretchModal && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-[150] animate-in zoom-in-95 font-sans font-bold"><div className="bg-[#e8e8e6] p-6 rounded-xl border border-slate-300 w-80 shadow-2xl font-sans font-bold font-sans font-bold"><h3 className="font-bold text-[#209ad6] mb-4 uppercase tracking-tighter text-sm font-black font-sans font-bold">시간 조절 ({stretchRatio}%)</h3><input type="range" min="50" max="200" value={stretchRatio} onChange={e=>setStretchRatio(Number(e.target.value))} className="w-full h-1 bg-slate-300 rounded mb-6 appearance-none accent-[#209ad6] font-sans font-bold"/><button onClick={async () => { if(!activeBuffer) return; pushUndo(); const str = await AudioUtils.applyStretch(AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end) as AudioBuffer, stretchRatio/100); if(str) { const pre = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, 0, editTrim.start); const post = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.end, 1); onUpdateFile(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, str), post) as AudioBuffer); } setShowStretchModal(false); }} className="w-full py-3 bg-[#209ad6] text-white rounded-xl font-black mb-2 transition-all font-black font-sans font-bold">적용</button><button onClick={()=>setShowStretchModal(false)} className="w-full py-2 text-slate-500 font-black text-xs uppercase font-bold font-sans font-bold">취소</button></div></div>}
+            {showStretchModal && <div className="absolute inset-0 bg-white/80 flex items-center justify-center z-[150] animate-in zoom-in-95 font-sans font-bold"><div className="bg-[#e8e8e6] p-8 rounded-xl border border-slate-300 w-96 shadow-2xl font-sans font-bold font-sans font-bold"><h3 className="font-bold text-[#209ad6] mb-6 uppercase tracking-tighter text-base font-black font-sans font-bold">시간 조절 ({stretchRatio}%)</h3><input type="range" min="50" max="200" value={stretchRatio} onChange={e=>setStretchRatio(Number(e.target.value))} className="w-full h-2 bg-slate-300 rounded mb-8 appearance-none accent-[#209ad6] font-sans font-bold"/><button onClick={async () => { if(!activeBuffer) return; pushUndo("시간 조절"); const str = await AudioUtils.applyStretch(AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end) as AudioBuffer, stretchRatio/100); if(str) { const pre = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, 0, editTrim.start); const post = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.end, 1); onUpdateFile(AudioUtils.concatBuffers(audioContext, AudioUtils.concatBuffers(audioContext, pre, str), post) as AudioBuffer); } setShowStretchModal(false); }} className="w-full py-3 bg-[#209ad6] text-white rounded-xl font-black mb-2 transition-all font-black font-sans font-bold">적용</button><button onClick={()=>setShowStretchModal(false)} className="w-full py-2 text-slate-500 font-black text-xs uppercase font-bold font-sans font-bold">취소</button></div></div>}
         </div>
     );
 };
