@@ -34,6 +34,8 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
     const [isPlaying, setIsPlaying] = useState(false);
     const [generatedBuffer, setGeneratedBuffer] = useState<AudioBuffer | null>(null);
+    const [playheadTime, setPlayheadTime] = useState(0);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
@@ -84,14 +86,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         }
     };
 
-    // Wrapper for setters to save history on interaction end (simplified by using separate effects or saving on mouse up/change)
-    // For sliders, better to save onMouseUp. But React state updates are async.
-    // We'll use a simple "Record Change" approach on key interactions if possible, or just add a manual snapshot.
-    // Actually, let's auto-save on change but debounce or check diff? 
-    // Implementing robust undo for sliders in this architecture is tricky. 
-    // I will trigger saveHistory when the user *commits* a change (e.g., Preset load) and also add an effect that watches all params with debounce?
-    // No, debounce is bad for history. I will add onMouseUp handlers to sliders to commit history.
-
     const commitChange = (label: string = "파라미터 변경") => saveHistory(label);
 
     // Preset configurations
@@ -116,23 +110,19 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         } else if (type === 'z') {
             setFilterType('highpass'); setFrequency(4000); setQ(2); setDuration(250); setAttack(20); setDecay(50); setSustain(0.8); setRelease(100); setNoiseType('white'); setSourceMix(0.3); setVoiceWave('sawtooth'); setVoiceFreq(120);
         }
-        // Defer history save to allow state update
         setTimeout(() => saveHistory("프리셋 " + type.toUpperCase()), 50);
     };
 
     const generateAudio = async () => {
         if (!audioContext) return null;
         
-        // Ensure duration covers the envelope
         const totalDurationSec = duration / 1000;
         const sr = audioContext.sampleRate;
         const offline = new OfflineAudioContext(1, Math.ceil(totalDurationSec * sr), sr);
 
-        // Mix Node
         const mixNode = offline.createGain();
 
         if (baseSource === 'file') {
-             // File Source
              const file = files.find(f => f.id === selectedFileId);
              if (file?.buffer) {
                  const src = offline.createBufferSource();
@@ -141,8 +131,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                  src.start(0);
              }
         } else {
-             // Synth Source (Noise + Osc)
-            // 1. Noise Source
             if (sourceMix < 1.0) {
                 const bufferSize = sr * totalDurationSec;
                 const buffer = offline.createBuffer(1, bufferSize, sr);
@@ -151,7 +139,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                 if (noiseType === 'white') {
                     for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
                 } else {
-                    // Pink Noise
                     let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
                     for (let i = 0; i < bufferSize; i++) {
                         const white = Math.random() * 2 - 1;
@@ -175,7 +162,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                 noiseSrc.start(0);
             }
 
-            // 2. Voice Source (Oscillator)
             if (sourceMix > 0.0) {
                 const osc = offline.createOscillator();
                 osc.type = voiceWave;
@@ -188,13 +174,11 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             }
         }
 
-        // Filter
         const filter = offline.createBiquadFilter();
         filter.type = filterType;
         filter.frequency.value = frequency;
         filter.Q.value = Q;
 
-        // Gain Envelope (ADSR)
         const amp = offline.createGain();
         const t0 = 0;
         const tAtt = attack / 1000;
@@ -205,10 +189,10 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         const releaseStartTime = Math.max(decayEndTime, totalDurationSec - tRel);
 
         amp.gain.setValueAtTime(0, t0);
-        amp.gain.linearRampToValueAtTime(gain, t0 + tAtt); // Attack
-        amp.gain.linearRampToValueAtTime(gain * sustain, decayEndTime); // Decay
-        amp.gain.setValueAtTime(gain * sustain, releaseStartTime); // Sustain Hold
-        amp.gain.linearRampToValueAtTime(0, totalDurationSec); // Release
+        amp.gain.linearRampToValueAtTime(gain, t0 + tAtt); 
+        amp.gain.linearRampToValueAtTime(gain * sustain, decayEndTime); 
+        amp.gain.setValueAtTime(gain * sustain, releaseStartTime); 
+        amp.gain.linearRampToValueAtTime(0, totalDurationSec); 
 
         mixNode.connect(filter);
         filter.connect(amp);
@@ -227,7 +211,24 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             source.start();
             sourceRef.current = source;
             setIsPlaying(true);
-            source.onended = () => setIsPlaying(false);
+            
+            const startTime = audioContext.currentTime;
+            const animate = () => {
+                const elapsed = audioContext.currentTime - startTime;
+                if(elapsed < buf.duration) {
+                    setPlayheadTime(elapsed);
+                    requestAnimationFrame(animate);
+                } else {
+                    setIsPlaying(false);
+                    setPlayheadTime(0);
+                }
+            };
+            requestAnimationFrame(animate);
+            
+            source.onended = () => {
+                // Animation frame handles the stop state usually, but strictly ensuring:
+                // setIsPlaying(false); 
+            };
         }
     };
 
@@ -287,9 +288,23 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             if (pxSus > 0) ctx.lineTo(pxAtt + pxDec + pxSus, h - (h * gain * sustain * 0.9));
             ctx.lineTo(w, h); 
             ctx.stroke();
+
+            // Draw Playhead
+            if (playheadTime > 0) {
+                const durationSec = duration / 1000;
+                const px = (playheadTime / durationSec) * w;
+                if(px >= 0 && px <= w) {
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 2;
+                    ctx.moveTo(px, 0);
+                    ctx.lineTo(px, h);
+                    ctx.stroke();
+                }
+            }
         };
         draw();
-    }, [duration, attack, decay, sustain, release, filterType, frequency, Q, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId]);
+    }, [duration, attack, decay, sustain, release, filterType, frequency, Q, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId, playheadTime]);
 
     useEffect(() => {
         setGeneratedBuffer(null);
