@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, Mic2, AudioLines } from 'lucide-react';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, Mic2, AudioLines, GripVertical } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -33,17 +33,23 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [hoveredKeyframe, setHoveredKeyframe] = useState<{trackId: string, index: number} | null>(null);
     const [draggingKeyframe, setDraggingKeyframe] = useState<{trackId?: string, index?: number, isPlayhead?: boolean} | null>(null);
     
+    // Sidebar Resize State
+    const [sidebarWidth, setSidebarWidth] = useState(420);
+    const [isResizing, setIsResizing] = useState(false);
+
     // Waveform Preview State
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
 
-    // EQ
+    // EQ - Expanded to 5 bands
     const [eqBands, setEqBands] = useState<EQBand[]>([
-        { id: 1, type: 'lowshelf', freq: 100, gain: 0, q: 0.7, on: true },
-        { id: 2, type: 'peaking', freq: 1500, gain: 0, q: 1.0, on: true },
-        { id: 3, type: 'highshelf', freq: 8000, gain: 0, q: 0.7, on: true }
+        { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },
+        { id: 2, type: 'lowshelf', freq: 200, gain: 0, q: 0.7, on: true },
+        { id: 3, type: 'peaking', freq: 1500, gain: 0, q: 1.0, on: true },
+        { id: 4, type: 'highshelf', freq: 6000, gain: 0, q: 0.7, on: true },
+        { id: 5, type: 'lowpass', freq: 15000, gain: 0, q: 0.7, on: true }
     ]);
 
     // Tracks Configuration
@@ -78,6 +84,33 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     useEffect(() => {
         isAdvPlayingRef.current = isAdvPlaying;
     }, [isAdvPlaying]);
+
+    // Resize Handler
+    const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+        setIsResizing(true);
+        e.preventDefault();
+    }, []);
+
+    useEffect(() => {
+        if (!isResizing) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const newWidth = window.innerWidth - e.clientX;
+            // Min 300px, Max 800px or 60% of window
+            setSidebarWidth(Math.max(320, Math.min(newWidth, Math.min(800, window.innerWidth * 0.6))));
+        };
+
+        const handleMouseUp = () => {
+            setIsResizing(false);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isResizing]);
 
     const getCurrentState = useCallback(() => ({
         larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands
@@ -496,7 +529,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in font-sans font-bold overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
-            <div className="flex-[2] flex gap-2 shrink-0 font-sans min-h-0">
+            <div className="flex-[2] flex gap-0 shrink-0 font-sans min-h-0">
                 <div className="flex-1 bg-white/60 rounded-2xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm lg:aspect-auto">
                     <div className="flex-1 relative flex items-center justify-center px-5 py-2 font-sans overflow-hidden">
                         <div className="relative w-[90%] h-[90%]">
@@ -542,7 +575,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         </div>
                     </div>
                 </div>
-                <div className="w-[420px] bg-white/40 rounded-2xl border border-slate-300 flex flex-col overflow-hidden shrink-0 font-sans font-bold">
+
+                {/* Resizer Handle */}
+                <div 
+                    className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors flex items-center justify-center relative z-10 ${isResizing ? 'bg-blue-500' : 'bg-transparent'}`}
+                    onMouseDown={handleResizeMouseDown}
+                >
+                    <div className="absolute inset-y-0 -left-1 -right-1" /> {/* Larger hit area */}
+                    <GripVertical size={12} className="text-slate-400 opacity-0 hover:opacity-100" />
+                </div>
+
+                <div 
+                    className="bg-white/40 rounded-2xl border border-slate-300 flex flex-col overflow-hidden shrink-0 font-sans font-bold"
+                    style={{ width: `${sidebarWidth}px` }}
+                >
                     <div className="flex border-b border-slate-300 bg-white/40">
                         <button onClick={() => setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 ${sidebarTab === 'settings' ? 'bg-white text-[#209ad6] border-b-2 border-[#209ad6]' : 'text-slate-500 hover:bg-slate-50'}`}><Sliders size={14}/> 설정</button>
                         <button onClick={() => setSidebarTab('eq')} className={`flex-1 py-3 text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 ${sidebarTab === 'eq' ? 'bg-white text-pink-600 border-b-2 border-pink-500' : 'text-slate-500 hover:bg-slate-50'}`}><AudioLines size={14}/> EQ</button>
@@ -593,12 +639,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             </div>
                         ) : (
                             <div className="animate-in fade-in duration-200 flex flex-col h-full gap-2">
-                                <div className="h-[280px] shrink-0">
+                                <div className="flex-1 min-h-[300px]">
                                     <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={simPlaySourceRef.current} />
                                 </div>
-                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase mb-2">Master EQ Info</h4>
-                                    <p className="text-[10px] text-slate-500 leading-relaxed italic">사이드바에서 마스터 출력의 음색을 실시간으로 보정할 수 있습니다. 그래프의 점을 더블 클릭하여 밴드를 On/Off 하세요.</p>
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 shrink-0">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase mb-2">Master 5-Band EQ</h4>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed italic">사이드바에서 마스터 출력의 음색을 실시간으로 보정할 수 있습니다. 5개의 밴드로 정밀한 조절이 가능합니다.</p>
                                 </div>
                             </div>
                         )}
