@@ -496,8 +496,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in font-sans font-bold overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
             <div className="flex-[2] flex gap-2 shrink-0 font-sans min-h-0">
                 <div className="flex-1 bg-white/60 rounded-2xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm lg:aspect-auto">
-                    <div className="flex-1 relative flex items-center justify-center p-1 font-sans overflow-hidden">
-                        <div className="relative w-[70%] h-[70%]">
+                    <div className="flex-1 relative flex items-center justify-center px-5 py-2 font-sans overflow-hidden">
+                        <div className="relative w-[90%] h-[90%]">
                             <svg viewBox="100 50 280 340" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-sm">
                                 <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 150 L 370 170 L 360 190 Q 340 190 340 220 Q 340 250 310 280 L 250 300 L 120 380" 
                                     fill="#fdfdfb" stroke="#cbd5e1" strokeWidth="3" strokeLinejoin="round" />
@@ -540,7 +540,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         </div>
                     </div>
                 </div>
-                <div className="w-[330px] bg-white/40 rounded-2xl border border-slate-300 p-3 flex flex-col gap-2 overflow-y-auto shrink-0 custom-scrollbar font-sans font-bold">
+                <div className="w-[420px] bg-white/40 rounded-2xl border border-slate-300 p-3 flex flex-col gap-2 overflow-y-auto shrink-0 custom-scrollbar font-sans font-bold">
                     <div className="flex items-center justify-between">
                         <h3 className="font-black text-slate-600 uppercase tracking-tight flex items-center gap-1.5 text-[10px] font-bold font-sans"><Sliders size={16} className="text-[#209ad6]"/> 설정</h3>
                         <div className="flex items-center gap-0.5">
@@ -596,9 +596,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         <button onClick={()=>setClickToAdd(!clickToAdd)} className={`p-1 rounded-lg border transition-all shadow-sm shrink-0 ${clickToAdd ? 'bg-[#209ad6] text-white border-[#209ad6]' : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600'}`}><MousePointer2 size={16}/></button>
                     </div>
                 </div>
-                <div className="h-[160px] flex relative min-h-0">
+                <div className="h-[180px] flex relative min-h-0">
                     <div className={`flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner font-sans font-bold ${showEQ ? 'hidden' : 'block'}`}>
-                        <canvas ref={canvasRef} width={1000} height={160} className="w-full h-full block cursor-crosshair" onMouseDown={handleTimelineMouseDown} 
+                        <canvas ref={canvasRef} width={1000} height={180} className="w-full h-full block cursor-crosshair" onMouseDown={handleTimelineMouseDown} 
                             onMouseMove={handleTimelineMouseMove} onMouseUp={() => { if(draggingKeyframe) commitChange("키프레임 이동"); setDraggingKeyframe(null); }} onContextMenu={e=>e.preventDefault()}/>
                         <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[9px] font-bold text-slate-600 shadow-sm pointer-events-none flex items-center gap-2">
                             <div className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#ef4444] animate-pulse"></span> <span className="font-mono">{playHeadPos.toFixed(3)}s</span></div>
