@@ -39,7 +39,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
     
     // Sidebar Tab State
-    const [sideTab, setSideTab] = useState<'effects' | 'formant'>('effects');
+    const [sideTab, setSideTab] = useState<'effects' | 'eq' | 'formant'>('effects');
 
     // History Stacks
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
@@ -447,8 +447,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     };
 
     return (
-        <div className="flex-1 flex flex-col p-6 gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={() => setDragTarget(null)}>
-            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm flex-1 overflow-hidden font-sans font-bold">
+        <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold" onMouseUp={() => setDragTarget(null)}>
+            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm font-sans font-bold">
                 {/* Toolbar */}
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
@@ -497,13 +497,13 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 </div>
 
                 {/* Main Workspace - Column Layout */}
-                <div className="flex-1 flex flex-col gap-6 overflow-hidden min-h-0">
+                <div className="flex flex-col gap-6">
                     {/* Top: Waveform Canvas Area */}
-                    <div className="flex-[2] bg-slate-900 rounded-2xl relative border border-slate-700 shadow-inner overflow-hidden select-none min-h-0">
+                    <div className="bg-slate-900 rounded-2xl relative border border-slate-700 shadow-inner overflow-hidden select-none h-[500px]">
                          <canvas 
                             ref={canvasRef} 
                             width={1000} 
-                            height={400} 
+                            height={500} 
                             className={`w-full h-full object-cover ${showAutomation ? 'cursor-crosshair' : 'cursor-text'}`}
                             onMouseDown={handleMouseDown}
                             onMouseMove={handleMouseMove}
@@ -512,12 +512,12 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                     </div>
 
                     {/* Bottom Section */}
-                    <div className="flex-1 flex gap-6 min-h-0">
+                    <div className="flex gap-6 flex-col lg:flex-row">
                         {/* Bottom Left: EQ & Info Area */}
-                        <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 p-6 relative flex flex-col shadow-inner">
-                            {/* EQ Area */}
-                            <div className="flex-1 min-h-0 mb-4 rounded-xl overflow-hidden border border-white/5 relative bg-slate-950/50">
-                                 <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current}/>
+                        <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 p-6 relative flex flex-col justify-end shadow-inner h-[320px]">
+                            {/* Visualizer Placeholder */}
+                            <div className="text-white/20 font-black text-4xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 uppercase tracking-tighter pointer-events-none select-none">
+                                Visualizer
                             </div>
 
                             {/* Info Bar */}
@@ -540,9 +540,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         </div>
 
                         {/* Bottom Right: Sidebar Effects */}
-                        <div className="w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm">
+                        <div className="w-full lg:w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm h-[320px]">
                             <div className="flex border-b border-slate-200">
                                 <button onClick={()=>setSideTab('effects')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='effects'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Effects</button>
+                                <button onClick={()=>setSideTab('eq')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='eq'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>EQ</button>
                                 <button onClick={()=>setSideTab('formant')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='formant'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Formant</button>
                             </div>
                             <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
@@ -575,6 +576,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                                 <input type="range" min="0" max="2" step="0.05" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
                                             </div>
                                         </div>
+                                    </div>
+                                )}
+                                {sideTab === 'eq' && (
+                                    <div className="h-64 animate-in fade-in">
+                                        <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current}/>
                                     </div>
                                 )}
                                 {sideTab === 'formant' && (
