@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History } from 'lucide-react';
-import { AudioFile } from '../types';
+import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines } from 'lucide-react';
+import { AudioFile, EQBand } from '../types';
+import ParametricEQ from './ParametricEQ';
 
 interface ConsonantGeneratorTabProps {
   audioContext: AudioContext;
@@ -38,6 +39,14 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [voiceFreq, setVoiceFreq] = useState(120);
     const [voiceWave, setVoiceWave] = useState<OscillatorType>('sawtooth');
     
+    // EQ Bands
+    const [eqBands, setEqBands] = useState<EQBand[]>([
+        { id: 1, type: 'highpass', freq: 100, gain: 0, q: 0.7, on: true },
+        { id: 2, type: 'peaking', freq: 2000, gain: 0, q: 1.0, on: true },
+        { id: 3, type: 'highshelf', freq: 10000, gain: 0, q: 0.7, on: true }
+    ]);
+    const [showEQ, setShowEQ] = useState(false);
+    
     // File Source Params
     const [selectedFileId, setSelectedFileId] = useState("");
 
@@ -54,8 +63,8 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [showHistory, setShowHistory] = useState(false);
 
     const getCurrentState = useCallback(() => ({
-        duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId
-    }), [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId]);
+        duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands
+    }), [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands]);
 
     const saveHistory = useCallback((label: string) => {
         const state = getCurrentState();
@@ -76,6 +85,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         setHpFilter(state.hpFilter); setLpFilter(state.lpFilter); setBpFilter(state.bpFilter); 
         setGain(state.gain); setNoiseType(state.noiseType);
         setBaseSource(state.baseSource); setSourceMix(state.sourceMix); setVoiceFreq(state.voiceFreq); setVoiceWave(state.voiceWave); setSelectedFileId(state.selectedFileId);
+        if(state.eqBands) setEqBands(state.eqBands);
     };
 
     const handleUndo = () => { if (historyIndex > 0) { const p = historyIndex - 1; restoreState(history[p].state); setHistoryIndex(p); } };
@@ -87,6 +97,12 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         setBaseSource('synth');
         // Reset filters
         setHpFilter({ on: false, freq: 2000, q: 1 }); setLpFilter({ on: false, freq: 8000, q: 1 }); setBpFilter({ on: false, freq: 4000, q: 1 });
+        // Reset EQ
+        setEqBands([
+            { id: 1, type: 'highpass', freq: 100, gain: 0, q: 0.7, on: true },
+            { id: 2, type: 'peaking', freq: 2000, gain: 0, q: 1.0, on: true },
+            { id: 3, type: 'highshelf', freq: 10000, gain: 0, q: 0.7, on: true }
+        ]);
 
         if(type === 's') {
             setHpFilter({ on: true, freq: 4500, q: 1 }); setDuration(250); setAttack(20); setDecay(50); setSustain(0.8); setRelease(100); setNoiseType('white'); setSourceMix(0);
@@ -186,7 +202,22 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         amp.gain.linearRampToValueAtTime(0, totalDurationSec); 
 
         currentNode.connect(amp);
-        amp.connect(offline.destination);
+        
+        // Master EQ Chain
+        let eqNode: AudioNode = amp;
+        eqBands.forEach(b => {
+            if(b.on) {
+                const f = offline.createBiquadFilter();
+                f.type = b.type;
+                f.frequency.value = b.freq;
+                f.Q.value = b.q;
+                f.gain.value = b.gain;
+                eqNode.connect(f);
+                eqNode = f;
+            }
+        });
+        
+        eqNode.connect(offline.destination);
 
         return await offline.startRendering();
     };
@@ -252,9 +283,9 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             }
         };
         draw();
-    }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId, playheadTime]);
+    }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId, playheadTime, eqBands]);
 
-    useEffect(() => { setGeneratedBuffer(null); }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, baseSource, selectedFileId]);
+    useEffect(() => { setGeneratedBuffer(null); }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, baseSource, selectedFileId, eqBands]);
 
     const FilterControl = ({ label, state, onChange, minFreq }: { label: string, state: FilterState, onChange: (s: FilterState) => void, minFreq: number }) => (
         <div className={`space-y-2 p-3 rounded-lg border transition-all ${state.on ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-200 opacity-70'}`}>
@@ -279,18 +310,52 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold">
-            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm h-full">
+            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm h-full overflow-y-auto custom-scrollbar">
                  <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-cyan-500 rounded-xl text-white shadow-lg shadow-cyan-200"><Wand2 size={24}/></div>
                         <h2 className="text-xl text-slate-800 tracking-tight font-black">자음 생성기</h2>
                     </div>
-                    {/* ... (Existing Header Controls) ... */}
+                    <div className="flex items-center gap-2">
+                         <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
+                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
+                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
+                            <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Undo2 size={16}/></button>
+                            <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Redo2 size={16}/></button>
+                         </div>
+                    </div>
                  </div>
+
+                 {showEQ && (
+                    <div className="h-48 shrink-0 animate-in fade-in slide-in-from-top-4 mb-4">
+                        <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current} />
+                    </div>
+                 )}
 
                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-0">
                     <div className="lg:col-span-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2" onMouseUp={()=>commitChange()}>
-                        {/* Source Selection (Existing code mostly) ... */}
+                        {/* Source Selection */}
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                            <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={16}/> 소스 (Source)</h3>
+                            <div className="space-y-3">
+                                <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
+                                    <button onClick={()=>setBaseSource('synth')} className={`flex-1 py-1.5 rounded text-xs font-bold transition-all ${baseSource==='synth'?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>신디사이저</button>
+                                    <button onClick={()=>setBaseSource('file')} className={`flex-1 py-1.5 rounded text-xs font-bold transition-all ${baseSource==='file'?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>파일</button>
+                                </div>
+                                {baseSource==='file' ? (
+                                    <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 border rounded text-xs"><option value="">파일 선택</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                                ) : (
+                                    <div className="space-y-3">
+                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Noise Mix</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                        <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button></div>
+                                        <div className="h-px bg-slate-100"></div>
+                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Voice Mix</span><span>{Math.round(sourceMix*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={sourceMix} onChange={e=>setSourceMix(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                        <div className="flex gap-1 overflow-x-auto pb-1">{['sawtooth', 'square', 'sine', 'triangle'].map(t=>(<button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`px-2 py-1 text-[10px] rounded border uppercase flex-shrink-0 ${voiceWave===t?'bg-indigo-500 text-white':'bg-white text-slate-500'}`}>{t}</button>))}</div>
+                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Freq</span><span>{voiceFreq} Hz</span></div><input type="range" min="50" max="1000" value={voiceFreq} onChange={e=>setVoiceFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                         
                         {/* Multi-Filter Section */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">

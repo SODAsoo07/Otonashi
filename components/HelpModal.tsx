@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Info, X, Activity, Combine, Grid, Wand2 } from 'lucide-react';
 
@@ -15,6 +16,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
         <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
       </div>
       <div className="p-6 overflow-y-auto custom-scrollbar text-slate-600 text-sm space-y-6">
+        <p className="text-[10px] text-slate-400 italic -mt-2">이 앱의 소스코드는 AI를 통해 작성되었습니다.</p>
         <section>
           <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
             <Activity size={16}/> 스튜디오
