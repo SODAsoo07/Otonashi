@@ -39,7 +39,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
     
     // Sidebar Tab State
-    const [sideTab, setSideTab] = useState<'effects' | 'eq' | 'formant'>('effects');
+    const [sideTab, setSideTab] = useState<'effects' | 'formant'>('effects');
 
     // History Stacks
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
@@ -496,10 +496,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                     </div>
                 </div>
 
-                {/* Main Workspace */}
-                <div className="flex-1 flex gap-6 overflow-hidden">
-                    {/* Canvas Area */}
-                    <div className="flex-[3] flex flex-col bg-slate-900 rounded-2xl relative border border-slate-700 shadow-inner overflow-hidden select-none">
+                {/* Main Workspace - Column Layout */}
+                <div className="flex-1 flex flex-col gap-6 overflow-hidden min-h-0">
+                    {/* Top: Waveform Canvas Area */}
+                    <div className="flex-[2] bg-slate-900 rounded-2xl relative border border-slate-700 shadow-inner overflow-hidden select-none min-h-0">
                          <canvas 
                             ref={canvasRef} 
                             width={1000} 
@@ -509,66 +509,84 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             onMouseMove={handleMouseMove}
                             onContextMenu={e=>e.preventDefault()}
                          />
-                         <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur px-3 py-1.5 rounded-lg text-xs text-white font-mono flex gap-4 pointer-events-none">
-                             <span>Time: {playheadPos >= 0 && activeBuffer ? (playheadPos/100 * activeBuffer.duration).toFixed(2) : '0.00'}s</span>
-                             <span>Selection: {(editTrim.end - editTrim.start).toFixed(2)}s</span>
-                             {showAutomation && <span className="text-amber-400">Automation Mode</span>}
-                         </div>
                     </div>
 
-                    {/* Sidebar Effects */}
-                    <div className="flex-1 bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden">
-                        <div className="flex border-b border-slate-200">
-                            <button onClick={()=>setSideTab('effects')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='effects'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Effects</button>
-                            <button onClick={()=>setSideTab('eq')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='eq'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>EQ</button>
-                            <button onClick={()=>setSideTab('formant')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='formant'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Formant</button>
+                    {/* Bottom Section */}
+                    <div className="flex-1 flex gap-6 min-h-0">
+                        {/* Bottom Left: EQ & Info Area */}
+                        <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 p-6 relative flex flex-col shadow-inner">
+                            {/* EQ Area */}
+                            <div className="flex-1 min-h-0 mb-4 rounded-xl overflow-hidden border border-white/5 relative bg-slate-950/50">
+                                 <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current}/>
+                            </div>
+
+                            {/* Info Bar */}
+                            <div className="bg-black/40 backdrop-blur rounded-xl p-4 border border-white/10 flex justify-between items-center text-white font-mono text-sm shrink-0">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[10px] text-slate-400 uppercase font-bold">Current Time</span>
+                                        <span className="text-xl text-cyan-400">{playheadPos >= 0 && activeBuffer ? (playheadPos/100 * activeBuffer.duration).toFixed(3) : '0.000'}s</span>
+                                    </div>
+                                    <div className="h-8 w-px bg-white/20"></div>
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[10px] text-slate-400 uppercase font-bold">Selection Duration</span>
+                                        <span className="text-xl text-emerald-400">{(editTrim.end - editTrim.start).toFixed(3)}s</span>
+                                    </div>
+                                    <div className="h-8 w-px bg-white/20"></div>
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[10px] text-slate-400 uppercase font-bold">Mode</span>
+                                        <span className="text-amber-400 font-bold">{showAutomation ? 'AUTOMATION' : 'EDITING'}</span>
+                                    </div>
+                            </div>
                         </div>
-                        <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
-                            {sideTab === 'effects' && (
-                                <div className="space-y-6 animate-in fade-in">
-                                    <div className="space-y-3">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Sparkles size={14}/> Pitch & Gender</h3>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-xs font-bold text-slate-600"><span>Pitch Shift</span><span>{pitchCents} cents</span></div>
-                                            <input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+
+                        {/* Bottom Right: Sidebar Effects */}
+                        <div className="w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm">
+                            <div className="flex border-b border-slate-200">
+                                <button onClick={()=>setSideTab('effects')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='effects'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Effects</button>
+                                <button onClick={()=>setSideTab('formant')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='formant'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Formant</button>
+                            </div>
+                            <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
+                                {sideTab === 'effects' && (
+                                    <div className="space-y-6 animate-in fade-in">
+                                        <div className="space-y-3">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Sparkles size={14}/> Pitch & Gender</h3>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-xs font-bold text-slate-600"><span>Pitch Shift</span><span>{pitchCents} cents</span></div>
+                                                <input type="range" min="-1200" max="1200" step="10" value={pitchCents} onChange={e=>setPitchCents(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-xs font-bold text-slate-600"><span>Gender Factor</span><span>x{genderShift.toFixed(2)}</span></div>
+                                                <input type="range" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-500"/>
+                                            </div>
                                         </div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-xs font-bold text-slate-600"><span>Gender Factor</span><span>x{genderShift.toFixed(2)}</span></div>
-                                            <input type="range" min="0.5" max="2.0" step="0.05" value={genderShift} onChange={e=>setGenderShift(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-500"/>
+                                        <div className="h-px bg-slate-100"></div>
+                                        <div className="space-y-3">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Activity size={14}/> Dynamics</h3>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-xs font-bold text-slate-600"><span>Compression</span><span>{compThresh} dB</span></div>
+                                                <input type="range" min="-60" max="0" step="1" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-cyan-500"/>
+                                            </div>
+                                        </div>
+                                        <div className="h-px bg-slate-100"></div>
+                                        <div className="space-y-3">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Music size={14}/> Master</h3>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-xs font-bold text-slate-600"><span>Output Gain</span><span>{Math.round(masterGain*100)}%</span></div>
+                                                <input type="range" min="0" max="2" step="0.05" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="h-px bg-slate-100"></div>
-                                    <div className="space-y-3">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Activity size={14}/> Dynamics</h3>
+                                )}
+                                {sideTab === 'formant' && (
+                                    <div className="space-y-4 animate-in fade-in">
+                                        <FormantPad formant={formant} onChange={setFormant}/>
                                         <div className="space-y-2">
-                                            <div className="flex justify-between text-xs font-bold text-slate-600"><span>Compression</span><span>{compThresh} dB</span></div>
-                                            <input type="range" min="-60" max="0" step="1" value={compThresh} onChange={e=>setCompThresh(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-cyan-500"/>
+                                            <div className="flex justify-between text-xs font-bold text-slate-600"><span>Singer's Formant (3kHz Boost)</span><span>{singerFormantGain} dB</span></div>
+                                            <input type="range" min="0" max="12" step="0.5" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/>
                                         </div>
                                     </div>
-                                    <div className="h-px bg-slate-100"></div>
-                                    <div className="space-y-3">
-                                        <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Music size={14}/> Master</h3>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-xs font-bold text-slate-600"><span>Output Gain</span><span>{Math.round(masterGain*100)}%</span></div>
-                                            <input type="range" min="0" max="2" step="0.05" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            {sideTab === 'eq' && (
-                                <div className="h-64 animate-in fade-in">
-                                    <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current}/>
-                                </div>
-                            )}
-                            {sideTab === 'formant' && (
-                                <div className="space-y-4 animate-in fade-in">
-                                    <FormantPad formant={formant} onChange={setFormant}/>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between text-xs font-bold text-slate-600"><span>Singer's Formant (3kHz Boost)</span><span>{singerFormantGain} dB</span></div>
-                                        <input type="range" min="0" max="12" step="0.5" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/>
-                                    </div>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
