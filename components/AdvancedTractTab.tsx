@@ -407,7 +407,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             if (clickToAdd && my >= RULER_HEIGHT) {
                 const val = track.min + ((1 - ((my - RULER_HEIGHT) / graphH)) * (track.max - track.min)); 
                 const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t); 
-                setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr)); 
+                setAdvTracks(prev => prev.map(tr => {
+                    if (tr.id !== selectedTrackId) return tr;
+                    return { ...tr, points: nPts };
+                }));
                 const newIndex = nPts.findIndex(p => p.t === t && p.v === val);
                 setDraggingKeyframe({ trackId: selectedTrackId, index: newIndex }); commitChange("포인트 추가"); return;
             }
@@ -493,7 +496,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in font-sans font-bold overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
             <div className="flex-[2] flex gap-2 shrink-0 font-sans min-h-0">
                 <div className="flex-1 bg-white/60 rounded-2xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm lg:aspect-auto">
-                    <div className="flex-1 relative flex items-center justify-center p-4 font-sans overflow-hidden">
+                    <div className="flex-1 relative flex items-center justify-center p-1 font-sans overflow-hidden">
                         <div className="relative w-[70%] h-[70%]">
                             <svg viewBox="100 50 280 340" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-sm">
                                 <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 150 L 370 170 L 360 190 Q 340 190 340 220 Q 340 250 310 280 L 250 300 L 120 380" 
@@ -537,7 +540,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         </div>
                     </div>
                 </div>
-                <div className="w-72 bg-white/40 rounded-2xl border border-slate-300 p-3 flex flex-col gap-2 overflow-y-auto shrink-0 custom-scrollbar font-sans font-bold">
+                <div className="w-[330px] bg-white/40 rounded-2xl border border-slate-300 p-3 flex flex-col gap-2 overflow-y-auto shrink-0 custom-scrollbar font-sans font-bold">
                     <div className="flex items-center justify-between">
                         <h3 className="font-black text-slate-600 uppercase tracking-tight flex items-center gap-1.5 text-[10px] font-bold font-sans"><Sliders size={16} className="text-[#209ad6]"/> 설정</h3>
                         <div className="flex items-center gap-0.5">
