@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { Activity, HelpCircle, Settings, User, Download, Upload, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Activity, HelpCircle, Settings, User, Download, Upload } from 'lucide-react';
 import FileRack from './components/FileRack';
 import StudioTab from './components/StudioTab';
 import ConsonantTab from './components/ConsonantTab';
@@ -22,16 +22,23 @@ const App: React.FC = () => {
 
     const activeFile = useMemo(() => files.find(f => f.id === activeFileId), [files, activeFileId]);
 
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!e.target.files) return;
-        const selFiles = Array.from(e.target.files) as File[];
+    const handleFileUpload = async (filesToUpload: FileList | File[]) => {
+        const selFiles = Array.from(filesToUpload);
         for(const file of selFiles) {
-            const arrayBuffer = await file.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            const newFile = { id: Math.random().toString(36).substr(2, 9), name: file.name, buffer: audioBuffer };
-            setFiles(prev => [...prev, newFile]);
-            if(!activeFileId) setActiveFileId(newFile.id);
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                const newFile = { id: Math.random().toString(36).substr(2, 9), name: file.name, buffer: audioBuffer };
+                setFiles(prev => [...prev, newFile]);
+                if(!activeFileId) setActiveFileId(newFile.id);
+            } catch (err) {
+                console.error("Audio decoding failed", err);
+            }
         }
+    };
+
+    const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) handleFileUpload(e.target.files);
     };
 
     const handleProjectExport = async () => {
@@ -106,13 +113,6 @@ const App: React.FC = () => {
         <div className="h-screen w-full bg-[#f8f8f6] text-[#1f1e1d] flex flex-col font-sans overflow-hidden">
             <header className="h-14 border-b border-slate-300 bg-white flex items-center justify-between px-6 shrink-0 z-20 shadow-sm sticky top-0">
                 <div className="flex items-center gap-3">
-                    <button 
-                        onClick={() => setIsRackOpen(!isRackOpen)}
-                        className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors mr-1"
-                        title={isRackOpen ? "보관함 접기" : "보관함 펴기"}
-                    >
-                        {isRackOpen ? <ChevronLeft size={20}/> : <ChevronRight size={20}/>}
-                    </button>
                     <div className="bg-[#209ad6] p-1.5 rounded-lg text-white shadow-lg shadow-blue-200">
                       <Activity size={20}/>
                     </div>
@@ -150,10 +150,12 @@ const App: React.FC = () => {
                     files={files} 
                     activeFileId={activeFileId} 
                     setActiveFileId={setActiveFileId} 
-                    handleFileUpload={handleFileUpload} 
+                    handleFileUpload={onFileInputChange} 
+                    handleFilesDrop={handleFileUpload}
                     removeFile={removeFile} 
                     renameFile={renameFile}
                     isOpen={isRackOpen}
+                    toggleOpen={() => setIsRackOpen(!isRackOpen)}
                 />
                 <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto custom-scrollbar">
                     <div className={`w-full min-h-full flex flex-col ${activeTab === 'editor' ? '' : 'hidden'}`}>

@@ -402,7 +402,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             if(isAdvPlaying) { if(simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch(e) {} if(animRef.current) cancelAnimationFrame(animRef.current); setIsAdvPlaying(false); setIsPaused(true); } 
             setDraggingKeyframe({ isPlayhead: true }); return; 
         }
-    }, [selectedTrackId, advTracks, clickToAdd, isAdvPlaying, advDuration, syncVisualsToTime]);
+    }, [selectedTrackId, advTracks, clickToAdd, isAdvPlaying, advDuration, syncVisualsToTime, commitChange]);
 
     const handleTimelineMouseMove = useCallback((e: React.MouseEvent) => {
         if(!canvasRef.current) return;
@@ -416,10 +416,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (draggingKeyframe.isPlayhead) { setPlayHeadPos(t); syncVisualsToTime(t); } 
         else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
             const gH = rect.height - RULER_HEIGHT; const nV = Math.max(0, Math.min(1, 1 - ((my - RULER_HEIGHT) / gH))); 
+            const draggingIdx = draggingKeyframe.index;
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
-                const val = tr.min + (nV * (tr.max - tr.min)); 
-                return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: val } : p).sort((a,b)=>a.t-b.t) }; 
+                const valActual = tr.min + (nV * (tr.max - tr.min));
+                return { ...tr, points: tr.points.map((p, i) => i === draggingIdx ? { t, v: valActual } : p).sort((a,b)=>a.t-b.t) }; 
             }));
         }
     }, [draggingKeyframe, selectedTrackId, advTracks, syncVisualsToTime]);
@@ -434,9 +435,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             const data = previewBuffer.getChannelData(0); const step = Math.ceil(data.length / w);
             const waveH = h - RULER_HEIGHT; const amp = waveH / 2; const center = RULER_HEIGHT + amp;
             for (let i = 0; i < w; i++) {
-                let min = 1.0, max = -1.0;
-                for (let j = 0; j < step; j++) { const d = data[i * step + j] || 0; if (d < min) min = d; if (d > max) max = d; }
-                ctx.moveTo(i, center + min * amp); ctx.lineTo(i, center + max * amp);
+                let minVal = 1.0, maxVal = -1.0;
+                for (let j = 0; j < step; j++) { const d = data[i * step + j] || 0; if (d < minVal) minVal = d; if (d > maxVal) maxVal = d; }
+                ctx.moveTo(i, center + minVal * amp); ctx.lineTo(i, center + maxVal * amp);
             }
             ctx.stroke(); ctx.restore();
         }
@@ -474,10 +475,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     return (
         <div className="flex-1 flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
-            <div className="flex-[3] flex gap-6 shrink-0 font-sans">
-                <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm aspect-video lg:aspect-auto">
-                    <div className="flex-1 relative flex items-center justify-center p-4 font-sans">
-                        <div className="relative w-full max-w-[400px] aspect-square">
+            <div className="flex-[2] flex gap-6 shrink-0 font-sans">
+                <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm lg:aspect-auto">
+                    <div className="flex-1 relative flex items-center justify-center p-1 font-sans">
+                        <div className="relative w-full max-w-[320px] aspect-square">
                             <svg viewBox="0 0 400 400" className="absolute inset-0 w-full h-full pointer-events-none">
                                 <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 150 L 370 170 L 360 190 Q 340 190 340 220 Q 340 250 310 280 L 250 300 L 120 380" 
                                     fill="#f8fafc" stroke="#cbd5e1" strokeWidth="3" strokeLinejoin="round" />

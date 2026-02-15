@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Plus, FileAudio, Edit2, X, FolderOpen } from 'lucide-react';
+import { Plus, FileAudio, Edit2, X, FolderOpen, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AudioFile } from '../types';
 
 interface FileRackProps {
@@ -8,14 +8,27 @@ interface FileRackProps {
   activeFileId: string | null;
   setActiveFileId: (id: string) => void;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleFilesDrop: (files: File[]) => void;
   removeFile: (id: string) => void;
   renameFile: (id: string, newName: string) => void;
   isOpen: boolean;
+  toggleOpen: () => void;
 }
 
-const FileRack: React.FC<FileRackProps> = ({ files, activeFileId, setActiveFileId, handleFileUpload, removeFile, renameFile, isOpen }) => {
+const FileRack: React.FC<FileRackProps> = ({ 
+  files, 
+  activeFileId, 
+  setActiveFileId, 
+  handleFileUpload, 
+  handleFilesDrop,
+  removeFile, 
+  renameFile, 
+  isOpen, 
+  toggleOpen 
+}) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
 
   const submitRename = (id: string) => { 
     if(tempName.trim()) renameFile(id, tempName.trim()); 
@@ -27,9 +40,33 @@ const FileRack: React.FC<FileRackProps> = ({ files, activeFileId, setActiveFileI
     if(window.confirm("파일을 삭제하시겠습니까?")) removeFile(id); 
   };
 
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesDrop(Array.from(e.dataTransfer.files));
+    }
+  };
+
   if (!isOpen) {
     return (
         <aside className="w-12 bg-white/60 border-r border-slate-300 flex flex-col shrink-0 items-center py-4 gap-4 transition-all duration-300 ease-in-out font-sans">
+            <button 
+                onClick={toggleOpen}
+                className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors mb-2"
+                title="보관함 펴기"
+            >
+                <ChevronRight size={20}/>
+            </button>
             <label className="cursor-pointer hover:bg-slate-200 p-2 rounded-lg transition text-[#209ad6]" title="파일 업로드">
                 <Plus size={20}/>
                 <input type="file" multiple accept=".wav,.mp3,audio/*" className="hidden" onChange={handleFileUpload}/>
@@ -53,15 +90,35 @@ const FileRack: React.FC<FileRackProps> = ({ files, activeFileId, setActiveFileI
   }
 
   return (
-    <aside className="w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 transition-all duration-300 ease-in-out font-sans">
+    <aside 
+      className={`w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 transition-all duration-300 ease-in-out font-sans relative ${isDragging ? 'bg-blue-50/80 border-dashed border-2 border-blue-400' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div className="p-4 border-b border-slate-300 flex justify-between items-center bg-slate-200/50">
-        <span className="text-xs font-bold text-slate-600 uppercase tracking-wider font-black">파일 보관함</span>
+        <div className="flex items-center gap-2">
+            <button 
+                onClick={toggleOpen}
+                className="p-1 hover:bg-slate-300 rounded transition text-slate-500"
+                title="보관함 접기"
+            >
+                <ChevronLeft size={16}/>
+            </button>
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider font-black">파일 보관함</span>
+        </div>
         <label className="cursor-pointer hover:bg-slate-300 p-1 rounded transition text-[#209ad6]">
           <Plus className="w-4 h-4"/>
           <input type="file" multiple accept=".wav,.mp3,audio/*" className="hidden" onChange={handleFileUpload}/>
         </label>
       </div>
       <div className="flex-1 overflow-y-auto p-2 space-y-1 font-sans custom-scrollbar">
+        {files.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3 p-4 text-center">
+            <FolderOpen size={32} className="opacity-20"/>
+            <p className="text-[10px] font-bold leading-relaxed">파일을 여기에 드래그하거나<br/>상단의 + 버튼을 눌러 추가하세요</p>
+          </div>
+        )}
         {files.map(f => (
           <div 
             key={f.id} 
@@ -94,6 +151,13 @@ const FileRack: React.FC<FileRackProps> = ({ files, activeFileId, setActiveFileI
           </div>
         ))}
       </div>
+      {isDragging && (
+        <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center bg-[#209ad6]/10 backdrop-blur-[1px]">
+          <div className="bg-white px-4 py-2 rounded-full shadow-lg border border-blue-200 flex items-center gap-2 text-blue-600 font-bold text-xs animate-bounce">
+            <Plus size={16}/> 파일을 놓아서 업로드
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

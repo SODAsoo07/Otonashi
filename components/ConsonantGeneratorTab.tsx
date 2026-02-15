@@ -92,30 +92,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const handleRedo = () => { if (historyIndex < history.length - 1) { const n = historyIndex + 1; restoreState(history[n].state); setHistoryIndex(n); } };
     const commitChange = (label: string = "파라미터 변경") => saveHistory(label);
 
-    // Preset configurations
-    const loadPreset = (type: string) => {
-        setBaseSource('synth');
-        // Reset filters
-        setHpFilter({ on: false, freq: 2000, q: 1 }); setLpFilter({ on: false, freq: 8000, q: 1 }); setBpFilter({ on: false, freq: 4000, q: 1 });
-        // Reset EQ
-        setEqBands([
-            { id: 1, type: 'highpass', freq: 100, gain: 0, q: 0.7, on: true },
-            { id: 2, type: 'peaking', freq: 2000, gain: 0, q: 1.0, on: true },
-            { id: 3, type: 'highshelf', freq: 10000, gain: 0, q: 0.7, on: true }
-        ]);
-
-        if(type === 's') {
-            setHpFilter({ on: true, freq: 4500, q: 1 }); setDuration(250); setAttack(20); setDecay(50); setSustain(0.8); setRelease(100); setNoiseType('white'); setSourceMix(0);
-        } else if (type === 'sh') {
-            setBpFilter({ on: true, freq: 2500, q: 1.5 }); setDuration(250); setAttack(30); setDecay(50); setSustain(0.8); setRelease(100); setNoiseType('white'); setSourceMix(0);
-        } else if (type === 't') {
-            setHpFilter({ on: true, freq: 3000, q: 1 }); setDuration(80); setAttack(2); setDecay(15); setSustain(0); setRelease(20); setNoiseType('white'); setSourceMix(0);
-        } else if (type === 'k') {
-            setLpFilter({ on: true, freq: 1500, q: 1 }); setDuration(100); setAttack(5); setDecay(30); setSustain(0); setRelease(30); setNoiseType('pink'); setSourceMix(0);
-        } 
-        setTimeout(() => saveHistory("프리셋 " + type.toUpperCase()), 50);
-    };
-
     const generateAudio = async () => {
         if (!audioContext) return null;
         
@@ -327,8 +303,10 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                  </div>
 
                  {showEQ && (
-                    <div className="h-48 shrink-0 animate-in fade-in slide-in-from-top-4 mb-4">
-                        <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current} />
+                    <div className="flex justify-center mb-4 animate-in fade-in slide-in-from-top-4 shrink-0">
+                        <div className="w-full max-w-4xl h-48">
+                            <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current} />
+                        </div>
                     </div>
                  )}
 
@@ -367,7 +345,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                             </div>
                         </div>
 
-                        {/* Envelope Section (Existing code) ... */}
+                        {/* Envelope Section */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-5">
                             <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Activity size={16}/> 엔벨로프 (ADSR)</h3>
                             <div className="space-y-4">
