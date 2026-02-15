@@ -1,7 +1,9 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History } from 'lucide-react';
-import { AudioFile, AdvTrack, LarynxParams, LiveTractState } from '../types';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, Mic2, AudioLines } from 'lucide-react';
+import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { RULER_HEIGHT } from '../utils/audioUtils';
+import ParametricEQ from './ParametricEQ.tsx';
 
 interface AdvancedTractTabProps {
   audioContext: AudioContext;
@@ -22,6 +24,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [isPaused, setIsPaused] = useState(false);
     const [playHeadPos, setPlayHeadPos] = useState(0); 
     const [liveTract, setLiveTract] = useState<LiveTractState>({ x: 0.5, y: 0.4, lips: 0.7, lipLen: 0.5, throat: 0.5, nasal: 0.2 }); 
+    const [manualPitch, setManualPitch] = useState(220);
+    const [manualGender, setManualGender] = useState(1.0);
     const [simIndex, setSimIndex] = useState(1);
     const [clickToAdd, setClickToAdd] = useState(false);
     const [selectedTrackId, setSelectedTrackId] = useState('pitch'); 
@@ -29,16 +33,27 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [draggingKeyframe, setDraggingKeyframe] = useState<{trackId?: string, index?: number, isPlayhead?: boolean} | null>(null);
     const [vibDepth] = useState(0);
     const [vibRate] = useState(5.0);
+    
+    // EQ
+    const [eqBands, setEqBands] = useState<EQBand[]>([
+        { id: 1, type: 'lowshelf', freq: 100, gain: 0, q: 0.7, on: true },
+        { id: 2, type: 'peaking', freq: 1500, gain: 0, q: 1.0, on: true },
+        { id: 3, type: 'highshelf', freq: 8000, gain: 0, q: 0.7, on: true }
+    ]);
+    const [showEQ, setShowEQ] = useState(false);
+
+    // Updated Tracks Configuration
     const [advTracks, setAdvTracks] = useState<AdvTrack[]>([
         { id: 'tongueX', name: '혀 위치 (X)', group: 'adj', color: '#60a5fa', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1 },
         { id: 'tongueY', name: '혀 높이 (Y)', group: 'adj', color: '#4ade80', points: [{t:0, v:0.4}, {t:1, v:0.4}], min:0, max:1 },
         { id: 'lips',    name: '입술 열기', group: 'adj', color: '#f472b6', points: [{t:0, v:0.7}, {t:1, v:0.7}], min:0, max:1 },
         { id: 'lipLen',  name: '입술 길이', group: 'adj', color: '#db2777', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1 }, 
         { id: 'throat',  name: '목 조임',   group: 'adj', color: '#a78bfa', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1 },
-        { id: 'nasal',   name: '비성 (콧소리)', group: 'adj', color: '#fb923c', points: [{t:0, v:0.2}, {t:1, v:0.2}], min:0, max:1 },
-        { id: 'pitch',   name: '음정 (Hz)', group: 'edit', color: '#eab308', points: [{t:0, v:220}, {t:1, v:220}], min:50, max:800 },
-        { id: 'gain',    name: '게인',     group: 'edit', color: '#ef4444', points: [{t:0, v:0}, {t:0.1, v:1}, {t:0.9, v:1}, {t:1, v:0}], min:0, max:1 },
-        { id: 'breath',  name: '숨소리',   group: 'edit', color: '#22d3ee', points: [{t:0, v:0.01}, {t:1, v:0.01}], min:0, max:0.1 }
+        { id: 'nasal',   name: '연구개 (Velum)', group: 'adj', color: '#fb923c', points: [{t:0, v:0.2}, {t:1, v:0.2}], min:0, max:1 },
+        { id: 'pitch',   name: '피치 (Hz)', group: 'edit', color: '#fbbf24', points: [{t:0, v:220}, {t:1, v:220}], min:50, max:600 },
+        { id: 'gender',  name: '성별 (Shift)', group: 'edit', color: '#ec4899', points: [{t:0, v:1}, {t:1, v:1}], min:0.5, max:2.0 },
+        { id: 'gain',    name: '게인 (Vol)', group: 'edit', color: '#ef4444', points: [{t:0, v:0}, {t:0.1, v:1}, {t:0.9, v:1}, {t:1, v:0}], min:0, max:1.5 },
+        { id: 'breath',  name: '숨소리',     group: 'edit', color: '#22d3ee', points: [{t:0, v:0.01}, {t:1, v:0.01}], min:0, max:0.1 }
     ]);
     
     // History
@@ -46,9 +61,24 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [historyIndex, setHistoryIndex] = useState(-1);
     const [showHistory, setShowHistory] = useState(false);
 
+    // Refs
+    const isAdvPlayingRef = useRef(false);
+    const liveAudioRef = useRef<any>(null); 
+    const animRef = useRef<number | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const lastRenderedRef = useRef<AudioBuffer | null>(null);
+    const simStartTimeRef = useRef(0);
+    const simPauseOffsetRef = useRef(0);
+    const simPlaySourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+    // Sync Ref with State
+    useEffect(() => {
+        isAdvPlayingRef.current = isAdvPlaying;
+    }, [isAdvPlaying]);
+
     const getCurrentState = useCallback(() => ({
-        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks
-    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks]);
+        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands
+    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands]);
 
     const saveHistory = useCallback((label: string) => {
         const state = getCurrentState();
@@ -65,34 +95,66 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const restoreState = (state: any) => {
         setLarynxParams(state.larynxParams); setTractSourceType(state.tractSourceType); setTractSourceFileId(state.tractSourceFileId);
         setSynthWaveform(state.synthWaveform); setPulseWidth(state.pulseWidth); setLiveTract(state.liveTract); setAdvTracks(state.advTracks);
+        setManualPitch(state.manualPitch || 220); setManualGender(state.manualGender || 1.0);
+        if(state.eqBands) setEqBands(state.eqBands);
     };
 
     const handleUndo = () => { if (historyIndex > 0) { const prev = historyIndex - 1; restoreState(history[prev].state); setHistoryIndex(prev); } };
     const handleRedo = () => { if (historyIndex < history.length - 1) { const next = historyIndex + 1; restoreState(history[next].state); setHistoryIndex(next); } };
     const commitChange = (label: string = "변경") => saveHistory(label);
 
-    const liveAudioRef = useRef<any>(null); 
-    const animRef = useRef<number | null>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const lastRenderedRef = useRef<AudioBuffer | null>(null);
-    const simStartTimeRef = useRef(0);
-    const simPauseOffsetRef = useRef(0);
-    const simPlaySourceRef = useRef<AudioBufferSourceNode | null>(null);
+    // --- Helper to get value at specific time for any track ---
+    const getValueAtTime = useCallback((trackId: string, t: number) => {
+        const track = advTracks.find(tr => tr.id === trackId);
+        if (!track) return 0;
+        let val = track.points[0].v;
+        for(let i=0; i<track.points.length-1; i++) {
+            if(t >= track.points[i].t && t <= track.points[i+1].t) {
+                const ratio = (t - track.points[i].t) / (track.points[i+1].t - track.points[i].t);
+                val = track.points[i].v + (track.points[i+1].v - track.points[i].v) * ratio;
+                break;
+            }
+        }
+        if(t > track.points[track.points.length-1].t) val = track.points[track.points.length-1].v;
+        return val;
+    }, [advTracks]);
 
-    const updateLiveAudioParams = useCallback((x: number, y: number, l: number, t: number, len: number, n: number, f1: BiquadFilterNode, f2: BiquadFilterNode, f3: BiquadFilterNode, nasF: BiquadFilterNode) => {
+    // --- Sync Visuals to Time ---
+    const syncVisualsToTime = useCallback((t: number) => {
+        const x = getValueAtTime('tongueX', t);
+        const y = getValueAtTime('tongueY', t);
+        const lips = getValueAtTime('lips', t);
+        const lipLen = getValueAtTime('lipLen', t);
+        const throat = getValueAtTime('throat', t);
+        const nasal = getValueAtTime('nasal', t);
+        
+        const pitch = getValueAtTime('pitch', t);
+        const gender = getValueAtTime('gender', t);
+
+        setLiveTract({ x, y, lips, lipLen, throat, nasal });
+        setManualPitch(pitch);
+        setManualGender(gender);
+    }, [getValueAtTime]);
+
+    const updateLiveAudioParams = useCallback((x: number, y: number, l: number, t: number, len: number, n: number, pitch: number, gender: number, f1: BiquadFilterNode, f2: BiquadFilterNode, f3: BiquadFilterNode, nasF: BiquadFilterNode, osc?: OscillatorNode) => {
         if (!audioContext) return; const now = audioContext.currentTime; 
         const lF = 1.0 - (len * 0.3); const liF = 0.5 + (l * 0.5);
-        const fr1 = (200 + (1 - y) * 600 - (t * 50)) * lF * liF; 
-        const fr2 = (800 + x * 1400) * lF * liF; 
-        const fr3 = (2000 + l * 1500) * lF;
+        
+        let fr1 = (200 + (1 - y) * 600 - (t * 50)) * lF * liF; 
+        let fr2 = (800 + x * 1400) * lF * liF; 
+        let fr3 = (2000 + l * 1500) * lF;
+
+        fr1 *= gender; fr2 *= gender; fr3 *= gender;
+
         if(f1) f1.frequency.setTargetAtTime(Math.max(50, fr1), now, 0.01); 
         if(f2) f2.frequency.setTargetAtTime(fr2, now, 0.01); 
         if(f3) f3.frequency.setTargetAtTime(fr3, now, 0.01); 
-        if(nasF) nasF.frequency.setTargetAtTime(Math.max(400, 10000 - (n * 9000)), now, 0.01);
-    }, [audioContext]);
+        if(nasF) nasF.frequency.setTargetAtTime(Math.max(400, (10000 - (n * 9000)) * gender), now, 0.01);
+        if(osc && tractSourceType === 'synth') osc.frequency.setTargetAtTime(pitch, now, 0.01);
+    }, [audioContext, tractSourceType]);
 
-    const updateLiveAudio = useCallback((x: number, y: number, l: number, t: number, len: number, n: number) => { 
-        if (liveAudioRef.current) updateLiveAudioParams(x, y, l, t, len, n, liveAudioRef.current.f1, liveAudioRef.current.f2, liveAudioRef.current.f3, liveAudioRef.current.nasF); 
+    const updateLiveAudio = useCallback((x: number, y: number, l: number, t: number, len: number, n: number, pitch: number, gender: number) => { 
+        if (liveAudioRef.current) updateLiveAudioParams(x, y, l, t, len, n, pitch, gender, liveAudioRef.current.f1, liveAudioRef.current.f2, liveAudioRef.current.f3, liveAudioRef.current.nasF, liveAudioRef.current.sNode instanceof OscillatorNode ? liveAudioRef.current.sNode : undefined); 
     }, [updateLiveAudioParams]);
 
     const startLivePreview = useCallback(() => {
@@ -110,7 +172,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (!sNode) { 
             const oscNode = audioContext.createOscillator(); 
             oscNode.type = (synthWaveform === 'noise' ? 'sawtooth' : (synthWaveform === 'complex' ? 'sawtooth' : synthWaveform)) as OscillatorType; 
-            oscNode.frequency.value = 220; 
+            oscNode.frequency.value = manualPitch; 
             sNode = oscNode;
         }
         const g = audioContext.createGain(); g.gain.value = 0.5;
@@ -118,10 +180,30 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const f2 = audioContext.createBiquadFilter(); f2.type = 'peaking'; f2.Q.value = 4; f2.gain.value = 12;
         const f3 = audioContext.createBiquadFilter(); f3.type = 'peaking'; f3.Q.value = 4; f3.gain.value = 10;
         const nasF = audioContext.createBiquadFilter(); nasF.type = 'lowpass';
-        updateLiveAudioParams(liveTract.x, liveTract.y, liveTract.lips, liveTract.throat, liveTract.lipLen, liveTract.nasal, f1, f2, f3, nasF);
-        sNode.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); nasF.connect(g); g.connect(audioContext.destination);
-        sNode.start(); liveAudioRef.current = { sNode, g, f1, f2, f3, nasF };
-    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, liveTract, updateLiveAudioParams, synthWaveform]);
+        updateLiveAudioParams(liveTract.x, liveTract.y, liveTract.lips, liveTract.throat, liveTract.lipLen, liveTract.nasal, manualPitch, manualGender, f1, f2, f3, nasF);
+        
+        // Add EQ
+        let lastNode: AudioNode = nasF;
+        const eqNodes: BiquadFilterNode[] = [];
+        eqBands.forEach(b => {
+            if(b.on) {
+                const eq = audioContext.createBiquadFilter();
+                eq.type = b.type;
+                eq.frequency.value = b.freq;
+                eq.gain.value = b.gain;
+                eq.Q.value = b.q;
+                lastNode.connect(eq);
+                lastNode = eq;
+                eqNodes.push(eq);
+            }
+        });
+
+        sNode.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); 
+        lastNode.connect(g); g.connect(audioContext.destination);
+        sNode.start(); 
+        
+        liveAudioRef.current = { sNode, g, f1, f2, f3, nasF, eqNodes };
+    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, liveTract, updateLiveAudioParams, synthWaveform, manualPitch, manualGender, eqBands]);
 
     const stopLivePreview = useCallback(() => { if (liveAudioRef.current) { try { liveAudioRef.current.sNode.stop(); } catch(e) {} liveAudioRef.current.sNode.disconnect(); liveAudioRef.current = null; } }, []);
 
@@ -130,31 +212,76 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const update = (ce: MouseEvent | React.MouseEvent) => { 
             const x = Math.max(0, Math.min(1, (ce.clientX - rect.left) / rect.width)); 
             const y = Math.max(0, Math.min(1, 1 - (ce.clientY - rect.top) / rect.height)); 
-            setLiveTract(prev => { const n = { ...prev, x, y }; updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal); return n; }); 
+            setLiveTract(prev => { const n = { ...prev, x, y }; updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); return n; }); 
         };
         update(e); startLivePreview(); 
         const mv = (me: MouseEvent) => update(me); 
         const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); stopLivePreview(); commitChange("제스처 조작"); }; 
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
-    }, [startLivePreview, stopLivePreview, updateLiveAudio]);
+    }, [startLivePreview, stopLivePreview, updateLiveAudio, manualPitch, manualGender]);
 
     const handleLipPadMouseDown = useCallback((e: React.MouseEvent) => {
         const rect = e.currentTarget.getBoundingClientRect(); 
         const update = (ce: MouseEvent | React.MouseEvent) => { 
             const lipLen = Math.max(0, Math.min(1, (ce.clientX - rect.left) / rect.width)); 
             const lips = Math.max(0, Math.min(1, 1 - (ce.clientY - rect.top) / rect.height)); 
-            setLiveTract(prev => { const n = { ...prev, lips, lipLen }; updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal); return n; }); 
+            setLiveTract(prev => { const n = { ...prev, lips, lipLen }; updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); return n; }); 
         };
         update(e); startLivePreview(); 
         const mv = (me: MouseEvent) => update(me); 
         const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); stopLivePreview(); commitChange("입술 조작"); }; 
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
-    }, [startLivePreview, stopLivePreview, updateLiveAudio]);
+    }, [startLivePreview, stopLivePreview, updateLiveAudio, manualPitch, manualGender]);
+
+    // --- Velum Control ---
+    const handleVelumMouseDown = useCallback((e: React.MouseEvent) => {
+        const startY = e.clientY;
+        const startVal = liveTract.nasal;
+        
+        const update = (ce: MouseEvent) => {
+            const deltaY = ce.clientY - startY;
+            const newVal = Math.max(0, Math.min(1, startVal + deltaY / 100)); 
+            
+            setLiveTract(prev => { 
+                const n = { ...prev, nasal: newVal }; 
+                updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); 
+                return n; 
+            });
+        };
+        
+        startLivePreview();
+        const mv = (me: MouseEvent) => update(me);
+        const up = () => { 
+            window.removeEventListener('mousemove', mv); 
+            window.removeEventListener('mouseup', up); 
+            stopLivePreview(); 
+            commitChange("비성(연구개) 조작"); 
+        };
+        window.addEventListener('mousemove', mv);
+        window.addEventListener('mouseup', up);
+        e.stopPropagation();
+    }, [liveTract.nasal, startLivePreview, stopLivePreview, updateLiveAudio, manualPitch, manualGender]);
+
 
     const renderAdvancedAudio = useCallback(async () => {
         if (!audioContext) return null;
         const sr = audioContext.sampleRate; const len = Math.max(1, Math.floor(sr * advDuration)); const offline = new OfflineAudioContext(1, len, sr);
-        let sNode: AudioBufferSourceNode | OscillatorNode | GainNode | undefined; 
+        let sNode: AudioNode | undefined; 
+        
+        const getPts = (id: string) => advTracks.find(t=>t.id===id)?.points || [];
+        const getV = (pts: any[], tRatio: number) => { 
+            if(pts.length===0) return 0; 
+            if(pts.length===1) return pts[0].v; 
+            for(let i=0; i<pts.length-1; i++) {
+                if(tRatio >= pts[i].t && tRatio <= pts[i+1].t) {
+                     const ratio = (tRatio - pts[i].t) / (pts[i+1].t - pts[i].t);
+                     return pts[i].v + (pts[i+1].v - pts[i].v) * ratio;
+                }
+            }
+            if(tRatio < pts[0].t) return pts[0].v;
+            return pts[pts.length-1].v;
+        };
+
         if (tractSourceType === 'file' && tractSourceFileId) { 
             const f = files.find(f => f.id === tractSourceFileId); 
             if (f?.buffer) { 
@@ -164,6 +291,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 sNode = bufNode;
             } 
         }
+        
+        const pitchPts = getPts('pitch');
+        
         if (!sNode) { 
             if (synthWaveform === 'noise') { 
                 const noiseNode = offline.createBufferSource();
@@ -181,89 +311,236 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 const g2 = offline.createGain(); g2.gain.value = bal;
                 osc1.connect(g1); g1.connect(mixG);
                 osc2.connect(g2); g2.connect(mixG);
-                const tP = advTracks.find(t=>t.id==='pitch')?.points || [];
-                if (tP.length > 0) { 
-                    osc1.frequency.setValueAtTime(tP[0].v, 0); tP.forEach(p => osc1.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
-                    osc2.frequency.setValueAtTime(tP[0].v, 0); tP.forEach(p => osc2.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
+                if (pitchPts.length > 0) { 
+                    osc1.frequency.setValueAtTime(pitchPts[0].v, 0); pitchPts.forEach(p => osc1.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
+                    osc2.frequency.setValueAtTime(pitchPts[0].v, 0); pitchPts.forEach(p => osc2.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
                 }
                 osc1.start(0); osc2.start(0);
                 sNode = mixG; 
-            } else if (synthWaveform === 'square') {
-                const oscNode = offline.createOscillator(); 
-                oscNode.type = 'square';
-                const tP = advTracks.find(t=>t.id==='pitch')?.points || [];
-                if (tP.length > 0) { oscNode.frequency.setValueAtTime(tP[0].v, 0); tP.forEach(p => oscNode.frequency.linearRampToValueAtTime(p.v, p.t * advDuration)); }
-                sNode = oscNode;
             } else {
                 const oscNode = offline.createOscillator(); 
-                oscNode.type = synthWaveform as OscillatorType;
-                const tP = advTracks.find(t=>t.id==='pitch')?.points || [];
-                if (tP.length > 0) { oscNode.frequency.setValueAtTime(tP[0].v, 0); tP.forEach(p => oscNode.frequency.linearRampToValueAtTime(p.v, p.t * advDuration)); }
+                oscNode.type = synthWaveform === 'square' ? 'square' : (synthWaveform as OscillatorType);
+                if (pitchPts.length > 0) { oscNode.frequency.setValueAtTime(pitchPts[0].v, 0); pitchPts.forEach(p => oscNode.frequency.linearRampToValueAtTime(p.v, p.t * advDuration)); }
                 sNode = oscNode;
             }
         }
+        
         let nNode: AudioBufferSourceNode | undefined; 
         if (larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) { const f = files.find(f => f.id === larynxParams.noiseSourceFileId); if (f?.buffer) { nNode = offline.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn; } }
         if (!nNode) { nNode = offline.createBufferSource(); const nb = offline.createBuffer(1, len, sr); const nd = nb.getChannelData(0); for(let i=0; i<len; i++) nd[i] = Math.random() * 2 - 1; nNode.buffer = nb; }
-        const mG = offline.createGain(); const nG = offline.createGain(); const fG = offline.createGain(); 
+        
+        const mG = offline.createGain(); // Main Source Gain
+        const nG = offline.createGain(); // Noise Gain
+        const fG = offline.createGain(); // Final Fade Gain
+        
         const nF = offline.createBiquadFilter(); nF.type = 'lowpass'; nF.frequency.value = 6000;
+        
         nNode.connect(nF); nF.connect(nG); 
-        // @ts-ignore - connect exists on both source and gain nodes
-        if (sNode.connect) sNode.connect(mG); 
-        mG.connect(fG); nG.connect(fG);
-        const getPts = (id: string) => advTracks.find(t=>t.id===id)?.points || [];
+        sNode.connect(mG); 
+        mG.connect(fG); 
+        nG.connect(fG);
+
         const tI=getPts('gain'), tB=getPts('breath');
-        if (tI.length > 0) { mG.gain.setValueAtTime(tI[0].v, 0); tI.forEach(p => mG.gain.linearRampToValueAtTime(p.v, p.t * advDuration)); }
+        
+        if (tI.length > 0) { 
+            mG.gain.setValueAtTime(tI[0].v, 0); 
+            tI.forEach(p => mG.gain.linearRampToValueAtTime(p.v, p.t * advDuration)); 
+        } else {
+            mG.gain.value = 1; 
+        }
+        
         if (tB.length > 0) { const baseGain = larynxParams.breathGain || 0.1; nG.gain.setValueAtTime(tB[0].v * baseGain, 0); tB.forEach(p => nG.gain.linearRampToValueAtTime(p.v * baseGain, p.t * advDuration)); }
+        
         const startFade = Math.max(0, advDuration - fadeOutDuration); fG.gain.setValueAtTime(1, 0); fG.gain.setValueAtTime(1, startFade); fG.gain.linearRampToValueAtTime(0, advDuration);
+        
         const f1=offline.createBiquadFilter(), f2=offline.createBiquadFilter(), f3=offline.createBiquadFilter(), nasF=offline.createBiquadFilter(); 
         [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4; f.gain.value=12; }); nasF.type='lowpass';
-        for(let i=0; i<=120; i++) {
-            const t = i/120; const time = t * advDuration;
-            const getV = (pts: any[]) => { if(pts.length===0) return 0; if(pts.length===1) return pts[0].v; const idx = pts.findIndex(p=>p.t>=t); if(idx===-1) return pts[pts.length-1].v; if(idx===0) return pts[0].v; const p1=pts[idx-1], p2=pts[idx]; return p1.v + (p2.v - p1.v) * ((t - p1.t) / (p2.t - p1.t)); }
-            const x=getV(getPts('tongueX')), y=getV(getPts('tongueY')), l=getV(getPts('lips')), th=getV(getPts('throat')), ln=getV(getPts('lipLen')), n=getV(getPts('nasal'));
+        
+        const tongueXPts=getPts('tongueX'), tongueYPts=getPts('tongueY'), lipsPts=getPts('lips'), throatPts=getPts('throat'), lipLenPts=getPts('lipLen'), nasalPts=getPts('nasal'), genderPts=getPts('gender');
+
+        const steps = Math.ceil(advDuration * 60);
+        for(let i=0; i<=steps; i++) {
+            const tRatio = i/steps; 
+            const time = tRatio * advDuration;
+            
+            const x=getV(tongueXPts, tRatio), y=getV(tongueYPts, tRatio);
+            const l=getV(lipsPts, tRatio), th=getV(throatPts, tRatio);
+            const ln=getV(lipLenPts, tRatio), n=getV(nasalPts, tRatio);
+            const gFactor=getV(genderPts, tRatio);
+
             const lF = 1.0 - (ln * 0.3); const lipF = 0.5 + (l * 0.5);
-            f1.frequency.linearRampToValueAtTime(Math.max(50, (200 + (1 - y) * 600 - (th * 50))) * lF * lipF, time); f2.frequency.linearRampToValueAtTime((800 + x * 1400) * lF * lipF, time); f3.frequency.linearRampToValueAtTime((2000 + l * 1500) * lF, time); f1.Q.linearRampToValueAtTime(2 + th * 4, time); nasF.frequency.linearRampToValueAtTime(Math.max(400, 10000 - (n * 9000)), time);
+            
+            const baseF1 = Math.max(50, (200 + (1 - y) * 600 - (th * 50))) * lF * lipF;
+            const baseF2 = (800 + x * 1400) * lF * lipF;
+            const baseF3 = (2000 + l * 1500) * lF;
+            const baseNasal = Math.max(400, 10000 - (n * 9000));
+
+            f1.frequency.linearRampToValueAtTime(baseF1 * gFactor, time); 
+            f2.frequency.linearRampToValueAtTime(baseF2 * gFactor, time); 
+            f3.frequency.linearRampToValueAtTime(baseF3 * gFactor, time); 
+            f1.Q.linearRampToValueAtTime(2 + th * 4, time); 
+            nasF.frequency.linearRampToValueAtTime(baseNasal * gFactor, time);
         }
+        
         if (vibDepth > 0 && (sNode as any).detune) { const lfo = offline.createOscillator(); lfo.frequency.value = vibRate; const lfoG = offline.createGain(); lfoG.gain.value = vibDepth * 10; lfo.connect(lfoG); lfoG.connect((sNode as any).detune); lfo.start(0); }
-        fG.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); nasF.connect(offline.destination); 
-        // @ts-ignore
-        if(sNode.start) sNode.start(0); 
+        
+        fG.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); 
+        
+        let lastNode: AudioNode = nasF;
+        eqBands.forEach(b => {
+            if(b.on) {
+                const eq = offline.createBiquadFilter();
+                eq.type = b.type;
+                eq.frequency.value = b.freq;
+                eq.gain.value = b.gain;
+                eq.Q.value = b.q;
+                lastNode.connect(eq);
+                lastNode = eq;
+            }
+        });
+
+        lastNode.connect(offline.destination); 
+        
+        if((sNode as any).start) (sNode as any).start(0); 
         nNode.start(0); return await offline.startRendering();
-    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, vibDepth, vibRate, synthWaveform, pulseWidth]);
+    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, vibDepth, vibRate, synthWaveform, pulseWidth, eqBands]);
 
     const handleSimulationPlay = async () => {
-        if(isAdvPlaying) { if(simPlaySourceRef.current) simPlaySourceRef.current.stop(); simPauseOffsetRef.current = audioContext.currentTime - simStartTimeRef.current; if(animRef.current) cancelAnimationFrame(animRef.current); setIsAdvPlaying(false); setIsPaused(true); } 
-        else {
+        if(isAdvPlaying) { 
+            if(simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch(e) {}
+            simPauseOffsetRef.current = audioContext.currentTime - simStartTimeRef.current; 
+            if(animRef.current) cancelAnimationFrame(animRef.current); 
+            setIsAdvPlaying(false); 
+            setIsPaused(true); 
+        } else {
              const res = lastRenderedRef.current || await renderAdvancedAudio(); if(!res) return; lastRenderedRef.current = res;
-             const s = audioContext.createBufferSource(); s.buffer = res; s.connect(audioContext.destination);
+             
+             const s = audioContext.createBufferSource(); 
+             s.buffer = res; 
+             s.connect(audioContext.destination);
+             
              const offset = isPaused ? simPauseOffsetRef.current : 0;
-             if (offset >= res.duration) { simPauseOffsetRef.current = 0; s.start(0); simStartTimeRef.current = audioContext.currentTime; } else { s.start(0, offset); simStartTimeRef.current = audioContext.currentTime - offset; }
-             simPlaySourceRef.current = s; setIsAdvPlaying(true); setIsPaused(false);
-             const animate = () => { if(!isAdvPlaying) return; const cur = (audioContext.currentTime - simStartTimeRef.current) + (isPaused ? 0 : offset); setPlayHeadPos(cur / advDuration); if (cur < advDuration) animRef.current = requestAnimationFrame(animate); else { setIsAdvPlaying(false); setPlayHeadPos(0); simPauseOffsetRef.current = 0; } };
+             let effectiveOffset = offset;
+             if (offset >= res.duration) effectiveOffset = 0;
+             
+             s.start(0, effectiveOffset); 
+             simStartTimeRef.current = audioContext.currentTime - effectiveOffset;
+             
+             simPlaySourceRef.current = s; 
+             setIsAdvPlaying(true);
+             isAdvPlayingRef.current = true;
+             setIsPaused(false);
+             
+             const animate = () => { 
+                 if(!isAdvPlayingRef.current) return;
+                 
+                 const cur = audioContext.currentTime - simStartTimeRef.current;
+                 const progress = Math.min(1, Math.max(0, cur / advDuration));
+                 
+                 setPlayHeadPos(progress); 
+                 syncVisualsToTime(progress);
+
+                 if (cur < advDuration) {
+                     animRef.current = requestAnimationFrame(animate); 
+                 } else { 
+                     setIsAdvPlaying(false); 
+                     setPlayHeadPos(0); 
+                     simPauseOffsetRef.current = 0; 
+                     syncVisualsToTime(0);
+                 } 
+             };
              animRef.current = requestAnimationFrame(animate);
         }
     };
 
     const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
         if(!canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); const mx = e.clientX - rect.left; const t = Math.max(0, Math.min(1, mx / rect.width));
+        const rect = canvasRef.current.getBoundingClientRect(); 
+        const mx = e.clientX - rect.left; 
         const my = e.clientY - rect.top;
-        if (my < RULER_HEIGHT) { setPlayHeadPos(t); simPauseOffsetRef.current = t * (lastRenderedRef.current?.duration || advDuration); if(isAdvPlaying) { if(simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch(e) {} if(animRef.current) cancelAnimationFrame(animRef.current); setIsAdvPlaying(false); setIsPaused(true); } setDraggingKeyframe({ isPlayhead: true }); return; }
-        const track = advTracks.find(tr => tr.id === selectedTrackId); if (!track) return;
-        const graphH = rect.height - RULER_HEIGHT; const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width)-mx, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH)-my) < 15);
-        if (e.button === 2) { e.preventDefault(); if(hitIdx !== -1 && track.points.length > 2) { setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: t.points.filter((_, i) => i !== hitIdx) } : t)); commitChange("포인트 삭제"); } return; }
-        if (hitIdx !== -1) setDraggingKeyframe({ trackId: selectedTrackId, index: hitIdx });
-        else if (clickToAdd) { const val = track.min + ((1 - ((my - RULER_HEIGHT) / graphH)) * (track.max - track.min)); const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t); setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr)); setDraggingKeyframe({ trackId: selectedTrackId, index: nPts.findIndex(p => p.t === t) }); commitChange("포인트 추가"); }
-    }, [selectedTrackId, advTracks, clickToAdd, isAdvPlaying, advDuration]);
+        const t = Math.max(0, Math.min(1, mx / rect.width));
+        
+        // Priority 1: Check for existing Keyframe interactions FIRST
+        const track = advTracks.find(tr => tr.id === selectedTrackId);
+        if (track) {
+            const graphH = rect.height - RULER_HEIGHT;
+            const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width)-mx, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH)-my) < 15);
+            
+            if (e.button === 2) { // Right click delete
+                e.preventDefault(); 
+                if(hitIdx !== -1 && track.points.length > 2) { 
+                    setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: t.points.filter((_, i) => i !== hitIdx) } : t)); 
+                    commitChange("포인트 삭제"); 
+                } 
+                return; 
+            }
+            
+            if (hitIdx !== -1) {
+                setDraggingKeyframe({ trackId: selectedTrackId, index: hitIdx });
+                return; // Exit early if we hit a keyframe
+            }
+            
+            // Priority 2: Add Point logic (if no keyframe hit)
+            if (clickToAdd && my >= RULER_HEIGHT) {
+                const val = track.min + ((1 - ((my - RULER_HEIGHT) / graphH)) * (track.max - track.min)); 
+                const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t); 
+                
+                setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr)); 
+                
+                const newIndex = nPts.findIndex(p => p.t === t && p.v === val);
+                setDraggingKeyframe({ trackId: selectedTrackId, index: newIndex }); 
+                
+                commitChange("포인트 추가");
+                return;
+            }
+        }
+
+        // Priority 3: Ruler Interaction / Scrubbing
+        if (my < RULER_HEIGHT || !clickToAdd) { 
+            setPlayHeadPos(t); 
+            syncVisualsToTime(t);
+            
+            simPauseOffsetRef.current = t * (lastRenderedRef.current?.duration || advDuration); 
+            if(isAdvPlaying) { 
+                if(simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch(e) {} 
+                if(animRef.current) cancelAnimationFrame(animRef.current); 
+                setIsAdvPlaying(false); 
+                setIsPaused(true); 
+            } 
+            setDraggingKeyframe({ isPlayhead: true }); 
+            return; 
+        }
+
+    }, [selectedTrackId, advTracks, clickToAdd, isAdvPlaying, advDuration, syncVisualsToTime]);
 
     const handleTimelineMouseMove = useCallback((e: React.MouseEvent) => {
         if(!canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect(); const mx = e.clientX - rect.left; const my = e.clientY - rect.top; const t = Math.max(0, Math.min(1, mx / rect.width));
-        if (!draggingKeyframe) { const track = advTracks.find(tr => tr.id === selectedTrackId); if(!track) return; const hitIdx = track.points.findIndex(p => Math.abs((p.t*rect.width)-mx) < 15); setHoveredKeyframe(hitIdx !== -1 ? { trackId: selectedTrackId, index: hitIdx } : null); return; }
-        if (draggingKeyframe.isPlayhead) setPlayHeadPos(t);
-        else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { const gH = rect.height - RULER_HEIGHT; const nV = Math.max(0, Math.min(1, 1 - ((my - RULER_HEIGHT) / gH))); const track = advTracks.find(tr => tr.id === draggingKeyframe.trackId); if(track) {const val = track.min + (nV * (track.max - track.min)); setAdvTracks(prev => prev.map(tr => tr.id === draggingKeyframe.trackId ? { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: val } : p) } : tr));} }
-    }, [draggingKeyframe, selectedTrackId, advTracks]);
+        
+        if (!draggingKeyframe) { 
+            const track = advTracks.find(tr => tr.id === selectedTrackId); 
+            if(!track) return; 
+            const graphH = rect.height - RULER_HEIGHT;
+            const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width)-mx, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH)-my) < 15); 
+            setHoveredKeyframe(hitIdx !== -1 ? { trackId: selectedTrackId, index: hitIdx } : null); 
+            return; 
+        }
+
+        if (draggingKeyframe.isPlayhead) {
+            setPlayHeadPos(t);
+            syncVisualsToTime(t); // Live scrubbing visual update
+        } else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
+            const gH = rect.height - RULER_HEIGHT; 
+            const nV = Math.max(0, Math.min(1, 1 - ((my - RULER_HEIGHT) / gH))); 
+            
+            setAdvTracks(prev => prev.map(tr => {
+                if (tr.id !== draggingKeyframe.trackId) return tr;
+                const val = tr.min + (nV * (tr.max - tr.min)); 
+                const newPoints = tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: val } : p);
+                return { ...tr, points: newPoints.sort((a,b)=>a.t-b.t) }; 
+            }));
+        }
+    }, [draggingKeyframe, selectedTrackId, advTracks, syncVisualsToTime]);
 
     useEffect(() => { const handleKey = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); handleSimulationPlay(); } }; window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey); }, [handleSimulationPlay]);
 
@@ -275,35 +552,87 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const px = playHeadPos * w; ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,h); ctx.stroke();
     }, [selectedTrackId, advTracks, playHeadPos, hoveredKeyframe]);
 
+    // Current Value Helper
+    const getCurrentValue = (trackId: string) => {
+        const track = advTracks.find(t => t.id === trackId);
+        if (!track) return 0;
+        let val = track.points[0].v;
+        for(let i=0; i<track.points.length-1; i++) {
+            if(playHeadPos >= track.points[i].t && playHeadPos <= track.points[i+1].t) {
+                const ratio = (playHeadPos - track.points[i].t) / (track.points[i+1].t - track.points[i].t);
+                val = track.points[i].v + (track.points[i+1].v - track.points[i].v) * ratio;
+                break;
+            }
+        }
+        if(playHeadPos > track.points[track.points.length-1].t) val = track.points[track.points.length-1].v;
+        return val;
+    };
+
     return (
         <div className="flex-1 flex flex-col p-6 gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
             <div className="flex-[3] flex gap-6 min-h-0 overflow-hidden font-sans">
                 <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
                     <div className="flex-1 relative flex items-center justify-center p-4 min-h-0 font-sans">
                         <div className="relative w-full max-w-[400px] aspect-square">
-                            <svg viewBox="40 40 400 400" className="absolute inset-0 w-full h-full opacity-[0.08] pointer-events-none fill-none stroke-slate-900 stroke-2"><path d="M 120 350 Q 120 300 120 280 Q 120 180 180 120 Q 220 80 280 80 Q 320 80 340 120 Q 350 140 350 180 L 350 200 Q 350 220 340 240 Q 330 260 300 280 L 250 300 Q 200 320 180 350" /><path d="M 280 140 Q 295 135 310 140" /><circle cx="300" cy="155" r="4" fill="currentColor" /><path d="M 350 180 L 375 200 L 355 215 Q 370 220 370 235 Q 370 250 350 255 L 350 270 Q 350 310 300 335 L 200 335" /><path d="M 185 200 Q 170 200 170 225 Q 170 250 185 250" /></svg>
-                            <svg viewBox="40 40 400 400" className="w-full h-full max-h-full max-w-lg filter drop-shadow-lg z-10 font-sans"><path d={`M 150 350 L 150 280 Q 150 150 250 150 Q 320 150 350 ${225 - liveTract.lips * 40} L 350 ${225 + liveTract.lips * 40} Q 320 350 250 350 Z`} fill="#f8fafc" stroke="#64748b" strokeWidth="2.5" /><path d="M 140 350 L 160 350" stroke="#94a3b8" strokeWidth={5 + liveTract.throat * 20} strokeLinecap="round" opacity="0.6"/><path d={`M 180 350 Q ${180 + liveTract.x * 120} ${330 - liveTract.y * 120} ${280 + liveTract.x * 50} ${250 + liveTract.y * 50}`} stroke="#f472b6" strokeWidth={18 + liveTract.throat * 12} strokeLinecap="round" fill="none" /><ellipse cx={350 + liveTract.lipLen * 20} cy="225" rx={6 + liveTract.lipLen * 30} ry={3 + liveTract.lips * 40} fill="#db2777" opacity="0.85" /></svg>
-                            <div className="absolute inset-0 z-20">
-                                {/* Tongue Area */}
+                            <svg viewBox="0 0 400 400" className="absolute inset-0 w-full h-full pointer-events-none">
+                                {/* Modern Minimal Face Profile */}
+                                <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 150 L 370 170 L 360 190 Q 340 190 340 220 Q 340 250 310 280 L 250 300 L 120 380" 
+                                    fill="#f8fafc" stroke="#cbd5e1" strokeWidth="3" strokeLinejoin="round" />
+
+                                {/* Throat / Airway (Dynamic Width) */}
+                                <path d={`M 220 380 L 220 250`} stroke="#e2e8f0" strokeWidth={30 + (1-liveTract.throat) * 40} strokeLinecap="butt" opacity="0.8"/>
+                                
+                                {/* Hard Palate (Roof of Mouth) */}
+                                <path d="M 330 160 L 260 160 Q 220 160 220 200" stroke="#64748b" strokeWidth="4" fill="none" strokeLinecap="round"/>
+                                
+                                {/* Soft Palate / Velum (Nasal Control - Yellow Line) */}
+                                <g>
+                                    <path d={`M 260 160 Q 290 ${160 + liveTract.nasal * 40} 310 ${160 + liveTract.nasal * 40}`} 
+                                          stroke="#fbbf24" strokeWidth="4" fill="none" strokeLinecap="round" className="transition-all duration-75"/>
+                                    {/* Velum Interaction Area - Invisible but larger hit target */}
+                                    <path d={`M 260 150 Q 290 ${150 + liveTract.nasal * 40} 310 ${150 + liveTract.nasal * 40} L 310 ${170 + liveTract.nasal * 40} Q 290 ${170 + liveTract.nasal * 40} 260 170 Z`} 
+                                          fill="transparent" stroke="transparent" className="cursor-ns-resize pointer-events-auto hover:fill-yellow-400/20"
+                                          onMouseDown={handleVelumMouseDown}
+                                    />
+                                    <text x="270" y="150" className="text-[10px] font-bold fill-amber-400 opacity-60 select-none pointer-events-none">연구개 (Velum)</text>
+                                </g>
+                                
+                                {/* Tongue (Dynamic) */}
+                                <path d={`M 220 350 Q ${220 + liveTract.x * 80} ${300 - liveTract.y * 100} ${260 + liveTract.x * 60} ${230 + liveTract.y * 30}`} 
+                                      stroke="#f43f5e" strokeWidth={25 + liveTract.throat * 5} strokeLinecap="round" fill="none" className="transition-all duration-75"/>
+                                
+                                {/* Lips (Dynamic) - Split Upper/Lower */}
+                                <g transform={`translate(${330 + liveTract.lipLen * 20}, 200)`}>
+                                    {/* Upper Lip */}
+                                    <path d={`M 0 -5 Q 10 ${-5 - liveTract.lips * 10} 20 -5`} stroke="#fda4af" strokeWidth="5" fill="none" strokeLinecap="round" />
+                                    {/* Lower Lip */}
+                                    <path d={`M 0 5 Q 10 ${5 + liveTract.lips * 10} 20 5`} stroke="#fda4af" strokeWidth="5" fill="none" strokeLinecap="round" />
+                                </g>
+                                
+                                {/* Airflow Hint (Throat) */}
+                                <path d="M 220 360 L 220 320" stroke="#bae6fd" strokeWidth="2" strokeDasharray="4,4" className="animate-pulse"/>
+                            </svg>
+                            
+                            <div className="absolute inset-0 z-20 pointer-events-none">
+                                {/* Tongue Control Area */}
                                 <div 
-                                    className="absolute left-0 top-0 bottom-0 right-[25%] bg-rose-500/5 hover:bg-rose-500/10 rounded-l-3xl rounded-r-lg cursor-crosshair border border-dashed border-rose-200/50 transition-colors flex items-center justify-center group" 
+                                    className="absolute left-[30%] top-[45%] bottom-[15%] right-[25%] bg-rose-500/5 hover:bg-rose-500/10 rounded-full cursor-crosshair border border-dashed border-rose-200/50 transition-colors flex items-center justify-center group pointer-events-auto" 
                                     onMouseDown={handleTractMouseDown}
                                 >
-                                    <span className="text-sm text-rose-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity select-none">혀 (Tongue)</span>
+                                    <span className="text-xs text-rose-400 font-bold opacity-0 group-hover:opacity-100 transition-opacity select-none bg-white/80 px-2 py-1 rounded shadow-sm">혀 (Tongue)</span>
                                 </div>
-                                {/* Lip Area */}
+                                {/* Lip Control Area */}
                                 <div 
-                                    className="absolute right-0 top-[20%] bottom-[20%] w-[22%] bg-emerald-500/5 hover:bg-emerald-500/10 rounded-[2rem] cursor-move border border-dashed border-emerald-200/50 transition-colors flex flex-col items-center justify-center group" 
+                                    className="absolute right-[5%] top-[45%] bottom-[45%] w-[15%] bg-emerald-500/5 hover:bg-emerald-500/10 rounded-xl cursor-move border border-dashed border-emerald-200/50 transition-colors flex flex-col items-center justify-center group pointer-events-auto" 
                                     onMouseDown={handleLipPadMouseDown}
                                 >
-                                    <MoveHorizontal className="w-8 h-8 text-emerald-300 mb-1"/>
-                                    <span className="text-xs text-emerald-400 font-black uppercase tracking-widest text-center px-1 select-none">입술</span>
+                                    <MoveHorizontal className="w-6 h-6 text-emerald-300 mb-1 opacity-50 group-hover:opacity-100"/>
                                 </div>
                             </div>
                         </div>
                     </div>
                     <div className="p-3 px-6 bg-white/80 border-t flex justify-between items-center shrink-0 font-sans">
-                        <button onClick={()=>{const t=playHeadPos; const track = advTracks.find(t=>t.id===selectedTrackId); if(!track) return; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj')return tr;let val=null;if(track.id==='tongueX')val=liveTract.x;else if(track.id==='tongueY')val=liveTract.y;else if(track.id==='lips')val=liveTract.lips;else if(track.id==='lipLen')val=liveTract.lipLen;else if(track.id==='throat')val=liveTract.throat;else if(track.id==='nasal')val=liveTract.nasal;if(val===null)return tr;return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("키프레임 기록");}} className="bg-[#209ad6] hover:bg-[#1a85b9] text-white px-5 py-2 rounded-full text-xs font-bold flex items-center gap-2 active:scale-95 transition-all font-sans font-bold"><CircleDot className="w-4 h-4"/> 기록</button>
+                        <button onClick={()=>{const t=playHeadPos; const track = advTracks.find(t=>t.id===selectedTrackId); if(!track) return; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; let val=null; if(track.id==='tongueX')val=liveTract.x;else if(track.id==='tongueY')val=liveTract.y;else if(track.id==='lips')val=liveTract.lips;else if(track.id==='lipLen')val=liveTract.lipLen;else if(track.id==='throat')val=liveTract.throat;else if(track.id==='nasal')val=liveTract.nasal; else if(track.id==='pitch')val=manualPitch; else if(track.id==='gender')val=manualGender; if(val===null)return tr;return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("키프레임 기록");}} className="bg-[#209ad6] hover:bg-[#1a85b9] text-white px-5 py-2 rounded-full text-xs font-bold flex items-center gap-2 active:scale-95 transition-all font-sans font-bold"><CircleDot className="w-4 h-4"/> 기록 (Record)</button>
                         <div className="flex gap-2 font-black uppercase text-xs font-bold"><button onClick={handleSimulationPlay} className="bg-slate-800 text-white px-5 py-2 rounded-lg flex items-center gap-2 font-bold">{isAdvPlaying ? <Pause size={16} fill="currentColor"/> : <Play size={16} fill="currentColor"/>} {isAdvPlaying ? '일시정지' : '재생'}</button><button onClick={async()=>{ const res = await renderAdvancedAudio(); if(res) onAddToRack(res, "시뮬레이션_" + simIndex); setSimIndex(si => si + 1); }} className="bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-lg transition-colors font-bold font-sans">보관함에 저장</button></div>
                     </div>
                 </div>
@@ -333,17 +662,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         </div>
                     </div>
                     <div className="space-y-5 font-bold text-slate-500 uppercase text-xs font-sans font-bold" onMouseUp={()=>commitChange()}>
-                        {[ {id:'lips', label:'입술 열기', color:'accent-pink-400'}, {id:'lipLen', label:'입술 길이', color:'accent-pink-600'}, {id:'throat', label:'목 조임', color:'accent-purple-400'}, {id:'nasal', label:'비성 (콧소리)', color:'accent-orange-400'} ].map(p => (
-                            <div key={p.id} className="space-y-2 font-sans font-bold">
-                                {/* @ts-ignore dynamic index */}
-                                <div className="flex justify-between font-bold font-sans"><span>{p.label}</span><span className="text-xs">{Math.round(liveTract[p.id]*100)}%</span></div>
-                                {/* @ts-ignore dynamic index */}
-                                <input type="range" min="0" max="1" step="0.01" value={liveTract[p.id]} onChange={e=>{ const v=Number(e.target.value); const n = {...liveTract, [p.id]:v}; setLiveTract(n); updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal); }} className={`w-full h-2 bg-slate-300 appearance-none rounded-full font-bold ${p.color}`}/>
-                            </div>
-                        ))}
-                        <div className="space-y-2 font-sans font-bold"><div className="flex justify-between font-bold font-sans"><span>숨소리 (Breath)</span><span className="text-xs">{Math.round(larynxParams.breathGain*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value={larynxParams.breathGain} onChange={e=>setLarynxParams(p=>({...p, breathGain: Number(e.target.value)}))} className="w-full h-2 bg-slate-300 appearance-none rounded-full accent-cyan-400 font-bold"/></div>
-                        <div className="h-px bg-slate-200 my-2 font-sans"></div>
-                        
+                        {/* Source Params */}
                         <div className="space-y-2 font-sans font-bold font-black uppercase font-sans"><span className="text-xs font-bold font-sans">음원 소스 (Base)</span><select value={tractSourceType} onChange={e=>setTractSourceType(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 outline-none font-bold text-xs font-sans font-black font-sans"><option value="synth">기본 신디사이저</option><option value="file">보관함 파일</option></select></div>
                         {tractSourceType==='synth' && (
                           <div className="space-y-3 font-sans font-bold font-sans font-bold">
@@ -351,32 +670,90 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                               {['sawtooth', 'sine', 'square', 'complex', 'noise'].map(t=>(<button key={t} onClick={()=>setSynthWaveform(t)} className={`py-2 rounded border text-[10px] font-black font-sans ${synthWaveform===t?'bg-indigo-500 text-white border-indigo-500 font-black':'bg-white text-slate-500'}`}>{t.toUpperCase()}</button>))}
                             </div>
                             <div className="space-y-2 font-sans font-bold">
-                              <div className="flex justify-between font-bold text-indigo-600 font-sans"><span>파형 주기 (Pulse/Tone)</span><span className="text-xs">{Math.round(pulseWidth*100)}%</span></div>
-                              <input type="range" min="0.05" max="0.95" step="0.01" value={pulseWidth} onChange={e=>setPulseWidth(Number(e.target.value))} className="w-full h-2 bg-slate-300 appearance-none rounded-full accent-indigo-500 font-sans"/>
+                                <div className="flex justify-between font-bold text-indigo-600 font-sans"><span>Pulse Width</span><span className="text-xs">{Math.round(pulseWidth*100)}%</span></div>
+                                <input type="range" min="0.05" max="0.95" step="0.01" value={pulseWidth} onChange={e=>setPulseWidth(Number(e.target.value))} className="w-full h-2 bg-slate-300 appearance-none rounded-full accent-indigo-500 font-sans"/>
+                            </div>
+                            <div className="space-y-2 font-sans font-bold">
+                                <div className="flex justify-between font-bold text-amber-500 font-sans"><span>Pitch (수동)</span><span className="text-xs">{Math.round(manualPitch)} Hz</span></div>
+                                <input type="range" min="50" max="600" step="1" value={manualPitch} onChange={e=>setManualPitch(Number(e.target.value))} className="w-full h-2 bg-slate-300 appearance-none rounded-full accent-amber-500 font-sans"/>
                             </div>
                           </div>
                         )}
                         {tractSourceType==='file' && <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full bg-white border border-slate-200 rounded p-2 text-xs font-sans font-bold font-sans font-bold">{files.map(f=><option key={f.id} value={f.id} className="font-sans font-bold font-sans font-bold">{f.name}</option>)}</select>}
+                        
+                        <div className="space-y-2 font-sans font-bold">
+                             <div className="flex justify-between font-bold text-pink-500 font-sans"><span>Gender (수동)</span><span className="text-xs">x{manualGender.toFixed(2)}</span></div>
+                             <input type="range" min="0.5" max="2.0" step="0.01" value={manualGender} onChange={e=>setManualGender(Number(e.target.value))} className="w-full h-2 bg-slate-300 appearance-none rounded-full accent-pink-500 font-sans"/>
+                        </div>
+
+                        <div className="h-px bg-slate-200 my-2 font-sans"></div>
+
+                        {[ {id:'lips', label:'입술 열기', color:'accent-pink-400'}, {id:'lipLen', label:'입술 길이', color:'accent-pink-600'}, {id:'throat', label:'목 조임', color:'accent-purple-400'}, {id:'nasal', label:'비성 (콧소리)', color:'accent-orange-400'} ].map(p => (
+                            <div key={p.id} className="space-y-2 font-sans font-bold">
+                                {/* @ts-ignore dynamic index */}
+                                <div className="flex justify-between font-bold font-sans"><span>{p.label}</span><span className="text-xs">{Math.round(liveTract[p.id]*100)}%</span></div>
+                                {/* @ts-ignore dynamic index */}
+                                <input type="range" min="0" max="1" step="0.01" value={liveTract[p.id]} onChange={e=>{ const v=Number(e.target.value); const n = {...liveTract, [p.id]:v}; setLiveTract(n); updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); }} className={`w-full h-2 bg-slate-300 appearance-none rounded-full font-bold ${p.color}`}/>
+                            </div>
+                        ))}
+                        <div className="space-y-2 font-sans font-bold"><div className="flex justify-between font-bold font-sans"><span>숨소리 (Breath)</span><span className="text-xs">{Math.round(larynxParams.breathGain*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value={larynxParams.breathGain} onChange={e=>setLarynxParams(p=>({...p, breathGain: Number(e.target.value)}))} className="w-full h-2 bg-slate-300 appearance-none rounded-full accent-cyan-400 font-bold"/></div>
                         
                         <div className="space-y-2 font-sans font-bold font-black uppercase font-sans font-bold"><span className="text-xs text-slate-500 font-bold font-sans">노이즈 소스 (Noise)</span><select value={larynxParams.noiseSourceType} onChange={e=>setLarynxParams({...larynxParams, noiseSourceType:e.target.value})} className="w-full bg-white border border-slate-200 rounded p-2 outline-none font-bold text-xs font-sans font-bold font-sans font-bold font-black"><option value="generated">기본 화이트 노이즈</option><option value="file">보관함 파일</option></select></div>
                         {larynxParams.noiseSourceType==='file' && <select value={larynxParams.noiseSourceFileId} onChange={e=>setLarynxParams({...larynxParams, noiseSourceFileId:e.target.value})} className="w-full bg-white border border-slate-200 rounded p-2 text-xs mt-1 font-sans font-bold font-sans font-bold">{files.map(f=><option key={f.id} value={f.id} className="font-sans font-bold">{f.name}</option>)}</select>}
                     </div>
                 </div>
             </div>
-            <div className="h-56 flex flex-col gap-3 bg-white/40 rounded-2xl border border-slate-300 p-3 shadow-sm relative overflow-hidden shrink-0 font-sans font-bold font-sans font-bold">
+            <div className="h-[300px] flex flex-col gap-3 bg-white/40 rounded-2xl border border-slate-300 p-3 shadow-sm relative overflow-hidden shrink-0 font-sans font-bold font-sans font-bold">
                  <div className="flex items-center justify-between gap-2 pb-0.5 px-1 font-sans font-bold font-sans font-bold">
                     <div className="flex gap-2 overflow-x-auto custom-scrollbar font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold">
                         {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-3 py-1.5 text-xs font-black border rounded-full transition whitespace-nowrap shadow-xs font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold ${selectedTrackId===t.id?'bg-[#209ad6] text-white border-[#209ad6] font-sans font-bold':'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 font-sans font-bold'}`}>{t.name}</button>)}
                     </div>
                     <div className="flex gap-2 font-sans font-bold font-sans font-bold font-sans font-bold">
-                        <button onClick={()=>{ setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: [{t:0, v:t.id === 'pitch' ? 220 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5))}, {t:1, v:t.id === 'pitch' ? 220 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5))}] } : t)); commitChange("트랙 초기화");}} title="항목 초기화" className="p-1.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-orange-500 transition-colors font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold"><RotateCcw size={16}/></button>
-                        <button onClick={()=>{ setAdvTracks(prev => prev.map(t => ({ ...t, points: [{t:0, v:t.id === 'pitch' ? 220 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5))}, {t:1, v:t.id === 'pitch' ? 220 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5))}] }))); commitChange("전체 초기화");}} title="전체 초기화" className="p-1.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 transition-colors font-bold uppercase font-sans font-sans font-sans font-sans font-sans"><RefreshCw size={16} className="stroke-[3] font-sans font-sans font-sans font-sans font-sans"/></button>
+                        <button onClick={()=>setShowEQ(!showEQ)} title="Toggle EQ" className={`p-1.5 rounded bg-white border border-slate-200 transition-colors ${showEQ ? 'text-pink-600 border-pink-200' : 'text-slate-400 hover:text-slate-600'}`}><AudioLines size={16}/></button>
+                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                        <button onClick={()=>{ setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: [{t:0, v:t.id === 'pitch' ? 220 : (t.id === 'gender' ? 1 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5)))}, {t:1, v:t.id === 'pitch' ? 220 : (t.id === 'gender' ? 1 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5)))}] } : t)); commitChange("트랙 초기화");}} title="항목 초기화" className="p-1.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-orange-500 transition-colors font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold"><RotateCcw size={16}/></button>
+                        <button onClick={()=>{ setAdvTracks(prev => prev.map(t => ({ ...t, points: [{t:0, v:t.id === 'pitch' ? 220 : (t.id === 'gender' ? 1 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5)))}, {t:1, v:t.id === 'pitch' ? 220 : (t.id === 'gender' ? 1 : (t.id === 'gain' ? 1 : (t.id === 'breath' ? 0.01 : 0.5)))}] }))); commitChange("전체 초기화");}} title="전체 초기화" className="p-1.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 transition-colors font-bold uppercase font-sans font-sans font-sans font-sans font-sans"><RefreshCw size={16} className="stroke-[3] font-sans font-sans font-sans font-sans font-sans"/></button>
                         <button onClick={()=>setClickToAdd(!clickToAdd)} className={`p-1.5 rounded-lg border transition-all shadow-sm shrink-0 font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold ${clickToAdd ? 'bg-[#209ad6] text-white border-[#209ad6]' : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600'}`}><MousePointer2 size={18}/></button>
                     </div>
                 </div>
-                <div className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold font-sans font-bold">
-                    <canvas ref={canvasRef} width={1000} height={200} className="w-full h-full block cursor-crosshair font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans" onMouseDown={handleTimelineMouseDown} 
-                        onMouseMove={handleTimelineMouseMove} onMouseUp={() => { if(draggingKeyframe) commitChange("키프레임 이동"); setDraggingKeyframe(null); }} onContextMenu={e=>e.preventDefault()}/>
+
+                <div className="flex-1 flex relative">
+                    <div className={`flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner font-sans font-bold font-sans font-bold ${showEQ ? 'hidden' : 'block'}`}>
+                        <canvas ref={canvasRef} width={1000} height={250} className="w-full h-full block cursor-crosshair font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans font-sans" onMouseDown={handleTimelineMouseDown} 
+                            onMouseMove={handleTimelineMouseMove} onMouseUp={() => { if(draggingKeyframe) commitChange("키프레임 이동"); setDraggingKeyframe(null); }} onContextMenu={e=>e.preventDefault()}/>
+                        
+                        {/* Status Display Overlay */}
+                        <div className="absolute top-2 left-2 bg-white/90 backdrop-blur border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 shadow-sm pointer-events-none flex items-center gap-3">
+                            <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#ef4444] animate-pulse"></span> <span className="font-mono">{playHeadPos.toFixed(3)}s</span></div>
+                            <div className="w-px h-3 bg-slate-300"></div>
+                            <div className="flex items-center gap-1 text-amber-600"><span className="text-[10px] uppercase">Pitch</span> <span className="font-mono">{Math.round(getCurrentValue('pitch'))} Hz</span></div>
+                            <div className="w-px h-3 bg-slate-300"></div>
+                            <div className="flex items-center gap-1 text-pink-500"><span className="text-[10px] uppercase">Gender</span> <span className="font-mono">x{getCurrentValue('gender').toFixed(2)}</span></div>
+                            
+                            {selectedTrackId !== 'pitch' && selectedTrackId !== 'gender' && (
+                                <>
+                                    <div className="w-px h-3 bg-slate-300"></div>
+                                    <div className="flex items-center gap-1" style={{ color: advTracks.find(t=>t.id===selectedTrackId)?.color }}>
+                                        <span className="text-[10px] uppercase">{advTracks.find(t=>t.id===selectedTrackId)?.name}</span> 
+                                        <span className="font-mono">
+                                            {selectedTrackId === 'gain' 
+                                                ? (getCurrentValue(selectedTrackId) * 100).toFixed(0) + '%' 
+                                                : (selectedTrackId === 'breath' 
+                                                    ? (getCurrentValue(selectedTrackId) * 100).toFixed(1) + '%' 
+                                                    : Math.round(getCurrentValue(selectedTrackId) * 100) + '%')
+                                            }
+                                        </span>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {showEQ && (
+                        <div className="flex-1 animate-in fade-in">
+                            <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={simPlaySourceRef.current} />
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

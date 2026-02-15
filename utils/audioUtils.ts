@@ -1,4 +1,5 @@
 
+
 export const RULER_HEIGHT = 24;
 
 export const AudioUtils = {
@@ -167,5 +168,61 @@ export const AudioUtils = {
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  },
+
+  // Calculate Frequency Response magnitude for a Biquad Filter (Low/Peaking/High)
+  getBiquadMagnitude: (freq: number, type: BiquadFilterType, f0: number, gain: number, q: number, sampleRate: number): number => {
+    const w0 = 2 * Math.PI * f0 / sampleRate;
+    const cosW0 = Math.cos(w0);
+    const sinW0 = Math.sin(w0);
+    const alpha = sinW0 / (2 * q);
+    const A = Math.pow(10, gain / 40);
+
+    let b0=0, b1=0, b2=0, a0=1, a1=0, a2=0;
+
+    if (type === 'peaking') {
+        b0 = 1 + alpha * A; b1 = -2 * cosW0; b2 = 1 - alpha * A;
+        a0 = 1 + alpha / A; a1 = -2 * cosW0; a2 = 1 - alpha / A;
+    } else if (type === 'lowshelf') {
+        b0 = A * ((A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
+        b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
+        b2 = A * ((A + 1) - (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha);
+        a0 = (A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha;
+        a1 = -2 * ((A - 1) + (A + 1) * cosW0);
+        a2 = (A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
+    } else if (type === 'highshelf') {
+        b0 = A * ((A + 1) + (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha);
+        b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);
+        b2 = A * ((A + 1) + (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha);
+        a0 = (A + 1) - (A - 1) * cosW0 + 2 * Math.sqrt(A) * alpha;
+        a1 = 2 * ((A - 1) - (A + 1) * cosW0);
+        a2 = (A + 1) - (A - 1) * cosW0 - 2 * Math.sqrt(A) * alpha;
+    } else if (type === 'lowpass') {
+        b0 = (1 - cosW0) / 2; b1 = 1 - cosW0; b2 = (1 - cosW0) / 2;
+        a0 = 1 + alpha; a1 = -2 * cosW0; a2 = 1 - alpha;
+    } else if (type === 'highpass') {
+        b0 = (1 + cosW0) / 2; b1 = -(1 + cosW0); b2 = (1 + cosW0) / 2;
+        a0 = 1 + alpha; a1 = -2 * cosW0; a2 = 1 - alpha;
+    } else {
+        return 1.0; // Identity
+    }
+
+    // Normalize
+    b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
+
+    // Evaluate response at freq
+    const w = 2 * Math.PI * freq / sampleRate;
+    const cosW = Math.cos(w);
+    const cos2W = Math.cos(2*w);
+    const sinW = Math.sin(w);
+    const sin2W = Math.sin(2*w);
+
+    const numReal = b0 + b1 * cosW + b2 * cos2W;
+    const numImag = b1 * sinW + b2 * sin2W;
+    const denReal = 1 + a1 * cosW + a2 * cos2W;
+    const denImag = a1 * sinW + a2 * sin2W;
+
+    const magSquared = (numReal*numReal + numImag*numImag) / (denReal*denReal + denImag*denImag);
+    return Math.sqrt(magSquared);
   }
 };

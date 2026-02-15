@@ -15,6 +15,7 @@ const App: React.FC = () => {
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'editor' | 'consonant' | 'generator' | 'sim'>('editor');
     const [showHelp, setShowHelp] = useState(false);
+    const [fileCounter, setFileCounter] = useState(1);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const activeFile = useMemo(() => files.find(f => f.id === activeFileId), [files, activeFileId]);
@@ -78,9 +79,12 @@ const App: React.FC = () => {
     };
 
     const addToRack = (buffer: AudioBuffer, name: string) => { 
-      const newFile = { id: Math.random().toString(36).substr(2, 9), name: name || "새 오디오", buffer }; 
+      const seqStr = fileCounter.toString().padStart(3, '0');
+      const finalName = `${name}_${seqStr}`;
+      const newFile = { id: Math.random().toString(36).substr(2, 9), name: finalName, buffer }; 
       setFiles(prev => [...prev, newFile]); 
       setActiveFileId(newFile.id); 
+      setFileCounter(prev => prev + 1);
     };
     
     const updateFile = (newBuffer: AudioBuffer) => { 
@@ -134,11 +138,19 @@ const App: React.FC = () => {
             </header>
             <main className="flex-1 flex overflow-hidden">
                 <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
-                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto custom-scrollbar">
-                    {activeTab === 'editor' && <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} />}
-                    {activeTab === 'generator' && <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
-                    {activeTab === 'consonant' && <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
-                    {activeTab === 'sim' && <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />}
+                <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto custom-scrollbar relative">
+                    <div className={`w-full h-full flex flex-col ${activeTab === 'editor' ? '' : 'hidden'}`}>
+                        <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} />
+                    </div>
+                    <div className={`w-full h-full flex flex-col ${activeTab === 'generator' ? '' : 'hidden'}`}>
+                        <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                    </div>
+                    <div className={`w-full h-full flex flex-col ${activeTab === 'consonant' ? '' : 'hidden'}`}>
+                        <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                    </div>
+                    <div className={`w-full h-full flex flex-col ${activeTab === 'sim' ? '' : 'hidden'}`}>
+                        <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                    </div>
                 </div>
             </main>
             {showHelp && <HelpModal onClose={()=>setShowHelp(false)} />}

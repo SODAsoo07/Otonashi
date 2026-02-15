@@ -1,3 +1,4 @@
+
 export interface AudioFile {
   id: string;
   name: string;
@@ -50,4 +51,13 @@ export interface EQParams {
   low: number;
   mid: number;
   high: number;
+}
+
+export interface EQBand {
+  id: number;
+  type: BiquadFilterType;
+  freq: number;
+  gain: number;
+  q: number;
+  on: boolean;
 }
