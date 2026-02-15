@@ -6,7 +6,7 @@ import {
   Activity, SlidersHorizontal, Music, Square, Play, Pause, History, Save, FilePlus, ScanLine, AudioLines, Mic2, MousePointer2
 } from 'lucide-react';
 import { AudioFile, KeyframePoint, FormantParams, EQParams, EQBand } from '../types';
-import { AudioUtils } from '../utils/audioUtils';
+import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
 import FormantPad from './FormantPad';
 
@@ -100,11 +100,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         onUpdateFile(next.buffer); 
     }, [redoStack, onUpdateFile, activeBuffer]);
 
-    const handleStop = useCallback(() => {
+    const stopPlayback = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
-        setIsPlaying(false); setIsPaused(false); setPlayheadPos(0); pauseOffsetRef.current = 0;
+        setIsPlaying(false);
         if(animationRef.current) cancelAnimationFrame(animationRef.current);
     }, []);
+
+    const handleStop = useCallback(() => {
+        stopPlayback();
+        setIsPaused(false); setPlayheadPos(0); pauseOffsetRef.current = 0;
+    }, [stopPlayback]);
 
     const updatePlayhead = useCallback(() => {
         if (!isPlaying || !activeBuffer) return;
@@ -117,7 +122,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             const relPct = selDur > 0 ? elapsed / selDur : 0;
             currentPos = (editTrim.start + relPct * (editTrim.end - editTrim.start)) * 100;
         }
-        setPlayheadPos(currentPos % 100); 
+        
+        // Loop or stop at end? For 'all' we stop at end in onended, but visual clamp:
+        if (currentPos >= 100 && playMode === 'all') currentPos = 100;
+
+        setPlayheadPos(currentPos); 
         animationRef.current = requestAnimationFrame(updatePlayhead);
     }, [isPlaying, activeBuffer, audioContext, playMode, editTrim]);
 
@@ -204,12 +213,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     const togglePlay = async (mode: 'all' | 'selection') => {
         if (isPlaying) {
-             handleStop(); // Simple toggle: Stop if playing. Could implement Pause.
-             // For Pause:
-             // if (sourceRef.current) sourceRef.current.stop();
-             // pauseOffsetRef.current += audioContext.currentTime - startTimeRef.current;
-             // setIsPlaying(false); setIsPaused(true);
-             // if(animationRef.current) cancelAnimationFrame(animationRef.current);
+             handleStop(); 
              return;
         }
 
@@ -227,9 +231,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (mode === 'selection') {
             startOffset = editTrim.start * activeBuffer.duration;
             dur = (editTrim.end - editTrim.start) * activeBuffer.duration;
-            // Adjust for pause
             if (isPaused) { 
-                // Simple pause logic handling for selection is complex, resetting for now
                 pauseOffsetRef.current = 0; 
             }
         } else {
@@ -257,26 +259,63 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const h = canvasRef.current.height;
 
         ctx.clearRect(0, 0, w, h);
-        ctx.fillStyle = '#1e293b';
-        ctx.fillRect(0, 0, w, h);
+        
+        // Draw Ruler BG
+        ctx.fillStyle = '#f1f5f9';
+        ctx.fillRect(0, 0, w, RULER_HEIGHT);
 
-        // Draw Waveform
+        // Draw Waveform BG
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT);
+
+        // Draw Ruler
+        const dur = activeBuffer.duration;
+        ctx.beginPath();
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 1;
+        ctx.font = '10px Inter';
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'left';
+        
+        // Dynamic tick interval based on duration to prevent crowding
+        let tickInterval = 1;
+        if (dur > 10) tickInterval = 2;
+        if (dur > 30) tickInterval = 5;
+        if (dur > 60) tickInterval = 10;
+        if (dur > 300) tickInterval = 30;
+
+        for (let t = 0; t <= dur; t += tickInterval) {
+            const x = (t / dur) * w;
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, RULER_HEIGHT);
+            ctx.fillText(t + 's', x + 2, RULER_HEIGHT - 6);
+        }
+        ctx.stroke();
+
+        // Draw Waveform (Full Width)
         const data = activeBuffer.getChannelData(0);
         const step = Math.ceil(data.length / w);
-        const amp = h / 2;
+        const waveH = h - RULER_HEIGHT;
+        const amp = waveH / 2;
+        const yOffset = RULER_HEIGHT;
 
         ctx.beginPath();
         ctx.strokeStyle = '#60a5fa';
         ctx.lineWidth = 1;
         for (let i = 0; i < w; i++) {
             let min = 1.0; let max = -1.0;
+            // Sampling for pixel column
             for (let j = 0; j < step; j++) {
-                const datum = data[(i * step) + j];
-                if (datum < min) min = datum;
-                if (datum > max) max = datum;
+                const idx = (i * step) + j;
+                if (idx < data.length) {
+                    const datum = data[idx];
+                    if (datum < min) min = datum;
+                    if (datum > max) max = datum;
+                }
             }
-            ctx.moveTo(i, amp + min * amp);
-            ctx.lineTo(i, amp + max * amp);
+            // Map [-1, 1] to [amp*2, 0] relative to center
+            ctx.moveTo(i, yOffset + (amp + min * amp));
+            ctx.lineTo(i, yOffset + (amp + max * amp));
         }
         ctx.stroke();
 
@@ -284,16 +323,26 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const sX = editTrim.start * w;
         const eX = editTrim.end * w;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-        ctx.fillRect(sX, 0, eX - sX, h);
+        ctx.fillRect(sX, RULER_HEIGHT, eX - sX, waveH);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.strokeRect(sX, 0, eX - sX, h);
+        ctx.strokeRect(sX, RULER_HEIGHT, eX - sX, waveH);
 
         // Draw Playhead
-        if (playheadPos > 0) {
+        if (playheadPos >= 0) {
             const px = (playheadPos / 100) * w;
+            
+            // Handle (Triangle)
+            ctx.beginPath();
+            ctx.fillStyle = '#ef4444';
+            ctx.moveTo(px - 6, 0);
+            ctx.lineTo(px + 6, 0);
+            ctx.lineTo(px, RULER_HEIGHT - 5);
+            ctx.fill();
+
+            // Line
             ctx.beginPath();
             ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 1;
             ctx.moveTo(px, 0);
             ctx.lineTo(px, h);
             ctx.stroke();
@@ -306,16 +355,18 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             ctx.lineWidth = 2;
             volumeKeyframes.forEach((p, i) => {
                 const x = p.t * w;
-                const y = (1 - p.v) * h;
+                const y = yOffset + (1 - p.v) * waveH;
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             });
             ctx.stroke();
             
             volumeKeyframes.forEach(p => {
+                const x = p.t * w;
+                const y = yOffset + (1 - p.v) * waveH;
                 ctx.beginPath();
                 ctx.fillStyle = '#fbbf24';
-                ctx.arc(p.t * w, (1 - p.v) * h, 4, 0, Math.PI * 2);
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
                 ctx.fill();
             });
         }
@@ -323,49 +374,75 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     }, [activeBuffer, editTrim, playheadPos, showAutomation, volumeKeyframes]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if (!canvasRef.current) return;
+        if (!canvasRef.current || !activeBuffer) return;
         const rect = canvasRef.current.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = 1 - ((e.clientY - rect.top) / rect.height); // 0-1 from bottom
+        const xRaw = e.clientX - rect.left;
+        const yRaw = e.clientY - rect.top;
+        
+        const w = rect.width;
+        // Normalize X
+        const xPct = Math.max(0, Math.min(1, xRaw / w));
+
+        // Check if Clicked in Ruler
+        if (yRaw < RULER_HEIGHT) {
+            // Seek Logic
+            if (isPlaying) {
+                stopPlayback();
+                setIsPaused(true);
+            }
+            const newPos = xPct * 100;
+            setPlayheadPos(newPos);
+            pauseOffsetRef.current = xPct * activeBuffer.duration;
+            setDragTarget('playhead');
+            return;
+        }
+
+        // Automation / Selection Logic (in Waveform Area)
+        const waveH = rect.height - RULER_HEIGHT;
+        const yPct = Math.max(0, Math.min(1, 1 - ((yRaw - RULER_HEIGHT) / waveH))); // 1 at top of wave, 0 at bottom
 
         if (showAutomation) {
-             // Automation editing logic
-             const hitIdx = volumeKeyframes.findIndex(p => Math.abs(p.t - x) < 0.02 && Math.abs(p.v - y) < 0.1);
-             if (e.button === 2) { // Right click delete
+             const hitIdx = volumeKeyframes.findIndex(p => Math.abs(p.t - xPct) < 0.02 && Math.abs(p.v - yPct) < 0.1);
+             if (e.button === 2) { 
                  if (hitIdx !== -1 && volumeKeyframes.length > 2) {
                      setVolumeKeyframes(prev => prev.filter((_, i) => i !== hitIdx));
                  }
                  return;
              }
              if (hitIdx !== -1) {
-                 // Drag existing
                  setDragTarget(`auto-${hitIdx}`);
              } else {
-                 // Add new
-                 setVolumeKeyframes(prev => [...prev, { t: x, v: y }].sort((a,b) => a.t - b.t));
-                 setDragTarget(`auto-new`); // Simplification
+                 setVolumeKeyframes(prev => [...prev, { t: xPct, v: yPct }].sort((a,b) => a.t - b.t));
+                 setDragTarget(`auto-new`); 
              }
         } else {
-            // Selection logic
             if (e.button === 0) {
-                // Left click: Start selection
-                setEditTrim({ start: x, end: x });
+                setEditTrim({ start: xPct, end: xPct });
                 setDragTarget('selection');
             }
         }
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (!dragTarget || !canvasRef.current) return;
+        if (!dragTarget || !canvasRef.current || !activeBuffer) return;
         const rect = canvasRef.current.getBoundingClientRect();
-        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
+        const w = rect.width;
+        const waveH = rect.height - RULER_HEIGHT;
 
-        if (dragTarget === 'selection') {
-            setEditTrim(prev => ({ ...prev, end: x }));
+        const xRaw = e.clientX - rect.left;
+        const yRaw = e.clientY - rect.top;
+
+        const xPct = Math.max(0, Math.min(1, xRaw / w));
+        const yPct = Math.max(0, Math.min(1, 1 - ((yRaw - RULER_HEIGHT) / waveH)));
+
+        if (dragTarget === 'playhead') {
+            setPlayheadPos(xPct * 100);
+            pauseOffsetRef.current = xPct * activeBuffer.duration;
+        } else if (dragTarget === 'selection') {
+            setEditTrim(prev => ({ ...prev, end: xPct }));
         } else if (dragTarget.startsWith('auto')) {
-             // Handle automation drag (simplified)
-             // In real app, we'd track the specific index being dragged
+            // Update logic would go here for automation dragging
+            // For simplicity, we just add points on click, dragging requires tracking index
         }
     };
 
@@ -433,7 +510,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             onContextMenu={e=>e.preventDefault()}
                          />
                          <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur px-3 py-1.5 rounded-lg text-xs text-white font-mono flex gap-4 pointer-events-none">
-                             <span>Time: {playheadPos.toFixed(2)}s</span>
+                             <span>Time: {playheadPos >= 0 && activeBuffer ? (playheadPos/100 * activeBuffer.duration).toFixed(2) : '0.00'}s</span>
                              <span>Selection: {(editTrim.end - editTrim.start).toFixed(2)}s</span>
                              {showAutomation && <span className="text-amber-400">Automation Mode</span>}
                          </div>
