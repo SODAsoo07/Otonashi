@@ -38,8 +38,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [showHistory, setShowHistory] = useState(false);
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
     
-    // Sidebar Tab State
-    const [sideTab, setSideTab] = useState<'effects' | 'eq' | 'formant'>('effects');
+    // Sidebar Tab State (EQ moved to bottom panel)
+    const [sideTab, setSideTab] = useState<'effects' | 'formant'>('effects');
 
     // History Stacks
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
@@ -513,15 +513,19 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
                     {/* Bottom Section */}
                     <div className="flex gap-6 flex-col lg:flex-row">
-                        {/* Bottom Left: EQ & Info Area */}
-                        <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 p-6 relative flex flex-col justify-end shadow-inner h-[320px]">
-                            {/* Visualizer Placeholder */}
-                            <div className="text-white/20 font-black text-4xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 uppercase tracking-tighter pointer-events-none select-none">
-                                Visualizer
+                        {/* Bottom Left: EQ & Info Area (Now fully functional ParametricEQ) */}
+                        <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative flex flex-col shadow-inner h-[320px] overflow-hidden">
+                            <div className="flex-1 min-h-0 relative z-0">
+                                <ParametricEQ 
+                                    bands={eqBands} 
+                                    onChange={setEqBands} 
+                                    audioContext={audioContext} 
+                                    playingSource={sourceRef.current}
+                                />
                             </div>
 
-                            {/* Info Bar */}
-                            <div className="bg-black/40 backdrop-blur rounded-xl p-4 border border-white/10 flex justify-between items-center text-white font-mono text-sm shrink-0">
+                            {/* Info Bar - Overlay at bottom */}
+                            <div className="absolute bottom-4 left-4 right-4 bg-slate-900/60 backdrop-blur rounded-xl p-4 border border-white/10 flex justify-between items-center text-white font-mono text-sm shrink-0 z-10 pointer-events-none">
                                     <div className="flex flex-col gap-1">
                                         <span className="text-[10px] text-slate-400 uppercase font-bold">Current Time</span>
                                         <span className="text-xl text-cyan-400">{playheadPos >= 0 && activeBuffer ? (playheadPos/100 * activeBuffer.duration).toFixed(3) : '0.000'}s</span>
@@ -539,11 +543,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             </div>
                         </div>
 
-                        {/* Bottom Right: Sidebar Effects */}
+                        {/* Bottom Right: Sidebar Effects (EQ Removed) */}
                         <div className="w-full lg:w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm h-[320px]">
                             <div className="flex border-b border-slate-200">
                                 <button onClick={()=>setSideTab('effects')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='effects'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Effects</button>
-                                <button onClick={()=>setSideTab('eq')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='eq'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>EQ</button>
                                 <button onClick={()=>setSideTab('formant')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='formant'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Formant</button>
                             </div>
                             <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
@@ -576,11 +579,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                                 <input type="range" min="0" max="2" step="0.05" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
-                                {sideTab === 'eq' && (
-                                    <div className="h-64 animate-in fade-in">
-                                        <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current}/>
                                     </div>
                                 )}
                                 {sideTab === 'formant' && (
