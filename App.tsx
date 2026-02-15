@@ -120,7 +120,7 @@ const App: React.FC = () => {
                         <h1 className="font-black text-xl tracking-tighter leading-none bg-clip-text text-transparent bg-gradient-to-r from-[#b2d4ed] via-[#3c78e8] to-[#e3daf5]">
                           OTONASHI
                         </h1>
-                        <span className="text-[8px] text-slate-400 font-black uppercase tracking-tight">
+                        <span className="text-[10px] text-slate-400 font-black uppercase tracking-tight">
                           AUgmented vocal-TracT and Nasal SImulator
                         </span>
                     </div>
@@ -159,6 +159,7 @@ const App: React.FC = () => {
                 />
                 <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto custom-scrollbar">
                     <div className={`w-full min-h-full flex flex-col ${activeTab === 'editor' ? '' : 'hidden'}`}>
+                        {/* Corrected prop assignment: from onAddToRack(addToRack) to onAddToRack={addToRack} */}
                         <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
                     </div>
                     <div className={`w-full min-h-full flex flex-col ${activeTab === 'generator' ? '' : 'hidden'}`}>
