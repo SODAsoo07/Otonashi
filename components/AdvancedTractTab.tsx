@@ -71,6 +71,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const simPauseOffsetRef = useRef(0);
     const simPlaySourceRef = useRef<AudioBufferSourceNode | null>(null);
     const previewDebounceRef = useRef<number | null>(null);
+    const requestRef = useRef<number | null>(null);
 
     useEffect(() => {
         isAdvPlayingRef.current = isAdvPlaying;
@@ -128,11 +129,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
         fr1 *= gender; fr2 *= gender; fr3 *= gender;
 
-        if(f1) f1.frequency.setTargetAtTime(Math.max(50, fr1), now, 0.01); 
-        if(f2) f2.frequency.setTargetAtTime(fr2, now, 0.01); 
-        if(f3) f3.frequency.setTargetAtTime(fr3, now, 0.01); 
-        if(nasF) nasF.frequency.setTargetAtTime(Math.max(400, (10000 - (n * 9000)) * gender), now, 0.01);
-        if(osc && tractSourceType === 'synth') osc.frequency.setTargetAtTime(pitch, now, 0.01);
+        if(f1) f1.frequency.setTargetAtTime(Math.max(50, fr1), now, 0.005); 
+        if(f2) f2.frequency.setTargetAtTime(fr2, now, 0.005); 
+        if(f3) f3.frequency.setTargetAtTime(fr3, now, 0.005); 
+        if(nasF) nasF.frequency.setTargetAtTime(Math.max(400, (10000 - (n * 9000)) * gender), now, 0.005);
+        if(osc && tractSourceType === 'synth') osc.frequency.setTargetAtTime(pitch, now, 0.005);
     }, [audioContext, tractSourceType]);
 
     const updateLiveAudio = useCallback((x: number, y: number, l: number, t: number, len: number, n: number, pitch: number, gender: number) => { 
@@ -208,7 +209,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const update = (ce: MouseEvent | React.MouseEvent) => { 
             const x = Math.max(0, Math.min(1, (ce.clientX - rect.left) / rect.width)); 
             const y = Math.max(0, Math.min(1, 1 - (ce.clientY - rect.top) / rect.height)); 
-            setLiveTract(prev => { const n = { ...prev, x, y }; updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); return n; }); 
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+            requestRef.current = requestAnimationFrame(() => {
+                setLiveTract(prev => { 
+                    const n = { ...prev, x, y }; 
+                    updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); 
+                    return n; 
+                }); 
+            });
         };
         update(e); startLivePreview(); 
         const mv = (me: MouseEvent) => update(me); 
@@ -221,7 +229,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const update = (ce: MouseEvent | React.MouseEvent) => { 
             const lipLen = Math.max(0, Math.min(1, (ce.clientX - rect.left) / rect.width)); 
             const lips = Math.max(0, Math.min(1, 1 - (ce.clientY - rect.top) / rect.height)); 
-            setLiveTract(prev => { const n = { ...prev, lips, lipLen }; updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); return n; }); 
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+            requestRef.current = requestAnimationFrame(() => {
+                setLiveTract(prev => { 
+                    const n = { ...prev, lips, lipLen }; 
+                    updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); 
+                    return n; 
+                }); 
+            });
         };
         update(e); startLivePreview(); 
         const mv = (me: MouseEvent) => update(me); 
@@ -235,10 +250,13 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const update = (ce: MouseEvent) => {
             const deltaY = ce.clientY - startY;
             const newVal = Math.max(0, Math.min(1, startVal + deltaY / 100)); 
-            setLiveTract(prev => { 
-                const n = { ...prev, nasal: newVal }; 
-                updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); 
-                return n; 
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+            requestRef.current = requestAnimationFrame(() => {
+                setLiveTract(prev => { 
+                    const n = { ...prev, nasal: newVal }; 
+                    updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); 
+                    return n; 
+                });
             });
         };
         startLivePreview();
@@ -476,7 +494,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             <div className="flex-[2] flex gap-4 shrink-0 font-sans">
                 <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm lg:aspect-auto">
                     <div className="flex-1 relative flex items-center justify-center p-8 font-sans overflow-hidden">
-                        <div className="relative w-[70%] h-[70%] transition-all duration-300">
+                        <div className="relative w-[70%] h-[70%]">
                             <svg viewBox="100 50 280 340" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-sm">
                                 <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 150 L 370 170 L 360 190 Q 340 190 340 220 Q 340 250 310 280 L 250 300 L 120 380" 
                                     fill="#fdfdfb" stroke="#cbd5e1" strokeWidth="3" strokeLinejoin="round" />
@@ -484,12 +502,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 <path d="M 330 160 L 260 160 Q 220 160 220 200" stroke="#64748b" strokeWidth="4" fill="none" strokeLinecap="round"/>
                                 <g>
                                     <path d={`M 260 160 Q 290 ${160 + liveTract.nasal * 40} 310 ${160 + liveTract.nasal * 40}`} 
-                                          stroke="#fbbf24" strokeWidth="4" fill="none" strokeLinecap="round" className="transition-all duration-75"/>
+                                          stroke="#fbbf24" strokeWidth="4" fill="none" strokeLinecap="round" />
                                     <path d={`M 260 150 Q 290 ${150 + liveTract.nasal * 40} 310 ${150 + liveTract.nasal * 40} L 310 ${170 + liveTract.nasal * 40} Q 290 ${170 + liveTract.nasal * 40} 260 170 Z`} 
                                           fill="transparent" stroke="transparent" className="cursor-ns-resize pointer-events-auto hover:fill-yellow-400/20" onMouseDown={handleVelumMouseDown} />
                                     <text x="235" y="145" className="text-[10px] font-bold fill-amber-500 opacity-80 select-none pointer-events-none font-sans">연구개 (Velum)</text>
                                 </g>
-                                <path d={getTonguePath()} stroke="#f43f5e" strokeWidth={25 + liveTract.throat * 5} strokeLinecap="round" fill="none" className="transition-all duration-75"/>
+                                <path d={getTonguePath()} stroke="#f43f5e" strokeWidth={25 + liveTract.throat * 5} strokeLinecap="round" fill="none" />
                                 <g transform={`translate(${330 + liveTract.lipLen * 20}, 200)`}>
                                     <path d={`M 0 -5 Q 10 ${-5 - liveTract.lips * 15} 20 -5`} stroke="#fda4af" strokeWidth="6" fill="none" strokeLinecap="round" />
                                     <path d={`M 0 5 Q 10 ${5 + liveTract.lips * 15} 20 5`} stroke="#fda4af" strokeWidth="6" fill="none" strokeLinecap="round" />
@@ -497,7 +515,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 <path d="M 220 360 L 220 320" stroke="#bae6fd" strokeWidth="2" strokeDasharray="4,4" className="animate-pulse"/>
                             </svg>
                             <div className="absolute inset-0 z-20 pointer-events-none">
-                                <div className="absolute left-[20%] top-[40%] bottom-[10%] right-[15%] bg-rose-500/0 hover:bg-rose-500/5 rounded-full cursor-crosshair transition-colors flex items-center justify-center group pointer-events-auto" onMouseDown={handleTractMouseDown} >
+                                <div className="absolute left-[20%] top-[40%] bottom-[10%] right-[15%] bg-rose-500/0 hover:bg-rose-500/5 rounded-full cursor-crosshair flex items-center justify-center group pointer-events-auto" onMouseDown={handleTractMouseDown} >
                                     <span className="text-[10px] text-rose-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity select-none bg-white/90 border border-rose-100 px-2 py-1 rounded shadow-sm">혀 (Tongue)</span>
                                 </div>
                                 <div className="absolute right-[0%] top-[40%] bottom-[40%] w-[25%] bg-emerald-500/0 hover:bg-emerald-500/5 rounded-xl cursor-move transition-colors flex flex-col items-center justify-center group pointer-events-auto" onMouseDown={handleLipPadMouseDown} >
