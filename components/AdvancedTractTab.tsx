@@ -473,10 +473,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     );
 
     return (
-        <div className="flex-1 flex flex-col p-6 gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
-            <div className="flex-[3] flex gap-6 min-h-0 overflow-hidden font-sans">
-                <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
-                    <div className="flex-1 relative flex items-center justify-center p-4 min-h-0 font-sans">
+        <div className="flex-1 flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
+            <div className="flex-[3] flex gap-6 shrink-0 font-sans">
+                <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm aspect-video lg:aspect-auto">
+                    <div className="flex-1 relative flex items-center justify-center p-4 font-sans">
                         <div className="relative w-full max-w-[400px] aspect-square">
                             <svg viewBox="0 0 400 400" className="absolute inset-0 w-full h-full pointer-events-none">
                                 <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 150 L 370 170 L 360 190 Q 340 190 340 220 Q 340 250 310 280 L 250 300 L 120 380" 
@@ -555,7 +555,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     </div>
                 </div>
             </div>
-            <div className="min-h-[300px] flex-1 flex flex-col gap-3 bg-white/40 rounded-2xl border border-slate-300 p-3 shadow-sm relative shrink-0 font-sans font-bold">
+            <div className="min-h-[350px] flex flex-col gap-3 bg-white/40 rounded-2xl border border-slate-300 p-3 shadow-sm relative shrink-0 font-sans font-bold mb-8">
                  <div className="flex items-center justify-between gap-2 pb-0.5 px-1 font-sans font-bold">
                     <div className="flex gap-2 overflow-x-auto custom-scrollbar font-sans font-bold">
                         {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-3 py-1.5 text-xs font-black border rounded-full transition whitespace-nowrap shadow-xs font-sans font-bold ${selectedTrackId===t.id?'bg-[#209ad6] text-white border-[#209ad6]':'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>{t.name}</button>)}
@@ -568,7 +568,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         <button onClick={()=>setClickToAdd(!clickToAdd)} className={`p-1.5 rounded-lg border transition-all shadow-sm shrink-0 ${clickToAdd ? 'bg-[#209ad6] text-white border-[#209ad6]' : 'bg-white text-slate-400 border-slate-200 hover:text-slate-600'}`}><MousePointer2 size={18}/></button>
                     </div>
                 </div>
-                <div className="flex-1 flex relative min-h-0">
+                <div className="h-[250px] flex relative min-h-0">
                     <div className={`flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner font-sans font-bold ${showEQ ? 'hidden' : 'block'}`}>
                         <canvas ref={canvasRef} width={1000} height={250} className="w-full h-full block cursor-crosshair" onMouseDown={handleTimelineMouseDown} 
                             onMouseMove={handleTimelineMouseMove} onMouseUp={() => { if(draggingKeyframe) commitChange("키프레임 이동"); setDraggingKeyframe(null); }} onContextMenu={e=>e.preventDefault()}/>
@@ -592,10 +592,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         </div>
                     </div>
                     {showEQ && (
-                        <div className="flex-1 animate-in fade-in overflow-y-auto custom-scrollbar bg-[#0f172a] rounded-xl border border-slate-700 shadow-inner p-4">
-                            <div className="min-h-[250px]">
-                                <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={simPlaySourceRef.current} />
-                            </div>
+                        <div className="flex-1 animate-in fade-in bg-[#0f172a] rounded-xl border border-slate-700 shadow-inner p-4 overflow-hidden">
+                            <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={simPlaySourceRef.current} />
                         </div>
                     )}
                 </div>

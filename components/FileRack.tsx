@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { Plus, FileAudio, Edit2, X } from 'lucide-react';
+import { Plus, FileAudio, Edit2, X, FolderOpen } from 'lucide-react';
 import { AudioFile } from '../types';
 
 interface FileRackProps {
@@ -9,9 +10,10 @@ interface FileRackProps {
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   removeFile: (id: string) => void;
   renameFile: (id: string, newName: string) => void;
+  isOpen: boolean;
 }
 
-const FileRack: React.FC<FileRackProps> = ({ files, activeFileId, setActiveFileId, handleFileUpload, removeFile, renameFile }) => {
+const FileRack: React.FC<FileRackProps> = ({ files, activeFileId, setActiveFileId, handleFileUpload, removeFile, renameFile, isOpen }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState("");
 
@@ -25,8 +27,33 @@ const FileRack: React.FC<FileRackProps> = ({ files, activeFileId, setActiveFileI
     if(window.confirm("파일을 삭제하시겠습니까?")) removeFile(id); 
   };
 
+  if (!isOpen) {
+    return (
+        <aside className="w-12 bg-white/60 border-r border-slate-300 flex flex-col shrink-0 items-center py-4 gap-4 transition-all duration-300 ease-in-out font-sans">
+            <label className="cursor-pointer hover:bg-slate-200 p-2 rounded-lg transition text-[#209ad6]" title="파일 업로드">
+                <Plus size={20}/>
+                <input type="file" multiple accept=".wav,.mp3,audio/*" className="hidden" onChange={handleFileUpload}/>
+            </label>
+            <div className="w-px h-full bg-slate-200"></div>
+            <FolderOpen className="text-slate-300" size={20}/>
+            <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto custom-scrollbar px-1">
+                {files.map(f => (
+                    <button 
+                        key={f.id} 
+                        onClick={() => setActiveFileId(f.id)}
+                        className={`p-2 rounded-lg transition-all ${activeFileId === f.id ? 'bg-blue-100 text-blue-600 shadow-sm' : 'text-slate-400 hover:bg-slate-100'}`}
+                        title={f.name}
+                    >
+                        <FileAudio size={18}/>
+                    </button>
+                ))}
+            </div>
+        </aside>
+    );
+  }
+
   return (
-    <aside className="w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 font-sans">
+    <aside className="w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 transition-all duration-300 ease-in-out font-sans">
       <div className="p-4 border-b border-slate-300 flex justify-between items-center bg-slate-200/50">
         <span className="text-xs font-bold text-slate-600 uppercase tracking-wider font-black">파일 보관함</span>
         <label className="cursor-pointer hover:bg-slate-300 p-1 rounded transition text-[#209ad6]">
