@@ -7,13 +7,12 @@ interface ParametricEQProps {
   bands: EQBand[];
   onChange: (bands: EQBand[]) => void;
   audioContext: AudioContext;
-  // If provided, the EQ will visualize the analysis of this source.
-  // The component does NOT create the filters itself for the audio chain, 
-  // it only visualizes and controls the parameters.
   playingSource: AudioNode | null; 
+  activeBuffer?: AudioBuffer | null;
+  currentTime?: number;
 }
 
-const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioContext, playingSource }) => {
+const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioContext, playingSource, activeBuffer, currentTime = 0 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
@@ -26,23 +25,50 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
         if (!analyserRef.current) {
             analyserRef.current = audioContext.createAnalyser();
             analyserRef.current.fftSize = 2048;
-            analyserRef.current.smoothingTimeConstant = 0.8;
+            analyserRef.current.smoothingTimeConstant = 0.6;
         }
 
         if (playingSource) {
-            // We assume the playingSource is already connected to destination.
-            // We fan-out to the analyser for visualization.
             try {
+                // If playing, connect source to analyser
                 playingSource.connect(analyserRef.current);
-            } catch(e) {
-                // Ignore connection errors (e.g. already connected)
-            }
+            } catch(e) { /* ignore */ }
         }
 
-        return () => {
-             // Cleanup if needed, but usually we just disconnect the source node when it stops
-        };
     }, [audioContext, playingSource]);
+
+    // Scrubbing Analysis Logic
+    useEffect(() => {
+        // If not playing, manually feed data to analyser to visualize current frame
+        if (!playingSource && activeBuffer && analyserRef.current && audioContext) {
+            try {
+                // Get data at current time
+                const sampleRate = activeBuffer.sampleRate;
+                const startSample = Math.floor(currentTime * sampleRate);
+                const fftSize = analyserRef.current.fftSize;
+                
+                if (startSample >= 0 && startSample < activeBuffer.length) {
+                    const sliceLen = fftSize;
+                    const sliceBuffer = audioContext.createBuffer(1, sliceLen, sampleRate);
+                    const channelData = activeBuffer.getChannelData(0);
+                    
+                    // Copy data safely
+                    const end = Math.min(startSample + sliceLen, activeBuffer.length);
+                    const slice = channelData.slice(startSample, end);
+                    sliceBuffer.copyToChannel(slice, 0);
+
+                    // Create a one-shot source to feed the analyser
+                    const source = audioContext.createBufferSource();
+                    source.buffer = sliceBuffer;
+                    source.connect(analyserRef.current);
+                    source.start();
+                    // We don't connect to destination, so it's silent but feeds analyser
+                }
+            } catch (e) {
+                console.error("Analysis error", e);
+            }
+        }
+    }, [activeBuffer, currentTime, playingSource, audioContext]);
 
     const getX = (freq: number, width: number) => {
         const minF = 20; const maxF = 20000;
@@ -53,7 +79,6 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
 
     const getY = (gain: number, height: number) => {
         const minG = -20; const maxG = 20;
-        // Map 20 to 0, -20 to height
         return (1 - (gain - minG) / (maxG - minG)) * height;
     };
 
@@ -78,7 +103,6 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
         const w = canvas.width;
         const h = canvas.height;
 
-        // Background / Grid
         ctx.clearRect(0, 0, w, h);
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, w, h);
@@ -88,11 +112,11 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
         ctx.lineWidth = 1;
         ctx.beginPath();
         [100, 1000, 10000].forEach(f => { const x = getX(f, w); ctx.moveTo(x, 0); ctx.lineTo(x, h); });
-        ctx.moveTo(0, h/2); ctx.lineTo(w, h/2); // 0dB line
+        ctx.moveTo(0, h/2); ctx.lineTo(w, h/2); 
         ctx.stroke();
 
         // RTA (Real Time Analyzer)
-        if (analyserRef.current && playingSource) {
+        if (analyserRef.current) {
             const bufferLength = analyserRef.current.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
             analyserRef.current.getByteFrequencyData(dataArray);
@@ -101,7 +125,6 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
             ctx.beginPath();
             ctx.moveTo(0, h);
             for(let i=0; i<bufferLength; i++) {
-                // Map linear bin index to log frequency
                 const freq = (i * audioContext.sampleRate) / (2 * bufferLength);
                 if (freq < 20) continue;
                 if (freq > 20000) break;
@@ -115,22 +138,20 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
             ctx.fill();
         }
 
-        // Calculate Aggregate Response Curve
+        // Aggregate Response Curve
         ctx.beginPath();
-        ctx.strokeStyle = '#60a5fa'; // Blue line for curve
+        ctx.strokeStyle = '#60a5fa'; 
         ctx.lineWidth = 2;
         
         const sampleRate = audioContext.sampleRate;
         for (let x = 0; x < w; x+=2) {
             const freq = getFreqFromX(x, w);
             let totalGainDB = 0;
-            
             bands.forEach(b => {
                 if (!b.on) return;
                 const mag = AudioUtils.getBiquadMagnitude(freq, b.type, b.freq, b.gain, b.q, sampleRate);
                 totalGainDB += 20 * Math.log10(mag);
             });
-            
             const y = getY(totalGainDB, h);
             if (x===0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
@@ -141,17 +162,13 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
         bands.forEach((b, i) => {
             const x = getX(b.freq, w);
             const y = getY(b.gain, h);
-            
             ctx.beginPath();
             ctx.fillStyle = b.on ? (dragBandId === b.id ? '#fbbf24' : '#ffffff') : '#475569';
             ctx.arc(x, y, 6, 0, Math.PI * 2);
             ctx.fill();
-            
-            // Labels
             ctx.fillStyle = '#94a3b8';
             ctx.font = '10px Inter';
             ctx.fillText((i+1).toString(), x - 3, y - 10);
-            if (b.type.includes('pass')) ctx.fillText(b.type === 'lowpass' ? 'LP' : 'HP', x - 6, y + 15);
         });
 
         requestRef.current = requestAnimationFrame(draw);
@@ -168,7 +185,6 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
         const my = e.clientY - rect.top;
         const w = rect.width; const h = rect.height;
 
-        // Find clicked band
         let hitId: number | null = null;
         bands.forEach(b => {
              const bx = getX(b.freq, w);
@@ -177,9 +193,6 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
         });
 
         if (hitId !== null) {
-            if (e.button === 2) { // Right click to toggle type (simple toggle for now)
-                 // Or handled by context menu, here we just set drag
-            }
             setDragBandId(hitId);
         }
     };
@@ -253,23 +266,6 @@ const ParametricEQ: React.FC<ParametricEQProps> = ({ bands, onChange, audioConte
                 onDoubleClick={handleDoubleClick}
                 onContextMenu={e=>e.preventDefault()}
             />
-            {/* Control Strip */}
-            <div className="absolute bottom-0 left-0 right-0 bg-[#0f172a]/90 backdrop-blur p-2 flex justify-between items-center border-t border-slate-700">
-                 <div className="flex gap-2 overflow-x-auto custom-scrollbar">
-                     {bands.map(b => (
-                         <div key={b.id} className={`flex flex-col items-center p-1.5 rounded border min-w-[50px] cursor-pointer ${b.on ? (dragBandId === b.id ? 'bg-slate-700 border-yellow-500' : 'bg-slate-800 border-slate-600') : 'opacity-50 border-transparent'}`}
-                            onClick={() => setDragBandId(b.id)}
-                         >
-                             <span className="text-[9px] font-bold text-slate-400">{b.id}</span>
-                             <span className="text-[10px] text-cyan-400 font-mono">{Math.round(b.freq)}</span>
-                             <span className="text-[9px] text-slate-500">{b.type === 'peaking' ? 'Peak' : (b.type === 'lowshelf' ? 'LowS' : (b.type === 'highshelf' ? 'HiS' : (b.type === 'lowpass' ? 'LP' : 'HP')))}</span>
-                         </div>
-                     ))}
-                 </div>
-                 <div className="text-[10px] text-slate-500 px-2 font-mono">
-                     Q: Scroll | On/Off: DblClick
-                 </div>
-            </div>
         </div>
     );
 };

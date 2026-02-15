@@ -3,15 +3,16 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, Mic2, AudioLines } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { RULER_HEIGHT } from '../utils/audioUtils';
-import ParametricEQ from './ParametricEQ.tsx';
+import ParametricEQ from './ParametricEQ';
 
 interface AdvancedTractTabProps {
   audioContext: AudioContext;
   files: AudioFile[];
   onAddToRack: (buffer: AudioBuffer, name: string) => void;
+  isActive: boolean;
 }
 
-const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack }) => {
+const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
     // --- State ---
     const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: false, jitterDepth: 10, jitterRate: 5, breathOn: true, breathGain: 0.1, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
     const [tractSourceType, setTractSourceType] = useState('synth'); 
@@ -405,7 +406,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         nNode.start(0); return await offline.startRendering();
     }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, vibDepth, vibRate, synthWaveform, pulseWidth, eqBands]);
 
-    const handleSimulationPlay = async () => {
+    const handleSimulationPlay = useCallback(async () => {
         if(isAdvPlaying) { 
             if(simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch(e) {}
             simPauseOffsetRef.current = audioContext.currentTime - simStartTimeRef.current; 
@@ -451,7 +452,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
              };
              animRef.current = requestAnimationFrame(animate);
         }
-    };
+    }, [isAdvPlaying, isPaused, renderAdvancedAudio, audioContext, advDuration, syncVisualsToTime]);
+
+    useEffect(() => { 
+        if (!isActive) return;
+        const handleKey = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); handleSimulationPlay(); } }; 
+        window.addEventListener('keydown', handleKey); 
+        return () => window.removeEventListener('keydown', handleKey); 
+    }, [isActive, handleSimulationPlay]);
 
     const handleTimelineMouseDown = useCallback((e: React.MouseEvent) => {
         if(!canvasRef.current) return;

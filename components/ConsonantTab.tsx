@@ -3,15 +3,16 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Combine, MousePointer2, TrendingUp, Play, Save, Undo2, Redo2, History, Volume2, MoveHorizontal, AudioLines } from 'lucide-react';
 import { AudioFile, KeyframePoint, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
-import ParametricEQ from './ParametricEQ.tsx';
+import ParametricEQ from './ParametricEQ';
 
 interface ConsonantTabProps {
   audioContext: AudioContext;
   files: AudioFile[];
   onAddToRack: (buffer: AudioBuffer, name: string) => void;
+  isActive: boolean;
 }
 
-const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddToRack }) => {
+const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
     
@@ -151,7 +152,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         return await offline.startRendering();
     };
 
-    const togglePlay = async () => {
+    const togglePlay = useCallback(async () => {
          if(isPlaying) { 
              if(sourceRef.current) sourceRef.current.stop(); 
              pauseOffsetRef.current += audioContext.currentTime - startTimeRef.current; 
@@ -183,9 +184,14 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 if(animRef.current) cancelAnimationFrame(animRef.current);
              };
          }
-    };
+    }, [isPlaying, vowelId, consonantId, offsetMs, cStretch, vStretch, vowelGain, consonantGain, eqBands, mixConsonant, audioContext]);
 
-    useEffect(() => { const handleKey = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); togglePlay(); } }; window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey); }, [isPlaying, vowelId, consonantId, offsetMs, cStretch, vStretch, vowelGain, consonantGain, eqBands]);
+    useEffect(() => { 
+        if (!isActive) return;
+        const handleKey = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); togglePlay(); } }; 
+        window.addEventListener('keydown', handleKey); 
+        return () => window.removeEventListener('keydown', handleKey); 
+    }, [isActive, togglePlay]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if(!canvasRef.current) return;

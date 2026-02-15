@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { Activity, HelpCircle, Settings, User, Download, Upload, FileJson } from 'lucide-react';
 import FileRack from './components/FileRack';
@@ -140,16 +141,16 @@ const App: React.FC = () => {
                 <FileRack files={files} activeFileId={activeFileId} setActiveFileId={setActiveFileId} handleFileUpload={handleFileUpload} removeFile={removeFile} renameFile={renameFile} />
                 <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto custom-scrollbar relative">
                     <div className={`w-full h-full flex flex-col ${activeTab === 'editor' ? '' : 'hidden'}`}>
-                        <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} />
+                        <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
                     </div>
                     <div className={`w-full h-full flex flex-col ${activeTab === 'generator' ? '' : 'hidden'}`}>
-                        <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                        <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'generator'} />
                     </div>
                     <div className={`w-full h-full flex flex-col ${activeTab === 'consonant' ? '' : 'hidden'}`}>
-                        <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                        <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'consonant'} />
                     </div>
                     <div className={`w-full h-full flex flex-col ${activeTab === 'sim' ? '' : 'hidden'}`}>
-                        <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} />
+                        <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'sim'} />
                     </div>
                 </div>
             </main>
