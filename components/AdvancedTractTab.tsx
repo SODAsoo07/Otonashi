@@ -476,7 +476,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             <div className="flex-[2] flex gap-4 shrink-0 font-sans">
                 <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm lg:aspect-auto">
                     <div className="flex-1 relative flex items-center justify-center p-8 font-sans overflow-hidden">
-                        <div className="relative w-full h-full transition-all duration-300">
+                        <div className="relative w-[70%] h-[70%] transition-all duration-300">
                             <svg viewBox="100 50 280 340" className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-sm">
                                 <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 150 L 370 170 L 360 190 Q 340 190 340 220 Q 340 250 310 280 L 250 300 L 120 380" 
                                     fill="#fdfdfb" stroke="#cbd5e1" strokeWidth="3" strokeLinejoin="round" />
