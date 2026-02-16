@@ -170,7 +170,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     const stopLivePreview = useCallback(() => { if (liveAudioRef.current) { try { liveAudioRef.current.sNode.stop(); } catch(e) {} liveAudioRef.current = null; } }, []);
 
-    // 조작 모드 정의
     const [controlMode, setControlMode] = useState<'tongue' | 'lips' | 'nasal' | null>(null);
 
     const handleSimulationMouseDown = useCallback((e: React.MouseEvent, mode: 'tongue' | 'lips' | 'nasal') => {
@@ -185,7 +184,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             setLiveTract(prev => { 
                 let n = { ...prev };
                 if (mode === 'tongue') { n.x = relX; n.y = relY; }
-                else if (mode === 'lips') { n.lipLen = 1 - relX; n.lips = relY; } // X: 돌출, Y: 벌림
+                else if (mode === 'lips') { n.lipLen = 1 - relX; n.lips = relY; } 
                 else if (mode === 'nasal') { n.nasal = relY; }
                 
                 updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); 
@@ -284,7 +283,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const t = Math.max(0, Math.min(1, x / rect.width));
         
         if (y < RULER_HEIGHT + 3 && !isEditMode) {
-            // Fix: Changed setPlayheadPos to setPlayHeadPos
             setPlayHeadPos(t); syncVisualsToTime(t);
             simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
@@ -317,7 +315,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 }
             }
         } else {
-            // Fix: Changed setPlayheadPos to setPlayHeadPos
             setPlayHeadPos(t); syncVisualsToTime(t);
             simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
@@ -328,14 +325,13 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if(!draggingKeyframe || !canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         if (draggingKeyframe.isPlayhead) { 
-            // Fix: Changed setPlayheadPos to setPlayHeadPos
             setPlayHeadPos(t); syncVisualsToTime(t); 
         } 
         else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
             const gH = rect.height - RULER_HEIGHT; const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
-                const valActual = tr.min + (nV * (tr.max - tr.min));
+                const valActual = tr.min + nV * (tr.max - tr.min);
                 return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: valActual } : p).sort((a,b)=>a.t-b.t) }; 
             }));
         }
@@ -371,7 +367,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
           <span className="text-xs uppercase tracking-tighter">{label}</span>
           <input type="number" value={Number(value).toFixed(2)} step={step} onChange={e => onChange(Math.max(min, Math.min(max, parseFloat(e.target.value))))} className="w-14 bg-white/60 border border-slate-200 rounded px-1 text-right text-xs outline-none py-0.5" />
         </div>
-        <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} className="w-full h-1 bg-slate-300 appearance-none rounded-full cursor-pointer accent-blue-500" />
+        <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(parseFloat(e.target.value))} className="w-full h-1 bg-slate-300 appearance-none rounded-full cursor-pointer dynamic-primary" />
       </div>
     );
 
@@ -382,27 +378,18 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
             <div className="flex-[2] flex gap-0 shrink-0 min-h-0">
-                <div className="flex-1 bg-white/60 rounded-2xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
+                <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
                     <div className="flex-1 relative flex items-center justify-center px-5 py-2 overflow-hidden">
-                        <svg viewBox="100 50 280 340" className="w-[90%] h-[90%] drop-shadow-lg select-none">
-                            {/* 배경 실루엣 */}
+                        {/* 성도 가이드 그래픽 (SVG) - w-[75%] h-[75%]로 조정됨 */}
+                        <svg viewBox="100 50 280 340" className="w-[75%] h-[75%] drop-shadow-lg select-none transition-all duration-300">
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
-                            
-                            {/* 목구멍 조절 영역 */}
                             <path d={`M 220 380 L 220 250`} stroke="#e2e8f0" strokeWidth={30 + (1-liveTract.throat) * 40} strokeLinecap="round" opacity="0.6"/>
-                            
-                            {/* 연구개 (Nasal/Velum) 애니메이션 및 드래그 핸들 */}
                             <path d={`M 260 140 Q 290 ${140 + nasalVelumAngle} 310 ${140 + nasalVelumAngle}`} stroke="#fbbf24" strokeWidth="6" fill="none" strokeLinecap="round" className="cursor-ns-resize" onMouseDown={(e) => handleSimulationMouseDown(e, 'nasal')}/>
-                            
-                            {/* 혀 (Tongue) 드래그 영역 */}
                             <path d={`M 220 350 Q ${220 + liveTract.x * 120} ${330 - liveTract.y * 140} ${250 + liveTract.x * 90} ${230 + liveTract.y * 60}`} stroke="#f43f5e" strokeWidth={25 + liveTract.throat * 8} fill="none" strokeLinecap="round" opacity="0.9" className="cursor-crosshair" onMouseDown={(e) => handleSimulationMouseDown(e, 'tongue')}/>
-
-                            {/* 입술 (Lips) 애니메이션 및 드래그 영역 */}
                             <g transform={`translate(${lipProtrusion}, 0)`} className="cursor-move" onMouseDown={(e) => handleSimulationMouseDown(e, 'lips')}>
                                 <path d={`M 350 ${150 - lipOpening/2} L 370 ${150 - lipOpening/2}`} stroke="#ec4899" strokeWidth="10" strokeLinecap="round" />
                                 <path d={`M 350 ${190 + lipOpening/2} L 370 ${190 + lipOpening/2}`} stroke="#ec4899" strokeWidth="10" strokeLinecap="round" />
-                                {/* 투명 클릭 레이어 */}
                                 <rect x="340" y="140" width="40" height="60" fill="transparent"/>
                             </g>
                         </svg>
@@ -413,20 +400,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             <button onClick={handleRedo} disabled={redoStack.length===0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 disabled:opacity-20 transition-all shadow-sm"><Redo2 size={16}/></button>
                         </div>
                         <div className="flex gap-1.5 font-bold text-xs items-center">
-                            <button onClick={()=>{const t=playHeadPos; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; let val=0; if(tr.id==='tongueX')val=liveTract.x;else if(tr.id==='tongueY')val=liveTract.y;else if(tr.id==='lips')val=liveTract.lips;else if(tr.id==='lipLen')val=liveTract.lipLen;else if(tr.id==='throat')val=liveTract.throat;else if(tr.id==='nasal')val=liveTract.nasal; else if(tr.id==='pitch')val=manualPitch; else if(tr.id==='gender')val=manualGender; return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("기록");}} className="bg-[#209ad6] text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-all"><CircleDot size={14}/> 기록</button>
+                            <button onClick={()=>{const t=playHeadPos; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; let val=0; if(tr.id==='tongueX')val=liveTract.x;else if(tr.id==='tongueY')val=liveTract.y;else if(tr.id==='lips')val=liveTract.lips;else if(tr.id==='lipLen')val=liveTract.lipLen;else if(tr.id==='throat')val=liveTract.throat;else if(tr.id==='nasal')val=liveTract.nasal; else if(tr.id==='pitch')val=manualPitch; else if(tr.id==='gender')val=manualGender; return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("기록");}} className="dynamic-primary text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-all"><CircleDot size={14}/> 기록</button>
                             <div className="w-px h-4 bg-slate-200 mx-1"></div>
                             <button onClick={handleSimulationPlay} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md active:scale-95 transition-all">{isAdvPlaying ? <Pause size={14}/> : <Play size={14}/>} {isAdvPlaying ? '중지' : '재생'}</button>
-                            <button onClick={async()=>{ const res = await renderAdvancedAudio(); if(res) onAddToRack(res, "Sim_" + simIndex); setSimIndex(s=>s+1); }} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all">보관함 저장</button>
+                            <button onClick={async()=>{ const res = await renderAdvancedAudio(); if(res) onAddToRack(res, "Sim_" + simIndex); setSimIndex(s=>s+1); }} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-bold">보관함 저장</button>
                         </div>
                     </div>
                 </div>
-                <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'bg-blue-500' : ''}`} onMouseDown={(e)=>{setIsResizing(true); e.preventDefault();}} />
-                <div className="bg-white/40 rounded-2xl border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
+                <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'dynamic-primary' : ''}`} onMouseDown={(e)=>{setIsResizing(true); e.preventDefault();}} />
+                <div className="bg-white/40 dynamic-radius border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
                     <div className="flex border-b border-slate-300 bg-white/40">
-                        <button onClick={()=>setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='settings'?'bg-white text-[#209ad6] border-b-2 border-[#209ad6] shadow-sm':'text-slate-500'}`}><Settings2 size={14} className="inline mr-1"/> 설정</button>
+                        <button onClick={()=>setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='settings'?'bg-white dynamic-primary-text border-b-2 dynamic-primary-border shadow-sm':'text-slate-500'}`}><Settings2 size={14} className="inline mr-1"/> 설정</button>
                         <button onClick={()=>setSidebarTab('eq')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='eq'?'bg-white text-pink-600 border-b-2 border-pink-500 shadow-sm':'text-slate-500'}`}><AudioLines size={14} className="inline mr-1"/> EQ</button>
                     </div>
-                    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4">
+                    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4 font-bold">
                         {sidebarTab === 'settings' ? (
                             <div className="space-y-4">
                                 <ParamInput label="Pitch" value={manualPitch} min={50} max={600} step={1} onChange={setManualPitch} colorClass="text-amber-500" />
@@ -442,10 +429,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     </div>
                 </div>
             </div>
-            <div className="min-h-[220px] bg-white/40 rounded-2xl border border-slate-300 p-2 shadow-sm relative shrink-0">
+            <div className="min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0">
                  <div className="flex items-center justify-between gap-1.5 pb-1 px-1">
-                    <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1">
-                        {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'bg-[#209ad6] text-white border-[#209ad6] shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
+                    <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1 font-bold">
+                        {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-white dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
                     </div>
                     <div className="flex gap-1 shrink-0">
                         <button 
