@@ -587,10 +587,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
-            <div className="flex-1 flex gap-0 shrink-0 min-h-0">
+            <div className="flex-[1.5] flex gap-0 shrink-0 min-h-0">
                 <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
-                    <div className="flex-1 relative flex items-center justify-center overflow-hidden min-h-[200px] py-[3px]">
-                        <svg viewBox="100 50 280 340" className="w-full h-full max-h-full drop-shadow-lg select-none transition-all duration-300 p-0">
+                    <div className="flex-1 relative flex items-center justify-center px-4 py-1 overflow-hidden">
+                        <svg viewBox="100 50 280 340" className="w-[50%] h-[50%] drop-shadow-lg select-none transition-all duration-300">
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d={`M 220 380 L 220 250`} stroke="#e2e8f0" strokeWidth={30 + (1-liveTract.throat) * 40} strokeLinecap="round" opacity="0.6"/>
@@ -693,7 +693,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     </div>
                 </div>
             </div>
-            <div className="flex-1 min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0">
+            <div className="min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0">
                  <div className="flex items-center justify-between gap-1.5 pb-1 px-1">
                     <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1 font-bold">
                         {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
@@ -702,7 +702,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         <button onClick={()=>setIsEditMode(!isEditMode)} className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode?'bg-amber-400 text-white border-amber-500':'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`} title={isEditMode ? "키프레임 편집 중" : "플레이헤드 이동 모드"}><PencilLine size={16}/></button>
                     </div>
                 </div>
-                <div className="h-full max-h-[220px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
+                <div className="h-[180px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
                     <canvas ref={canvasRef} width={1000} height={180} className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onContextMenu={e=>e.preventDefault()}/>
                     <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[10px] font-black text-slate-600 flex gap-2 pointer-events-none shadow-sm">
                         <span>Time: {playHeadPos.toFixed(3)}s</span>
