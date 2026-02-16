@@ -21,19 +21,19 @@ const App: React.FC = () => {
     const [isRackOpen, setIsRackOpen] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // --- 글로벌 히스토리 시스템 ---
+    // 글로벌 히스토리 (파일 시스템)
     const [globalUndoStack, setGlobalUndoStack] = useState<AudioFile[][]>([]);
     const [globalRedoStack, setGlobalRedoStack] = useState<AudioFile[][]>([]);
 
     const commitGlobalHistory = useCallback((currentFiles: AudioFile[]) => {
-        setGlobalUndoStack(prev => [...prev.slice(-29), currentFiles]);
+        setGlobalUndoStack(prev => [...prev.slice(-29), [...currentFiles]]);
         setGlobalRedoStack([]);
     }, []);
 
     const handleGlobalUndo = useCallback(() => {
         if (globalUndoStack.length === 0) return;
         const prevState = globalUndoStack[globalUndoStack.length - 1];
-        setGlobalRedoStack(prev => [...prev, files]);
+        setGlobalRedoStack(prev => [...prev, [...files]]);
         setGlobalUndoStack(prev => prev.slice(0, -1));
         setFiles(prevState);
     }, [globalUndoStack, files]);
@@ -41,12 +41,11 @@ const App: React.FC = () => {
     const handleGlobalRedo = useCallback(() => {
         if (globalRedoStack.length === 0) return;
         const nextState = globalRedoStack[globalRedoStack.length - 1];
-        setGlobalUndoStack(prev => [...prev, files]);
+        setGlobalUndoStack(prev => [...prev, [...files]]);
         setGlobalRedoStack(prev => prev.slice(0, -1));
         setFiles(nextState);
     }, [globalRedoStack, files]);
 
-    // --- 사이드바 및 UI 설정 ---
     const [isResizing, setIsResizing] = useState(false);
     const [isDevModeActive, setIsDevModeActive] = useState(false);
     const [inputBuffer, setInputBuffer] = useState("");
@@ -153,7 +152,7 @@ const App: React.FC = () => {
             const base64 = await AudioUtils.blobToBase64(blob);
             return { id: f.id, name: f.name, data: base64 };
         }));
-        const projectData = { version: '1.3', files: fileData, ui: uiConfig };
+        const projectData = { version: '1.4', files: fileData, ui: uiConfig };
         const blob = new Blob([JSON.stringify(projectData)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -226,7 +225,7 @@ const App: React.FC = () => {
                 </nav>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                      <button onClick={handleGlobalUndo} disabled={globalUndoStack.length === 0} title="파일 목록 변경 취소" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
+                      <button onClick={handleGlobalUndo} disabled={globalUndoStack.length === 0} title="파일 목록 작업 취소" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
                       <button onClick={handleGlobalRedo} disabled={globalRedoStack.length === 0} title="파일 목록 다시 실행" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Redo2 size={16}/></button>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
@@ -261,7 +260,6 @@ const App: React.FC = () => {
                 )}
 
                 <div className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar relative">
-                    {/* 탭 전환 시에도 상태를 유지하기 위해 모든 탭을 렌더링하고 활성화된 탭만 표시함 */}
                     <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'editor' ? 'flex' : 'none' }}>
                         <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
                     </div>
