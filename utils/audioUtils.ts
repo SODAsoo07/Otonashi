@@ -1,5 +1,4 @@
 
-
 export const RULER_HEIGHT = 24;
 
 export const AudioUtils = {
@@ -170,7 +169,6 @@ export const AudioUtils = {
     });
   },
 
-  // Calculate Frequency Response magnitude for a Biquad Filter (Low/Peaking/High)
   getBiquadMagnitude: (freq: number, type: BiquadFilterType, f0: number, gain: number, q: number, sampleRate: number): number => {
     const w0 = 2 * Math.PI * f0 / sampleRate;
     const cosW0 = Math.cos(w0);
@@ -204,13 +202,11 @@ export const AudioUtils = {
         b0 = (1 + cosW0) / 2; b1 = -(1 + cosW0); b2 = (1 + cosW0) / 2;
         a0 = 1 + alpha; a1 = -2 * cosW0; a2 = 1 - alpha;
     } else {
-        return 1.0; // Identity
+        return 1.0; 
     }
 
-    // Normalize
     b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
 
-    // Evaluate response at freq
     const w = 2 * Math.PI * freq / sampleRate;
     const cosW = Math.cos(w);
     const cos2W = Math.cos(2*w);
@@ -224,5 +220,112 @@ export const AudioUtils = {
 
     const magSquared = (numReal*numReal + numImag*numImag) / (denReal*denReal + denImag*denImag);
     return Math.sqrt(magSquared);
+  },
+
+  // --- LPC (Linear Predictive Coding) Analysis ---
+  analyzeFormants: (buffer: AudioBuffer, windowSize: number = 0.025, stepSize: number = 0.01): { t: number, f1: number, f2: number, f3: number, energy: number }[] => {
+    const sr = buffer.sampleRate;
+    const data = buffer.getChannelData(0);
+    const nWin = Math.floor(windowSize * sr);
+    const nStep = Math.floor(stepSize * sr);
+    const results = [];
+    // LPC Order 16 is optimal for speech separation without overfitting noise
+    const order = 16; 
+
+    for (let i = 0; i < data.length - nWin; i += nStep) {
+        // 1. Windowing (Hamming) & Pre-emphasis & Energy Calculation
+        const segment = new Float32Array(nWin);
+        let sumSq = 0;
+        for (let j = 0; j < nWin; j++) {
+            const raw = data[i + j];
+            // Pre-emphasis
+            const val = (j > 0) ? raw - 0.95 * data[i + j - 1] : raw;
+            segment[j] = val * (0.54 - 0.46 * Math.cos((2 * Math.PI * j) / (nWin - 1)));
+            // Energy calc on windowed pre-emphasized signal
+            sumSq += segment[j] * segment[j];
+        }
+        const rms = Math.sqrt(sumSq / nWin);
+
+        // 2. Autocorrelation
+        const r = new Float32Array(order + 1);
+        for (let k = 0; k <= order; k++) {
+            let sum = 0;
+            for (let j = 0; j < nWin - k; j++) sum += segment[j] * segment[j + k];
+            r[k] = sum;
+        }
+
+        // 3. Levinson-Durbin
+        const a = new Float32Array(order + 1);
+        const e = new Float32Array(order + 1);
+        a[0] = 1; e[0] = r[0];
+
+        for (let k = 1; k <= order; k++) {
+            let lambda = 0;
+            for (let j = 0; j < k; j++) lambda -= a[j] * r[k - j];
+            lambda /= e[k - 1];
+            const prevA = Float32Array.from(a);
+            for(let j=1; j<k; j++) a[j] = prevA[j] + lambda * prevA[k-j];
+            a[k] = lambda;
+            e[k] = e[k - 1] * (1 - lambda * lambda);
+        }
+
+        // 4. Peak Picking
+        const peaks = [];
+        let prevMag = 0;
+        let prevSlope = 0;
+        const maxFreq = 5500; 
+        const freqStep = 10; 
+        
+        for (let f = 50; f < maxFreq; f += freqStep) {
+            const w = 2 * Math.PI * f / sr;
+            let re = 0, im = 0;
+            for (let k = 0; k <= order; k++) {
+                re += a[k] * Math.cos(k * w);
+                im -= a[k] * Math.sin(k * w);
+            }
+            const mag = 1 / Math.sqrt(re * re + im * im);
+            const slope = mag - prevMag;
+            
+            if (prevSlope > 0 && slope < 0) {
+                peaks.push({ f: f - freqStep, mag: prevMag });
+            }
+            prevMag = mag;
+            prevSlope = slope;
+        }
+
+        peaks.sort((x, y) => x.f - y.f);
+
+        let f1 = 0, f2 = 0, f3 = 0;
+        const last = results.length > 0 ? results[results.length-1] : {f1:500, f2:1500, f3:2500};
+
+        // 5. Dependent Formant Search Strategy
+        const p1 = peaks.find(p => p.f >= 150 && p.f < 1100);
+        
+        if (p1) {
+            f1 = p1.f;
+            const minF2 = f1 + 200;
+            const p2 = peaks.find(p => p.f > minF2 && p.f < 3000);
+            if (p2) {
+                f2 = p2.f;
+                const minF3 = f2 + 400;
+                const p3 = peaks.find(p => p.f > minF3 && p.f < 5200);
+                if (p3) {
+                    f3 = p3.f;
+                } else {
+                    f3 = Math.max(minF3, last.f3); 
+                }
+            } else {
+                f2 = Math.max(minF2, last.f2); 
+                f3 = Math.max(f2 + 600, last.f3);
+            }
+        } else {
+            f1 = last.f1;
+            f2 = last.f2;
+            f3 = last.f3;
+        }
+
+        results.push({ t: i / sr, f1, f2, f3, energy: rms });
+    }
+    return results;
   }
 };

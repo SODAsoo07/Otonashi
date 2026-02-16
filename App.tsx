@@ -111,6 +111,7 @@ const App: React.FC = () => {
         const selFiles = Array.from(filesToUpload);
         const newFilesList = [...files];
         for(const file of selFiles) {
+            if (file.size === 0) continue;
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);

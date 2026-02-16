@@ -1,9 +1,10 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind, Activity } from 'lucide-react';
-import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind, Activity, Wand2, GitCommit, Spline } from 'lucide-react';
+import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand, KeyframePoint } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
+import FormantAnalyzer from './FormantAnalyzer';
 
 interface AdvancedTractTabProps {
   audioContext: AudioContext;
@@ -11,6 +12,15 @@ interface AdvancedTractTabProps {
   onAddToRack: (buffer: AudioBuffer, name: string) => void;
   isActive: boolean;
 }
+
+// Cubic Interpolation (Catmull-Rom Spline)
+const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number) => {
+    const a = 2 * p0 - 5 * p1 + 4 * p2 - p3;
+    const b = -p0 + 3 * p1 - 3 * p2 + p3;
+    const c = p2 - p0; // Tension factor omitted for standard Catmull-Rom
+    const d = 2 * p1;
+    return 0.5 * (a * t * t * t + b * t * t + c * t + d);
+};
 
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
     // --- State ---
@@ -38,6 +48,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [isResizing, setIsResizing] = useState(false);
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
+    const [showAnalyzer, setShowAnalyzer] = useState(false);
 
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },
@@ -48,16 +59,16 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     ]);
 
     const [advTracks, setAdvTracks] = useState<AdvTrack[]>([
-        { id: 'tongueX', name: '혀 위치 (X)', group: 'adj', color: '#60a5fa', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1 },
-        { id: 'tongueY', name: '혀 높이 (Y)', group: 'adj', color: '#4ade80', points: [{t:0, v:0.4}, {t:1, v:0.4}], min:0, max:1 },
-        { id: 'lips',    name: '입술 열기', group: 'adj', color: '#f472b6', points: [{t:0, v:0.7}, {t:1, v:0.7}], min:0, max:1 },
-        { id: 'lipLen',  name: '입술 길이', group: 'adj', color: '#db2777', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1 }, 
-        { id: 'throat',  name: '목 조임',   group: 'adj', color: '#a78bfa', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1 },
-        { id: 'nasal',   name: '연구개 (Velum)', group: 'adj', color: '#fb923c', points: [{t:0, v:0.2}, {t:1, v:0.2}], min:0, max:1 },
-        { id: 'pitch',   name: '피치 (Hz)', group: 'edit', color: '#fbbf24', points: [{t:0, v:220}, {t:1, v:220}], min:50, max:600 },
-        { id: 'gender',  name: '성별 (Shift)', group: 'edit', color: '#ec4899', points: [{t:0, v:1}, {t:1, v:1}], min:0.5, max:2.0 },
-        { id: 'gain',    name: '게인 (Vol)', group: 'edit', color: '#ef4444', points: [{t:0, v:0}, {t:0.1, v:1}, {t:0.9, v:1}, {t:1, v:0}], min:0, max:1.5 },
-        { id: 'breath',  name: '숨소리',     group: 'edit', color: '#22d3ee', points: [{t:0, v:0.01}, {t:1, v:0.01}], min:0, max:0.3 }
+        { id: 'tongueX', name: '혀 위치 (X)', group: 'adj', color: '#60a5fa', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1, interpolation: 'curve' },
+        { id: 'tongueY', name: '혀 높이 (Y)', group: 'adj', color: '#4ade80', points: [{t:0, v:0.4}, {t:1, v:0.4}], min:0, max:1, interpolation: 'curve' },
+        { id: 'lips',    name: '입술 열기', group: 'adj', color: '#f472b6', points: [{t:0, v:0.7}, {t:1, v:0.7}], min:0, max:1, interpolation: 'curve' },
+        { id: 'lipLen',  name: '입술 길이', group: 'adj', color: '#db2777', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1, interpolation: 'curve' }, 
+        { id: 'throat',  name: '목 조임',   group: 'adj', color: '#a78bfa', points: [{t:0, v:0.5}, {t:1, v:0.5}], min:0, max:1, interpolation: 'curve' },
+        { id: 'nasal',   name: '연구개 (Velum)', group: 'adj', color: '#fb923c', points: [{t:0, v:0.2}, {t:1, v:0.2}], min:0, max:1, interpolation: 'curve' },
+        { id: 'pitch',   name: '피치 (Hz)', group: 'edit', color: '#fbbf24', points: [{t:0, v:220}, {t:1, v:220}], min:50, max:600, interpolation: 'curve' },
+        { id: 'gender',  name: '성별 (Shift)', group: 'edit', color: '#ec4899', points: [{t:0, v:1}, {t:1, v:1}], min:0.5, max:2.0, interpolation: 'curve' },
+        { id: 'gain',    name: '게인 (Vol)', group: 'edit', color: '#ef4444', points: [{t:0, v:0}, {t:0.1, v:1}, {t:0.9, v:1}, {t:1, v:0}], min:0, max:1.5, interpolation: 'linear' },
+        { id: 'breath',  name: '숨소리',     group: 'edit', color: '#22d3ee', points: [{t:0, v:0.01}, {t:1, v:0.01}], min:0, max:0.3, interpolation: 'linear' }
     ]);
     
     const [undoStack, setUndoStack] = useState<any[]>([]);
@@ -85,6 +96,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setLiveTract({ ...liveTract, ...p, lipLen: 0.5 });
         updateLiveAudio(p.x, p.y, p.lips, p.throat, 0.5, p.nasal, manualPitch, manualGender);
         commitChange(`${v} 모음 프리셋 적용`);
+    };
+
+    const handleAnalyzerApply = (data: { tongueX?: any[], tongueY?: any[], lips?: any[], lipLen?: any[], throat?: any[], nasal?: any[] }) => {
+        setAdvTracks(prev => prev.map(t => {
+            const commonProps = { interpolation: 'curve' as const }; // Auto-enable curve for analyzer results
+            if (t.id === 'tongueX' && data.tongueX) return { ...t, points: data.tongueX, ...commonProps };
+            if (t.id === 'tongueY' && data.tongueY) return { ...t, points: data.tongueY, ...commonProps };
+            if (t.id === 'lips' && data.lips) return { ...t, points: data.lips, ...commonProps };
+            if (t.id === 'lipLen' && data.lipLen) return { ...t, points: data.lipLen, ...commonProps };
+            if (t.id === 'throat' && data.throat) return { ...t, points: data.throat, ...commonProps };
+            if (t.id === 'nasal' && data.nasal) return { ...t, points: data.nasal, ...commonProps };
+            return t;
+        }));
+        commitChange("AI 발음 분석 적용");
     };
 
     useEffect(() => { isAdvPlayingRef.current = isAdvPlaying; }, [isAdvPlaying]);
@@ -127,12 +152,34 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const track = advTracks.find(tr => tr.id === trackId);
         if (!track) return 0;
         const pts = track.points;
+        if(pts.length === 0) return track.min;
         if(t <= pts[0].t) return pts[0].v;
         if(t >= pts[pts.length-1].t) return pts[pts.length-1].v;
-        for(let i=0; i<pts.length-1; i++) {
-            if(t >= pts[i].t && t <= pts[i+1].t) {
-                const ratio = (t - pts[i].t) / (pts[i+1].t - pts[i].t);
-                return pts[i].v + (pts[i+1].v - pts[i].v) * ratio;
+
+        // Curve Interpolation
+        if (track.interpolation === 'curve') {
+             // Find neighbors for Catmull-Rom spline
+             let i = 0;
+             while(i < pts.length - 1 && pts[i+1].t < t) i++;
+             
+             const p0 = i > 0 ? pts[i-1] : pts[i];
+             const p1 = pts[i];
+             const p2 = pts[i+1];
+             const p3 = i < pts.length - 2 ? pts[i+2] : pts[i+1];
+
+             const range = p2.t - p1.t;
+             if (range === 0) return p1.v;
+             const tLocal = (t - p1.t) / range;
+             
+             return Math.max(track.min, Math.min(track.max, cubicHermite(p0.v, p1.v, p2.v, p3.v, tLocal)));
+        } 
+        // Linear Interpolation
+        else {
+            for(let i=0; i<pts.length-1; i++) {
+                if(t >= pts[i].t && t <= pts[i+1].t) {
+                    const ratio = (t - pts[i].t) / (pts[i+1].t - pts[i].t);
+                    return pts[i].v + (pts[i+1].v - pts[i].v) * ratio;
+                }
             }
         }
         return pts[0].v;
@@ -284,10 +331,15 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             } else {
                 const osc = offline.createOscillator(); 
                 osc.type = synthWaveform as any;
-                const pitchPts = advTracks.find(t=>t.id==='pitch')?.points || [];
-                if(pitchPts.length) {
-                    osc.frequency.setValueAtTime(pitchPts[0].v, 0); 
-                    pitchPts.forEach(p => osc.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
+                // Pitch automation
+                const pitchTrack = advTracks.find(t=>t.id==='pitch');
+                if(pitchTrack && pitchTrack.points.length > 0) {
+                    const steps = 100; // Use dense sampling for accurate curve pitch modulation
+                    for(let i=0; i<=steps; i++) {
+                        const t = i/steps;
+                        const val = getValueAtTime('pitch', t);
+                        osc.frequency.linearRampToValueAtTime(val, t * advDuration);
+                    }
                 }
                 sNode = osc;
             }
@@ -317,10 +369,13 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const nG = offline.createGain();
         const mG = offline.createGain(); 
         const fG = offline.createGain(); 
-        const gainPts = advTracks.find(t=>t.id==='gain')?.points || [];
-        if(gainPts.length) { 
-            mG.gain.setValueAtTime(gainPts[0].v, 0); 
-            gainPts.forEach(p => mG.gain.linearRampToValueAtTime(p.v, p.t * advDuration)); 
+        
+        // Gain automation
+        const steps = 60; 
+        for(let i=0; i<=steps; i++) {
+             const t = i/steps;
+             const time = t * advDuration;
+             mG.gain.linearRampToValueAtTime(getValueAtTime('gain', t), time);
         }
         
         const startFade = Math.max(0, advDuration - fadeOutDuration); 
@@ -333,7 +388,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         nasF.type='lowpass';
 
         // Automation scheduling
-        const steps = 60; 
         for(let i=0; i<=steps; i++) {
             const t = i/steps; 
             const time = t * advDuration;
@@ -553,11 +607,24 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             ctx.beginPath(); 
             ctx.strokeStyle = track.color; 
             ctx.lineWidth = 2.5; 
-            track.points.forEach((p, i) => { 
-                const x = p.t * w; 
-                const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
-                if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
-            }); 
+
+            // Draw Curve/Line based on interpolation mode
+            if (track.interpolation === 'curve') {
+                 // Pixel-based plotting for accurate curves (simplest implementation)
+                 for(let i=0; i<w; i++) {
+                     const t = i / w;
+                     const v = getValueAtTime(track.id, t);
+                     const y = RULER_HEIGHT + (1 - (v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT);
+                     if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
+                 }
+            } else {
+                 track.points.forEach((p, i) => { 
+                    const x = p.t * w; 
+                    const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
+                    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
+                }); 
+            }
+            
             ctx.stroke(); 
             track.points.forEach((p, i) => { 
                 const x = p.t * w; 
@@ -569,7 +636,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }); 
         }
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
-    }, [selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer]);
+    }, [selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime]);
 
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
 
@@ -584,13 +651,15 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     );
 
     const lipOpening = liveTract.lips * 20; const lipProtrusion = liveTract.lipLen * 15; const nasalVelumAngle = liveTract.nasal * 40; 
+    const currentTrack = advTracks.find(t => t.id === selectedTrackId);
 
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
-            <div className="flex-[1.5] flex gap-0 shrink-0 min-h-0">
+            {showAnalyzer && <FormantAnalyzer files={files} audioContext={audioContext} onClose={()=>setShowAnalyzer(false)} onApply={handleAnalyzerApply} />}
+            <div className="flex-1 flex gap-0 shrink-0 min-h-0">
                 <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
-                    <div className="flex-1 relative flex items-center justify-center px-4 py-1 overflow-hidden">
-                        <svg viewBox="100 50 280 340" className="w-[50%] h-[50%] drop-shadow-lg select-none transition-all duration-300">
+                    <div className="flex-1 relative flex items-center justify-center overflow-hidden min-h-[200px] py-[3px]">
+                        <svg viewBox="100 50 280 340" className="w-full h-full max-h-full drop-shadow-lg select-none transition-all duration-300 p-0">
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d={`M 220 380 L 220 250`} stroke="#e2e8f0" strokeWidth={30 + (1-liveTract.throat) * 40} strokeLinecap="round" opacity="0.6"/>
@@ -634,6 +703,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                             <button key={v} onClick={() => applyVowelPreset(v)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-black text-slate-700 transition-all shadow-sm">{v}</button>
                                         ))}
                                     </div>
+                                    <button 
+                                        onClick={() => setShowAnalyzer(true)}
+                                        className="w-full py-2.5 mt-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"
+                                    >
+                                        <Wand2 size={14}/> AI 발음 분석 (Beta)
+                                    </button>
                                 </div>
 
                                 {/* --- Source Configuration --- */}
@@ -693,16 +768,28 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     </div>
                 </div>
             </div>
-            <div className="min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0">
+            <div className="flex-1 min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0">
                  <div className="flex items-center justify-between gap-1.5 pb-1 px-1">
                     <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1 font-bold">
                         {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
                     </div>
                     <div className="flex gap-1 shrink-0">
+                        {/* Toggle Interpolation Button */}
+                        <button 
+                            onClick={() => {
+                                setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, interpolation: t.interpolation === 'curve' ? 'linear' : 'curve' } : t));
+                                commitChange("보간 모드 변경");
+                            }}
+                            className={`px-3 py-1 text-[10px] font-black rounded-lg border transition-all flex items-center gap-1 ${currentTrack?.interpolation === 'curve' ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
+                        >
+                            {currentTrack?.interpolation === 'curve' ? <Spline size={14}/> : <GitCommit size={14}/>}
+                            {currentTrack?.interpolation === 'curve' ? 'Curve' : 'Linear'}
+                        </button>
+
                         <button onClick={()=>setIsEditMode(!isEditMode)} className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode?'bg-amber-400 text-white border-amber-500':'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`} title={isEditMode ? "키프레임 편집 중" : "플레이헤드 이동 모드"}><PencilLine size={16}/></button>
                     </div>
                 </div>
-                <div className="h-[180px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
+                <div className="h-full max-h-[220px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
                     <canvas ref={canvasRef} width={1000} height={180} className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onContextMenu={e=>e.preventDefault()}/>
                     <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[10px] font-black text-slate-600 flex gap-2 pointer-events-none shadow-sm">
                         <span>Time: {playHeadPos.toFixed(3)}s</span>
