@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Info, X, Activity, Combine, Grid, Wand2, MousePointer2, Zap, AudioLines, Download, Layers, Sparkles, Mic2 } from 'lucide-react';
+import { Info, X, Activity, Combine, Grid, Wand2, MousePointer2, Zap, AudioLines, Download, Layers, Sparkles, Mic2, Play, Save, Undo2, PencilLine, Spline } from 'lucide-react';
 
 interface HelpModalProps {
   onClose: () => void;
@@ -64,6 +64,20 @@ const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
                 <div className="flex gap-2 items-center"><Mic2 size={12} className="text-red-500"/><span><b>Pitch 추출:</b> 녹음된 목소리의 피치 곡선을 추출하여 시뮬레이터에 적용합니다.</span></div>
                 <div className="flex gap-2 items-center"><AudioLines size={12} className="text-blue-500"/><span><b>Spectrogram:</b> 배경에 스펙트로그램을 띄워 주파수 변화를 눈으로 보며 작업할 수 있습니다.</span></div>
             </div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <h3 className="text-base font-black text-slate-800 flex items-center gap-2 border-l-4 border-slate-400 pl-2">
+            <MousePointer2 size={18} className="text-slate-500"/> 주요 아이콘 가이드
+          </h3>
+          <div className="grid grid-cols-2 gap-2 pl-3 text-xs text-slate-600 bg-slate-50/50 p-2 rounded-lg border border-slate-100">
+            <div className="flex items-center gap-2"><Play size={14} className="text-slate-800"/> <span><b>재생/정지:</b> 오디오 미리듣기</span></div>
+            <div className="flex items-center gap-2"><Save size={14} className="text-slate-800"/> <span><b>보관함 저장:</b> 결과물을 목록에 추가</span></div>
+            <div className="flex items-center gap-2"><Download size={14} className="text-green-600"/> <span><b>다운로드:</b> .wav 파일로 내보내기</span></div>
+            <div className="flex items-center gap-2"><Undo2 size={14} className="text-slate-500"/> <span><b>실행 취소:</b> 이전 상태로 되돌리기</span></div>
+            <div className="flex items-center gap-2"><PencilLine size={14} className="text-amber-500"/> <span><b>편집 모드:</b> 그래프에 점 추가/이동</span></div>
+            <div className="flex items-center gap-2"><Spline size={14} className="text-indigo-500"/> <span><b>보간 모드:</b> 곡선/직선 연결 변경</span></div>
           </div>
         </section>
 

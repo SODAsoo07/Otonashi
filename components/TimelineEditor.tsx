@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { PencilLine, Eye, EyeOff, GitCommit, Spline } from 'lucide-react';
+import { PencilLine, Eye, EyeOff, GitCommit, Spline, MoveVertical } from 'lucide-react';
 import { AdvTrack } from '../types';
 import { RULER_HEIGHT } from '../utils/audioUtils';
 
@@ -38,9 +38,25 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
-    const [draggingKeyframe, setDraggingKeyframe] = useState<{trackId?: string, index?: number, isPlayhead?: boolean} | null>(null);
+    const [draggingKeyframe, setDraggingKeyframe] = useState<{
+        trackId?: string; 
+        index?: number; 
+        isPlayhead?: boolean;
+        isGlobalShift?: boolean;
+    } | null>(null);
     const [hoveredKeyframe, setHoveredKeyframe] = useState<{trackId: string, index: number} | null>(null);
     const [canvasSize, setCanvasSize] = useState({ w: 1000, h: 200 });
+    const [globalShiftStart, setGlobalShiftStart] = useState<{ y: number, initialPoints: {t: number, v: number}[] } | null>(null);
+    const [isShiftHeld, setIsShiftHeld] = useState(false);
+
+    // Track Shift Key
+    useEffect(() => {
+        const down = (e: KeyboardEvent) => { if(e.key === 'Shift') setIsShiftHeld(true); };
+        const up = (e: KeyboardEvent) => { if(e.key === 'Shift') setIsShiftHeld(false); };
+        window.addEventListener('keydown', down);
+        window.addEventListener('keyup', up);
+        return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+    }, []);
 
     // Handle resize to match parent flex container
     useEffect(() => {
@@ -65,6 +81,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         const y = e.clientY - rect.top;
         const t = Math.max(0, Math.min(1, x / rect.width));
         
+        // 1. Global Shift Mode (Shift + Drag)
+        if (isEditMode && e.shiftKey) {
+            const track = advTracks.find(tr => tr.id === selectedTrackId);
+            if (track) {
+                setGlobalShiftStart({ y, initialPoints: [...track.points] });
+                setDraggingKeyframe({ isGlobalShift: true, trackId: selectedTrackId });
+                return;
+            }
+        }
+
         if (y < RULER_HEIGHT + 3 && !isEditMode) {
             setPlayheadPos(t); syncVisualsToTime(t);
             simPauseOffsetRef.current = t * advDuration; 
@@ -106,6 +132,28 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         if(!draggingKeyframe || !canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect(); 
         const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        
+        // Handle Global Shift Drag
+        if (draggingKeyframe.isGlobalShift && globalShiftStart && draggingKeyframe.trackId) {
+            const dy = e.clientY - rect.top - globalShiftStart.y;
+            const track = advTracks.find(t => t.id === draggingKeyframe.trackId);
+            if (!track) return;
+            
+            const graphH = rect.height - RULER_HEIGHT;
+            const range = track.max - track.min;
+            const deltaV = -(dy / graphH) * range; 
+            
+            setAdvTracks(prev => prev.map(tr => {
+                if (tr.id !== draggingKeyframe.trackId) return tr;
+                const newPoints = globalShiftStart.initialPoints.map(p => ({
+                    t: p.t,
+                    v: Math.max(tr.min, Math.min(tr.max, p.v + deltaV))
+                }));
+                return { ...tr, points: newPoints };
+            }));
+            return;
+        }
+
         if (draggingKeyframe.isPlayhead) { 
             setPlayheadPos(t); 
             syncVisualsToTime(t); 
@@ -124,6 +172,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const handleMouseUp = () => { 
         if(draggingKeyframe) commitChange("편집 완료"); 
         setDraggingKeyframe(null); 
+        setGlobalShiftStart(null);
     };
 
     // Canvas Drawing Logic
@@ -233,6 +282,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     }, [canvasSize, selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks, spectrogramCanvas]);
 
     const currentTrack = advTracks.find(t => t.id === selectedTrackId);
+    
+    // Determine Cursor
+    let cursorClass = 'cursor-text';
+    if (isEditMode) {
+        if (isShiftHeld) cursorClass = 'cursor-ns-resize'; // Global Shift
+        else cursorClass = 'cursor-crosshair';
+    }
 
     return (
         <div className="flex-1 min-h-[150px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0 flex flex-col">
@@ -241,6 +297,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     {advTracks.map(t => <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId === t.id ? 'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
                 </div>
                 <div className="flex gap-1 shrink-0">
+                    {isEditMode && selectedTrackId === 'gain' && (
+                        <div className="hidden lg:flex items-center gap-1 text-[9px] text-slate-400 font-bold bg-slate-50 px-2 rounded-lg border border-slate-200 mr-2">
+                            <MoveVertical size={10}/> 
+                            Shift+Drag to Offset
+                        </div>
+                    )}
                     {ghostTracks && (
                         <button
                             onClick={() => setShowGhost(!showGhost)}
@@ -269,7 +331,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     ref={canvasRef} 
                     width={canvasSize.w} 
                     height={canvasSize.h} 
-                    className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} 
+                    className={`w-full h-full ${cursorClass}`} 
                     onMouseDown={handleMouseDown} 
                     onMouseMove={handleMouseMove} 
                     onMouseUp={handleMouseUp}
