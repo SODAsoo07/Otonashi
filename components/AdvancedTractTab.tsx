@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
@@ -23,7 +22,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [fadeOutDuration] = useState(0.1); 
     const [isAdvPlaying, setIsAdvPlaying] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
-    const [playHeadPos, setPlayHeadPos] = useState(0); 
+    const [playHeadPos, setPlayheadPos] = useState(0); 
     const [liveTract, setLiveTract] = useState<LiveTractState>({ x: 0.5, y: 0.4, lips: 0.7, lipLen: 0.5, throat: 0.5, nasal: 0.2 }); 
     const [manualPitch, setManualPitch] = useState(220);
     const [manualGender, setManualGender] = useState(1.0);
@@ -267,9 +266,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                  if(!isAdvPlayingRef.current) return;
                  const cur = audioContext.currentTime - simStartTimeRef.current;
                  const progress = Math.min(1, Math.max(0, cur / advDuration));
-                 setPlayHeadPos(progress); syncVisualsToTime(progress);
+                 // Fix: Corrected setPlayHeadPos to setPlayheadPos
+                 setPlayheadPos(progress); syncVisualsToTime(progress);
                  if (cur < advDuration) animRef.current = requestAnimationFrame(animate); 
-                 else { setIsAdvPlaying(false); setPlayHeadPos(0); simPauseOffsetRef.current = 0; syncVisualsToTime(0); } 
+                 // Fix: Corrected setPlayHeadPos to setPlayheadPos
+                 else { setIsAdvPlaying(false); setPlayheadPos(0); simPauseOffsetRef.current = 0; syncVisualsToTime(0); } 
              };
              animRef.current = requestAnimationFrame(animate);
         }
@@ -283,7 +284,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const t = Math.max(0, Math.min(1, x / rect.width));
         
         if (y < RULER_HEIGHT + 3 && !isEditMode) {
-            setPlayHeadPos(t); syncVisualsToTime(t);
+            // Fix: Corrected setPlayHeadPos to setPlayheadPos
+            setPlayheadPos(t); syncVisualsToTime(t);
             simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
             return;
@@ -315,7 +317,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 }
             }
         } else {
-            setPlayHeadPos(t); syncVisualsToTime(t);
+            // Fix: Corrected setPlayHeadPos to setPlayheadPos
+            setPlayheadPos(t); syncVisualsToTime(t);
             simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
         }
@@ -325,7 +328,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if(!draggingKeyframe || !canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         if (draggingKeyframe.isPlayhead) { 
-            setPlayHeadPos(t); syncVisualsToTime(t); 
+            // Fix: Corrected setPlayHeadPos to setPlayheadPos
+            setPlayheadPos(t); syncVisualsToTime(t); 
         } 
         else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
             const gH = rect.height - RULER_HEIGHT; const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
@@ -380,8 +384,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             <div className="flex-[2] flex gap-0 shrink-0 min-h-0">
                 <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
                     <div className="flex-1 relative flex items-center justify-center px-5 py-2 overflow-hidden">
-                        {/* 성도 가이드 그래픽 (SVG) - w-[75%] h-[75%]로 조정됨 */}
-                        <svg viewBox="100 50 280 340" className="w-[75%] h-[75%] drop-shadow-lg select-none transition-all duration-300">
+                        {/* 성도 가이드 그래픽 (SVG) - w-[67%] h-[67%]로 조정됨 */}
+                        <svg viewBox="100 50 280 340" className="w-[67%] h-[67%] drop-shadow-lg select-none transition-all duration-300">
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d={`M 220 380 L 220 250`} stroke="#e2e8f0" strokeWidth={30 + (1-liveTract.throat) * 40} strokeLinecap="round" opacity="0.6"/>
