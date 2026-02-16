@@ -1,15 +1,15 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2 } from 'lucide-react';
-import FileRack from './components/FileRack';
-import HelpModal from './components/HelpModal';
-import StudioTab from './components/StudioTab';
-import ConsonantTab from './components/ConsonantTab';
-import AdvancedTractTab from './components/AdvancedTractTab';
-import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
-import DevTool from './components/DevTool';
-import { AudioFile, UIConfig } from './types';
-import { AudioUtils } from './utils/audioUtils';
+import FileRack from './components/FileRack.tsx';
+import HelpModal from './components/HelpModal.tsx';
+import StudioTab from './components/StudioTab.tsx';
+import ConsonantTab from './components/ConsonantTab.tsx';
+import AdvancedTractTab from './components/AdvancedTractTab.tsx';
+import ConsonantGeneratorTab from './components/ConsonantGeneratorTab.tsx';
+import DevTool from './components/DevTool.tsx';
+import { AudioFile, UIConfig } from './types.ts';
+import { AudioUtils } from './utils/audioUtils.ts';
 
 const App: React.FC = () => {
     const [audioContext] = useState(() => new (window.AudioContext || (window as any).webkitAudioContext)());
@@ -21,30 +21,31 @@ const App: React.FC = () => {
     const [isRackOpen, setIsRackOpen] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // 글로벌 히스토리 (파일 시스템)
-    const [globalUndoStack, setGlobalUndoStack] = useState<AudioFile[][]>([]);
-    const [globalRedoStack, setGlobalRedoStack] = useState<AudioFile[][]>([]);
+    // --- 글로벌 히스토리 시스템 (파일 및 프로젝트 상태 보존) ---
+    const [historyStack, setHistoryStack] = useState<AudioFile[][]>([]);
+    const [redoStack, setRedoStack] = useState<AudioFile[][]>([]);
 
-    const commitGlobalHistory = useCallback((currentFiles: AudioFile[]) => {
-        setGlobalUndoStack(prev => [...prev.slice(-29), [...currentFiles]]);
-        setGlobalRedoStack([]);
+    const commitHistory = useCallback((currentFiles: AudioFile[]) => {
+        // 깊은 복사를 통해 상태 저장
+        setHistoryStack(prev => [...prev.slice(-29), [...currentFiles]]);
+        setRedoStack([]);
     }, []);
 
     const handleGlobalUndo = useCallback(() => {
-        if (globalUndoStack.length === 0) return;
-        const prevState = globalUndoStack[globalUndoStack.length - 1];
-        setGlobalRedoStack(prev => [...prev, [...files]]);
-        setGlobalUndoStack(prev => prev.slice(0, -1));
+        if (historyStack.length === 0) return;
+        const prevState = historyStack[historyStack.length - 1];
+        setRedoStack(prev => [...prev, [...files]]);
+        setHistoryStack(prev => prev.slice(0, -1));
         setFiles(prevState);
-    }, [globalUndoStack, files]);
+    }, [historyStack, files]);
 
     const handleGlobalRedo = useCallback(() => {
-        if (globalRedoStack.length === 0) return;
-        const nextState = globalRedoStack[globalRedoStack.length - 1];
-        setGlobalUndoStack(prev => [...prev, [...files]]);
-        setGlobalRedoStack(prev => prev.slice(0, -1));
+        if (redoStack.length === 0) return;
+        const nextState = redoStack[redoStack.length - 1];
+        setHistoryStack(prev => [...prev, [...files]]);
+        setRedoStack(prev => prev.slice(0, -1));
         setFiles(nextState);
-    }, [globalRedoStack, files]);
+    }, [redoStack, files]);
 
     const [isResizing, setIsResizing] = useState(false);
     const [isDevModeActive, setIsDevModeActive] = useState(false);
@@ -129,7 +130,7 @@ const App: React.FC = () => {
 
     const handleFileUpload = async (filesToUpload: FileList | File[]) => {
         await ensureAudioContext();
-        commitGlobalHistory(files);
+        commitHistory(files);
         const selFiles = Array.from(filesToUpload);
         const newFilesList = [...files];
         for(const file of selFiles) {
@@ -152,7 +153,7 @@ const App: React.FC = () => {
             const base64 = await AudioUtils.blobToBase64(blob);
             return { id: f.id, name: f.name, data: base64 };
         }));
-        const projectData = { version: '1.4', files: fileData, ui: uiConfig };
+        const projectData = { version: '1.5', files: fileData, ui: uiConfig };
         const blob = new Blob([JSON.stringify(projectData)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -174,7 +175,7 @@ const App: React.FC = () => {
                     const buf = await audioContext.decodeAudioData(await res.arrayBuffer());
                     newFiles.push({ id: f.id, name: f.name, buffer: buf });
                 }
-                commitGlobalHistory(files);
+                commitHistory(files);
                 setFiles(newFiles);
                 if(newFiles.length > 0) setActiveFileId(newFiles[0].id);
             }
@@ -184,7 +185,7 @@ const App: React.FC = () => {
     };
 
     const addToRack = (buffer: AudioBuffer, name: string) => { 
-        commitGlobalHistory(files);
+        commitHistory(files);
         const finalName = `${name}_${fileCounter.toString().padStart(3, '0')}`;
         const newFile = { id: Math.random().toString(36).substr(2, 9), name: finalName, buffer }; 
         setFiles(prev => [...prev, newFile]); 
@@ -193,18 +194,18 @@ const App: React.FC = () => {
     };
 
     const updateFile = (newBuffer: AudioBuffer) => { 
-        commitGlobalHistory(files);
+        commitHistory(files);
         setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, buffer: newBuffer } : f)); 
     };
 
     const removeFile = (id: string) => {
-        commitGlobalHistory(files);
+        commitHistory(files);
         setFiles(prev => prev.filter(f => f.id !== id));
         if (activeFileId === id) setActiveFileId(null);
     };
 
     const renameFile = (id: string, newName: string) => {
-        commitGlobalHistory(files);
+        commitHistory(files);
         setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
     };
 
@@ -225,8 +226,8 @@ const App: React.FC = () => {
                 </nav>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                      <button onClick={handleGlobalUndo} disabled={globalUndoStack.length === 0} title="파일 목록 작업 취소" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
-                      <button onClick={handleGlobalRedo} disabled={globalRedoStack.length === 0} title="파일 목록 다시 실행" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Redo2 size={16}/></button>
+                      <button onClick={handleGlobalUndo} disabled={historyStack.length === 0} title="전체 작업 취소 (Undo)" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
+                      <button onClick={handleGlobalRedo} disabled={redoStack.length === 0} title="전체 작업 다시 실행 (Redo)" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Redo2 size={16}/></button>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
                       <button onClick={handleProjectExport} title="프로젝트 저장" className="p-1.5 text-slate-500 hover:bg-white hover:dynamic-primary-text rounded-md transition-all"><Download size={16}/></button>
@@ -259,17 +260,18 @@ const App: React.FC = () => {
                     />
                 )}
 
-                <div className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar relative">
-                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'editor' ? 'flex' : 'none' }}>
+                <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+                    {/* 탭 전환 시 언마운트되지 않도록 스타일로 제어 (상태 보존 핵심) */}
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'editor' ? 'flex' : 'none' }}>
                         <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
                     </div>
-                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'generator' ? 'flex' : 'none' }}>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'generator' ? 'flex' : 'none' }}>
                         <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'generator'} />
                     </div>
-                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'consonant' ? 'flex' : 'none' }}>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'consonant' ? 'flex' : 'none' }}>
                         <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'consonant'} />
                     </div>
-                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'sim' ? 'flex' : 'none' }}>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'sim' ? 'flex' : 'none' }}>
                         <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'sim'} />
                     </div>
                 </div>

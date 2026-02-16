@@ -4,10 +4,10 @@ import {
   Undo2, Redo2, Scissors, Copy, Layers, TrendingUp, TrendingDown, 
   MoveHorizontal, Zap, Sparkles, Activity, Square, Play, Pause, Save, ScanLine, AudioLines, MousePointer2, FilePlus, Download, Power
 } from 'lucide-react';
-import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
-import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
-import ParametricEQ from './ParametricEQ';
-import FormantPad from './FormantPad';
+import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types.ts';
+import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils.ts';
+import ParametricEQ from './ParametricEQ.tsx';
+import FormantPad from './FormantPad.tsx';
 
 interface StudioTabProps {
   audioContext: AudioContext;
@@ -38,13 +38,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
     const [redoStack, setRedoStack] = useState<UndoState[]>([]);
     
-    // Params
-    const [track2Id, setTrack2Id] = useState("");
-    const [mergeOffset, setMergeOffset] = useState(0);
-    const [pitchCents, setPitchCents] = useState(0);
-    const [genderShift, setGenderShift] = useState(1.0);
+    // Professional Audio States
     const [masterGain, setMasterGain] = useState(1.0);
     const [bypassEffects, setBypassEffects] = useState(false);
+    const [pitchCents, setPitchCents] = useState(0);
+    const [genderShift, setGenderShift] = useState(1.0);
     const [formant, setFormant] = useState<FormantParams>({ f1: 500, f2: 1500, f3: 2500, f4: 3500, resonance: 4.0 });
     
     const [eqBands, setEqBands] = useState<EQBand[]>([
@@ -55,8 +53,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         { id: 5, type: 'lowpass', freq: 18000, gain: 0, q: 0.7, on: true }
     ]);
     
-    const [singerFormantGain, setSingerFormantGain] = useState(0);
-    const [compThresh, setCompThresh] = useState(-24);
     const [delayTime, setDelayTime] = useState(0);
     const [delayFeedback, setDelayFeedback] = useState(0.3);
 
@@ -90,6 +86,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         onUpdateFile(next.buffer); 
     }, [redoStack, onUpdateFile, activeBuffer]);
 
+    const handleCutSelection = useCallback(() => {
+        if (!activeBuffer) return;
+        pushUndo("잘라내기");
+        const newBuf = AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end);
+        if (newBuf) {
+            onUpdateFile(newBuf);
+            setEditTrim({ start: 0, end: 1 });
+        }
+    }, [activeBuffer, audioContext, editTrim, onUpdateFile, pushUndo]);
+
     const stopPlayback = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
         setIsPlaying(false);
@@ -105,12 +111,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if(!buf || !audioContext) return null;
         const renderDur = buf.duration + (delayTime > 0 ? 2 : 0);
         const offline = new OfflineAudioContext(buf.numberOfChannels, Math.ceil(renderDur * buf.sampleRate), buf.sampleRate);
-        const finalOutput = offline.createGain(); finalOutput.gain.value = masterGain;
+        
+        // Master Gain Node at the end
+        const finalOutput = offline.createGain(); 
+        finalOutput.gain.value = masterGain;
 
         let currentNode: AudioNode = offline.createGain(); 
         const inputNode = currentNode;
 
         if (!bypassEffects) {
+            // EQ Chain
             eqBands.forEach(b => {
                 if(b.on) {
                     const f = offline.createBiquadFilter();
@@ -123,9 +133,15 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 }
             });
 
-            const fShift = offline.createBiquadFilter(); fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
+            // Formant & Gender Shift Chain
+            const fShift = offline.createBiquadFilter(); 
+            fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
+            
             const fNodes = [formant.f1, formant.f2, formant.f3, formant.f4].map((freq, idx) => {
-                const f = offline.createBiquadFilter(); f.type = 'peaking'; f.frequency.value = freq; f.Q.value = formant.resonance; f.gain.value = 12 - (idx * 2);
+                const f = offline.createBiquadFilter(); 
+                f.type = 'peaking'; f.frequency.value = freq; 
+                f.Q.value = formant.resonance; 
+                f.gain.value = 12 - (idx * 2);
                 return f;
             });
             
@@ -143,12 +159,14 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 effectOut.connect(finalOutput);
             }
         } else {
+            // Bypass mode: Connect source straight to master output
             currentNode.connect(finalOutput);
         }
 
         const s1 = offline.createBufferSource(); s1.buffer = buf;
         if (!bypassEffects && pitchCents !== 0) s1.playbackRate.value = Math.pow(2, pitchCents/1200);
 
+        // Automation gain node
         const autoGain = offline.createGain();
         if (volumeKeyframes.length > 0) {
             autoGain.gain.setValueAtTime(volumeKeyframes[0].v, 0);
@@ -254,13 +272,13 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     };
 
     return (
-        <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold" onMouseUp={() => setDragTarget(null)}>
+        <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold h-full overflow-y-auto custom-scrollbar" onMouseUp={() => setDragTarget(null)}>
             <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 shadow-sm">
-                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={redoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Redo2 size={16}/></button>
+                            <button onClick={handleUndo} disabled={undoStack.length===0} title="언두" className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Undo2 size={16}/></button>
+                            <button onClick={handleRedo} disabled={redoStack.length===0} title="리두" className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Redo2 size={16}/></button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${isPlaying && playheadMode==='all' ? 'bg-white shadow text-slate-900' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playheadMode==='all' ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} 재생</button>
                             <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 hover:bg-white text-red-500 transition-colors font-black"><Square size={14} fill="currentColor"/> 정지</button>
@@ -271,7 +289,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                         <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Result_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Save size={16}/> 보관함 저장</button>
+                         <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Studio_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Save size={16}/> 보관함 저장</button>
                     </div>
                 </div>
 
@@ -284,7 +302,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                              pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
                          }} />
                          {!activeBuffer && (
-                            <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-black uppercase tracking-widest bg-slate-900/50 backdrop-blur-sm">파일을 선택하세요</div>
+                            <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-black uppercase tracking-widest bg-slate-900/50 backdrop-blur-sm">작업할 파일을 보관함에서 선택하세요</div>
                          )}
                     </div>
 
@@ -315,16 +333,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                     <FormantPad formant={formant} onChange={setFormant}/>
                                 )}
                             </div>
-                            {/* 마스터 컨트롤 섹션 */}
+                            {/* 마스터 출력 컨트롤 섹션 (요청 기능) */}
                             <div className="p-5 border-t border-slate-200 bg-slate-50/50 space-y-4">
                                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14}/> Master Output</h3>
                                 <div className="flex items-center justify-between gap-4">
                                     <button 
                                         onClick={() => setBypassEffects(!bypassEffects)}
-                                        className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${bypassEffects ? 'bg-purple-600 text-white border-purple-400 shadow-lg' : 'bg-white text-slate-400 border-slate-200'}`}
-                                        title="Bypass all processing effects"
+                                        className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${bypassEffects ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg' : 'bg-white text-slate-400 border-slate-200'}`}
+                                        title="효과 일시 해제 (소리 비교용)"
                                     >
-                                        <Power size={14}/>
+                                        <Power size={14} className={bypassEffects ? "animate-pulse" : ""}/>
                                         <span className="text-xs font-black uppercase tracking-tight">Bypass</span>
                                     </button>
                                     <div className="flex-[1.5] space-y-1">
