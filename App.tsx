@@ -1,15 +1,14 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2 } from 'lucide-react';
-import FileRack from './components/FileRack.tsx';
-import HelpModal from './components/HelpModal.tsx';
-import StudioTab from './components/StudioTab.tsx';
-import ConsonantTab from './components/ConsonantTab.tsx';
-import AdvancedTractTab from './components/AdvancedTractTab.tsx';
-import ConsonantGeneratorTab from './components/ConsonantGeneratorTab.tsx';
-import DevTool from './components/DevTool.tsx';
-import { AudioFile, UIConfig } from './types.ts';
-import { AudioUtils } from './utils/audioUtils.ts';
+import FileRack from './components/FileRack';
+import HelpModal from './components/HelpModal';
+import StudioTab from './components/StudioTab';
+import ConsonantTab from './components/ConsonantTab';
+import AdvancedTractTab from './components/AdvancedTractTab';
+import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
+import { AudioFile, UIConfig } from './types';
+import { AudioUtils } from './utils/audioUtils';
 
 const App: React.FC = () => {
     const [audioContext] = useState(() => new (window.AudioContext || (window as any).webkitAudioContext)());
@@ -48,8 +47,6 @@ const App: React.FC = () => {
     }, [redoStack, files]);
 
     const [isResizing, setIsResizing] = useState(false);
-    const [isDevModeActive, setIsDevModeActive] = useState(false);
-    const [inputBuffer, setInputBuffer] = useState("");
 
     const [uiConfig, setUiConfig] = useState<UIConfig>({
         primaryColor: '#209ad6',
@@ -84,25 +81,6 @@ const App: React.FC = () => {
             .dynamic-bg { background-color: var(--app-bg); }
         `;
     }, [uiConfig, isRackOpen]);
-
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-            const char = e.key.toLowerCase();
-            if (char.length === 1) {
-                setInputBuffer(prev => {
-                    const next = (prev + char).slice(-7);
-                    if (next === "devtool") {
-                        setIsDevModeActive(true);
-                        return "";
-                    }
-                    return next;
-                });
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
 
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
@@ -261,7 +239,6 @@ const App: React.FC = () => {
                 )}
 
                 <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-                    {/* 탭 전환 시 언마운트되지 않도록 스타일로 제어 (상태 보존 핵심) */}
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'editor' ? 'flex' : 'none' }}>
                         <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
                     </div>
@@ -277,7 +254,6 @@ const App: React.FC = () => {
                 </div>
             </main>
             {showHelp && <HelpModal onClose={()=>setShowHelp(false)} />}
-            <DevTool config={uiConfig} onChange={setUiConfig} isActive={isDevModeActive} />
         </div>
     );
 };
