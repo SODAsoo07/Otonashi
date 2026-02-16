@@ -7,6 +7,7 @@ import StudioTab from './components/StudioTab';
 import ConsonantTab from './components/ConsonantTab';
 import AdvancedTractTab from './components/AdvancedTractTab';
 import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
+import AuthOverlay from './components/AuthOverlay';
 import { AudioFile, UIConfig } from './types';
 import { AudioUtils } from './utils/audioUtils';
 
@@ -189,6 +190,7 @@ const App: React.FC = () => {
 
     return (
         <div className="h-screen w-full dynamic-bg text-[#1f1e1d] flex flex-col font-sans overflow-hidden select-none">
+            <AuthOverlay />
             <header style={{ height: 'var(--header-h)' }} className="border-b border-slate-300 bg-white flex items-center justify-between px-6 shrink-0 z-20 shadow-sm">
                 <div className="flex items-center gap-3">
                     <div className="dynamic-primary p-1.5 rounded-lg text-white shadow-lg"><Activity size={20}/></div>
