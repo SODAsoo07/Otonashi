@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines } from 'lucide-react';
+import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines, Wind, Music } from 'lucide-react';
 import { AudioFile, EQBand } from '../types';
 import ParametricEQ from './ParametricEQ';
 
@@ -25,7 +25,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [sustain, setSustain] = useState(0.2); 
     const [release, setRelease] = useState(100); 
     
-    // Filter Params - Refactored for multiple simultaneous filters
+    // Filter Params
     const [hpFilter, setHpFilter] = useState<FilterState>({ on: false, freq: 2000, q: 1.0 });
     const [lpFilter, setLpFilter] = useState<FilterState>({ on: false, freq: 8000, q: 1.0 });
     const [bpFilter, setBpFilter] = useState<FilterState>({ on: false, freq: 4000, q: 1.0 });
@@ -46,8 +46,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         { id: 3, type: 'highshelf', freq: 10000, gain: 0, q: 0.7, on: true }
     ]);
     const [showEQ, setShowEQ] = useState(false);
-    
-    // File Source Params
     const [selectedFileId, setSelectedFileId] = useState("");
 
     const [isPlaying, setIsPlaying] = useState(false);
@@ -60,7 +58,34 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     // History
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
-    const [showHistory, setShowHistory] = useState(false);
+
+    const applyGeneratorPreset = (type: 'unvoiced' | 'voiced') => {
+        if (type === 'unvoiced') {
+            setDuration(150);
+            setAttack(5);
+            setDecay(80);
+            setSustain(0.05);
+            setRelease(50);
+            setSourceMix(0.0); // 100% Noise
+            setNoiseType('white');
+            setHpFilter({ on: true, freq: 4000, q: 1.2 });
+            setBpFilter({ on: false, freq: 4000, q: 1.0 });
+            setLpFilter({ on: false, freq: 8000, q: 1.0 });
+        } else {
+            setDuration(300);
+            setAttack(40);
+            setDecay(100);
+            setSustain(0.4);
+            setRelease(100);
+            setSourceMix(0.4); // 40% Voice, 60% Noise
+            setVoiceWave('sawtooth');
+            setVoiceFreq(140);
+            setHpFilter({ on: false, freq: 2000, q: 1.0 });
+            setBpFilter({ on: true, freq: 3500, q: 1.5 });
+            setLpFilter({ on: true, freq: 12000, q: 0.7 });
+        }
+        commitChange(`${type} 자음 프리셋 적용`);
+    };
 
     const getCurrentState = useCallback(() => ({
         duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands
@@ -76,9 +101,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         setHistoryIndex(prev => Math.min(prev + 1, 9));
     }, [getCurrentState, historyIndex]);
 
-    useEffect(() => {
-        if (history.length === 0) saveHistory("초기 상태");
-    }, []);
+    useEffect(() => { if (history.length === 0) saveHistory("초기 상태"); }, []);
 
     const restoreState = (state: any) => {
         setDuration(state.duration); setAttack(state.attack); setDecay(state.decay); setSustain(state.sustain); setRelease(state.release);
@@ -148,7 +171,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
         // Filter Chain
         let currentNode: AudioNode = sourceMixNode;
-        
         if (hpFilter.on) {
             const f = offline.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hpFilter.freq; f.Q.value = hpFilter.q;
             currentNode.connect(f); currentNode = f;
@@ -162,12 +184,8 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             currentNode.connect(f); currentNode = f;
         }
 
-        // Envelope (ADSR)
         const amp = offline.createGain();
-        const t0 = 0;
-        const tAtt = attack / 1000;
-        const tDec = decay / 1000;
-        const tRel = release / 1000;
+        const t0 = 0, tAtt = attack / 1000, tDec = decay / 1000, tRel = release / 1000;
         const decayEndTime = t0 + tAtt + tDec;
         const releaseStartTime = Math.max(decayEndTime, totalDurationSec - tRel);
 
@@ -179,33 +197,23 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
         currentNode.connect(amp);
         
-        // Master EQ Chain
         let eqNode: AudioNode = amp;
         eqBands.forEach(b => {
             if(b.on) {
-                const f = offline.createBiquadFilter();
-                f.type = b.type;
-                f.frequency.value = b.freq;
-                f.Q.value = b.q;
-                f.gain.value = b.gain;
-                eqNode.connect(f);
-                eqNode = f;
+                const f = offline.createBiquadFilter(); f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = b.gain;
+                eqNode.connect(f); eqNode = f;
             }
         });
         
         eqNode.connect(offline.destination);
-
         return await offline.startRendering();
     };
 
     const handleGenerateAndPlay = useCallback(async () => {
         if(isPlaying) {
              if(sourceRef.current) { try{sourceRef.current.stop()}catch(e){} sourceRef.current = null; }
-             setIsPlaying(false);
-             setPlayheadTime(0);
-             return;
+             setIsPlaying(false); setPlayheadTime(0); return;
         }
-
         const buf = await generateAudio();
         if (buf) {
             setGeneratedBuffer(buf);
@@ -220,7 +228,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         }
     }, [isPlaying, generateAudio, audioContext]);
 
-    // Spacebar
     useEffect(() => { 
         if (!isActive) return;
         const handleKey = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); handleGenerateAndPlay(); } }; 
@@ -233,15 +240,13 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         if (buf) { onAddToRack(buf, `Gen_Sound`); }
     };
 
-    // Visualization
     useEffect(() => {
         const draw = async () => {
             const buf = generatedBuffer || await generateAudio();
             if(!buf || !canvasRef.current) return;
             const ctx = canvasRef.current.getContext('2d'); if(!ctx) return;
-            const w = canvasRef.current.width; const h = canvasRef.current.height;
+            const w = canvasRef.current.width, h = canvasRef.current.height;
             const data = buf.getChannelData(0); const step = Math.ceil(data.length / w);
-            
             ctx.clearRect(0,0,w,h); ctx.fillStyle = '#1e293b'; ctx.fillRect(0,0,w,h);
             ctx.beginPath(); ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 2;
             for(let i=0; i<w; i++){
@@ -252,7 +257,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                 ctx.moveTo(i, h/2 + min * h/2.5); ctx.lineTo(i, h/2 + max * h/2.5);
             }
             ctx.stroke();
-
             if (playheadTime > 0) {
                 const durationSec = duration / 1000; const px = (playheadTime / durationSec) * w;
                 if(px >= 0 && px <= w) { ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke(); }
@@ -292,13 +296,11 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         <div className="p-2 bg-cyan-500 rounded-xl text-white shadow-lg shadow-cyan-200"><Wand2 size={24}/></div>
                         <h2 className="text-xl text-slate-800 tracking-tight font-black">자음 생성기</h2>
                     </div>
-                    <div className="flex items-center gap-2">
-                         <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
+                    <div className="flex items-center gap-2 font-black">
+                         <button onClick={()=>applyGeneratorPreset('unvoiced')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-black text-slate-900 transition-all flex items-center gap-2 shadow-sm"><Wind size={14}/> 무성 자음</button>
+                         <button onClick={()=>applyGeneratorPreset('voiced')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-black text-slate-900 transition-all flex items-center gap-2 shadow-sm"><Music size={14}/> 유성 자음</button>
                          <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
-                            <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Redo2 size={16}/></button>
-                         </div>
+                         <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
                     </div>
                  </div>
 

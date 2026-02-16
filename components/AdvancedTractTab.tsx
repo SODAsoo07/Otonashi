@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind } from 'lucide-react';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind, Activity } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -57,13 +57,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         { id: 'pitch',   name: '피치 (Hz)', group: 'edit', color: '#fbbf24', points: [{t:0, v:220}, {t:1, v:220}], min:50, max:600 },
         { id: 'gender',  name: '성별 (Shift)', group: 'edit', color: '#ec4899', points: [{t:0, v:1}, {t:1, v:1}], min:0.5, max:2.0 },
         { id: 'gain',    name: '게인 (Vol)', group: 'edit', color: '#ef4444', points: [{t:0, v:0}, {t:0.1, v:1}, {t:0.9, v:1}, {t:1, v:0}], min:0, max:1.5 },
-        { id: 'breath',  name: '숨소리',     group: 'edit', color: '#22d3ee', points: [{t:0, v:0.01}, {t:1, v:0.01}], min:0, max:0.1 }
+        { id: 'breath',  name: '숨소리',     group: 'edit', color: '#22d3ee', points: [{t:0, v:0.01}, {t:1, v:0.01}], min:0, max:0.3 }
     ]);
     
     const [undoStack, setUndoStack] = useState<any[]>([]);
     const [redoStack, setRedoStack] = useState<any[]>([]);
 
-    // Refs for simulation
     const isAdvPlayingRef = useRef(false);
     const liveAudioRef = useRef<any>(null); 
     const animRef = useRef<number | null>(null);
@@ -139,9 +138,23 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         return pts[0].v;
     }, [advTracks]);
 
+    // Define syncVisualsToTime to synchronize the UI with the timeline position 't'
+    const syncVisualsToTime = useCallback((t: number) => {
+        setLiveTract({
+            x: getValueAtTime('tongueX', t),
+            y: getValueAtTime('tongueY', t),
+            lips: getValueAtTime('lips', t),
+            lipLen: getValueAtTime('lipLen', t),
+            throat: getValueAtTime('throat', t),
+            nasal: getValueAtTime('nasal', t),
+        });
+        setManualPitch(getValueAtTime('pitch', t));
+        setManualGender(getValueAtTime('gender', t));
+    }, [getValueAtTime]);
+
     const updateLiveAudio = useCallback((x: number, y: number, l: number, t: number, len: number, n: number, pitch: number, gender: number) => { 
         if (!liveAudioRef.current || !audioContext) return;
-        const now = audioContext.currentTime; const { f1, f2, f3, nasF, sNode } = liveAudioRef.current;
+        const now = audioContext.currentTime; const { f1, f2, f3, nasF, sNode, nG } = liveAudioRef.current;
         const lF = 1.0 - (len * 0.3); const liF = 0.5 + (l * 0.5);
         let fr1 = (200 + (1 - y) * 600 - (t * 50)) * lF * liF; 
         let fr2 = (800 + x * 1400) * lF * liF; 
@@ -152,14 +165,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if(f3) f3.frequency.setTargetAtTime(fr3, now, 0.01); 
         if(nasF) nasF.frequency.setTargetAtTime(Math.max(400, (10000 - (n * 9000)) * gender), now, 0.01);
         if(sNode instanceof OscillatorNode) sNode.frequency.setTargetAtTime(pitch, now, 0.01);
-    }, [audioContext]);
-
-    const syncVisualsToTime = useCallback((t: number) => {
-        const vals = ['tongueX', 'tongueY', 'lips', 'lipLen', 'throat', 'nasal', 'pitch', 'gender'].reduce((acc, id) => ({...acc, [id]: getValueAtTime(id, t)}), {} as any);
-        setLiveTract({ x: vals.tongueX, y: vals.tongueY, lips: vals.lips, lipLen: vals.lipLen, throat: vals.throat, nasal: vals.nasal });
-        setManualPitch(vals.pitch); setManualGender(vals.gender);
-        updateLiveAudio(vals.tongueX, vals.tongueY, vals.lips, vals.throat, vals.lipLen, vals.nasal, vals.pitch, vals.gender);
-    }, [getValueAtTime, updateLiveAudio]);
+        if(nG) nG.gain.setTargetAtTime(getValueAtTime('breath', playHeadPos), now, 0.01);
+    }, [audioContext, getValueAtTime, playHeadPos]);
 
     const startLivePreview = useCallback(() => {
         if (!audioContext || liveAudioRef.current) return;
@@ -171,16 +178,34 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             const f = files.find(f => f.id === tractSourceFileId); 
             if (f?.buffer) { sNode = audioContext.createBufferSource(); sNode.buffer = f.buffer; sNode.loop = larynxParams.loopOn; } 
         }
-        if (!sNode) { sNode = audioContext.createOscillator(); sNode.type = (synthWaveform === 'noise' || synthWaveform === 'complex') ? 'sawtooth' : (synthWaveform as OscillatorType); sNode.frequency.value = manualPitch; }
+        if (!sNode) { 
+            if (synthWaveform === 'noise') {
+                const bufferSize = audioContext.sampleRate * 2;
+                const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                sNode = audioContext.createBufferSource(); sNode.buffer = buffer; sNode.loop = true;
+            } else {
+                sNode = audioContext.createOscillator(); 
+                sNode.type = synthWaveform as OscillatorType; 
+                sNode.frequency.value = manualPitch; 
+            }
+        }
 
         // Noise/Breath Source
         if (larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
             const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
             if (f?.buffer) { nNode = audioContext.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn; }
+        } else {
+            const bufferSize = audioContext.sampleRate * 2;
+            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            nNode = audioContext.createBufferSource(); nNode.buffer = buffer; nNode.loop = true;
         }
         
         const g = audioContext.createGain(); g.gain.value = 0.5;
-        const nG = audioContext.createGain(); nG.gain.value = larynxParams.breathGain;
+        const nG = audioContext.createGain(); nG.gain.value = getValueAtTime('breath', playHeadPos);
 
         const f1 = audioContext.createBiquadFilter(); f1.type = 'peaking'; f1.Q.value = 4; f1.gain.value = 12;
         const f2 = audioContext.createBiquadFilter(); f2.type = 'peaking'; f2.Q.value = 4; f2.gain.value = 12;
@@ -194,11 +219,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         } });
 
         sNode.connect(f1); 
-        if(nNode) { nNode.connect(nG); nG.connect(f1); nNode.start(); }
+        nNode.connect(nG); nG.connect(f1);
         
         f1.connect(f2); f2.connect(f3); f3.connect(nasF); lastNode.connect(g); g.connect(audioContext.destination);
-        sNode.start(); liveAudioRef.current = { sNode, nNode, f1, f2, f3, nasF };
-    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, synthWaveform, manualPitch, eqBands]);
+        sNode.start(); nNode.start();
+        liveAudioRef.current = { sNode, nNode, nG, f1, f2, f3, nasF };
+    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, synthWaveform, manualPitch, eqBands, getValueAtTime, playHeadPos]);
 
     const stopLivePreview = useCallback(() => { 
         if (liveAudioRef.current) { 
@@ -245,36 +271,51 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (tractSourceType === 'file' && tractSourceFileId) { 
             const f = files.find(f => f.id === tractSourceFileId); 
             if (f?.buffer) { 
-                const b = offline.createBufferSource(); 
-                b.buffer = f.buffer; 
-                b.loop = larynxParams.loopOn; 
-                sNode = b; 
+                const b = offline.createBufferSource(); b.buffer = f.buffer; b.loop = larynxParams.loopOn; sNode = b; 
             } else {
                 const osc = offline.createOscillator(); osc.type = 'sawtooth'; sNode = osc;
             }
         } else {
-            const osc = offline.createOscillator(); 
-            osc.type = (synthWaveform === 'noise' || synthWaveform === 'complex') ? 'sawtooth' : (synthWaveform as any);
-            const pitchPts = advTracks.find(t=>t.id==='pitch')?.points || [];
-            if(pitchPts.length) {
-                osc.frequency.setValueAtTime(pitchPts[0].v, 0); 
-                pitchPts.forEach(p => osc.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
+            if (synthWaveform === 'noise') {
+                const bufferSize = sr * advDuration;
+                const buffer = offline.createBuffer(1, bufferSize, sr);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                const noiseSrc = offline.createBufferSource(); noiseSrc.buffer = buffer; sNode = noiseSrc;
+            } else {
+                const osc = offline.createOscillator(); 
+                osc.type = synthWaveform as any;
+                const pitchPts = advTracks.find(t=>t.id==='pitch')?.points || [];
+                if(pitchPts.length) {
+                    osc.frequency.setValueAtTime(pitchPts[0].v, 0); 
+                    pitchPts.forEach(p => osc.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
+                }
+                sNode = osc;
             }
-            sNode = osc;
         }
 
-        // Noise Source from File
-        let nNode: AudioBufferSourceNode | null = null;
-        const nG = offline.createGain();
+        // Noise Source (Breath)
+        let nNode: AudioBufferSourceNode;
         if(larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
             const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
             if(f?.buffer) {
-                nNode = offline.createBufferSource();
-                nNode.buffer = f.buffer;
-                nNode.loop = larynxParams.loopOn;
+                nNode = offline.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn;
+            } else {
+                const bufferSize = sr * advDuration;
+                const buffer = offline.createBuffer(1, bufferSize, sr);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                nNode = offline.createBufferSource(); nNode.buffer = buffer; nNode.loop = true;
             }
+        } else {
+            const bufferSize = sr * advDuration;
+            const buffer = offline.createBuffer(1, bufferSize, sr);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            nNode = offline.createBufferSource(); nNode.buffer = buffer; nNode.loop = true;
         }
-        
+
+        const nG = offline.createGain();
         const mG = offline.createGain(); 
         const fG = offline.createGain(); 
         const gainPts = advTracks.find(t=>t.id==='gain')?.points || [];
@@ -292,7 +333,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4; f.gain.value=12; }); 
         nasF.type='lowpass';
 
-        // Frequency scheduling
+        // Automation scheduling
         const steps = 60; 
         for(let i=0; i<=steps; i++) {
             const t = i/steps; 
@@ -310,7 +351,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         }
 
         sNode.connect(mG); 
-        if(nNode) { nNode.connect(nG); nG.connect(f1); nNode.start(0); }
+        nNode.connect(nG); nG.connect(f1); 
         
         mG.connect(fG); 
         fG.connect(f1); 
@@ -321,19 +362,19 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         let lastNode: AudioNode = nasF;
         eqBands.forEach(b => { 
             if(b.on) { 
-                const eq = offline.createBiquadFilter(); 
-                eq.type = b.type; eq.frequency.value = b.freq; eq.gain.value = b.gain; eq.Q.value = b.q;
+                const eq = offline.createBiquadFilter(); eq.type = b.type; eq.frequency.value = b.freq; eq.gain.value = b.gain; eq.Q.value = b.q;
                 lastNode.connect(eq); lastNode = eq; 
             } 
         });
         
         lastNode.connect(offline.destination); 
         if((sNode as any).start) (sNode as any).start(0); 
+        nNode.start(0);
         
         const renderedBuffer = await offline.startRendering();
         lastRenderedRef.current = renderedBuffer;
         return renderedBuffer;
-    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, pulseWidth, eqBands, getValueAtTime]);
+    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, eqBands, getValueAtTime]);
 
     useEffect(() => {
         if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current);
@@ -599,13 +640,40 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 {/* --- Source Configuration --- */}
                                 <div className="space-y-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mic2 size={12}/> Glottis Source</h3>
-                                    <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
-                                        <button onClick={()=>setTractSourceType('synth')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='synth'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>신시사이저</button>
+                                    <div className="flex gap-2 p-1 bg-slate-100 rounded-lg shadow-inner">
+                                        <button onClick={()=>setTractSourceType('synth')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='synth'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>신디사이저</button>
                                         <button onClick={()=>setTractSourceType('file')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일</button>
                                     </div>
+                                    {tractSourceType === 'synth' && (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] text-slate-500 uppercase font-black">Waveform</span>
+                                                <select value={synthWaveform} onChange={e=>setSynthWaveform(e.target.value)} className="text-[10px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900">
+                                                    <option value="sawtooth">Sawtooth (톱니파)</option>
+                                                    <option value="sine">Sine (사인파)</option>
+                                                    <option value="square">Square (구형파)</option>
+                                                    <option value="noise">Noise (노이즈)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    )}
                                     {tractSourceType === 'file' && (
-                                        <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none">
+                                        <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
                                             <option value="">파일 선택</option>
+                                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                        </select>
+                                    )}
+
+                                    <div className="h-px bg-slate-200 my-2" />
+
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Wind size={12}/> Noise Source (Breath)</h3>
+                                    <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
+                                        <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'generated'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='generated'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>화이트 노이즈</button>
+                                        <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'file'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일 소스</button>
+                                    </div>
+                                    {larynxParams.noiseSourceType === 'file' && (
+                                        <select value={larynxParams.noiseSourceFileId} onChange={e=>setLarynxParams({...larynxParams, noiseSourceFileId: e.target.value})} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
+                                            <option value="">노이즈 파일 선택</option>
                                             {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                                         </select>
                                     )}
