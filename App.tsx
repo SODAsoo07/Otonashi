@@ -20,12 +20,11 @@ const App: React.FC = () => {
     const [isRackOpen, setIsRackOpen] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // --- 글로벌 히스토리 시스템 (파일 및 프로젝트 상태 보존) ---
+    // --- 글로벌 히스토리 시스템 ---
     const [historyStack, setHistoryStack] = useState<AudioFile[][]>([]);
     const [redoStack, setRedoStack] = useState<AudioFile[][]>([]);
 
     const commitHistory = useCallback((currentFiles: AudioFile[]) => {
-        // 깊은 복사를 통해 상태 저장
         setHistoryStack(prev => [...prev.slice(-29), [...currentFiles]]);
         setRedoStack([]);
     }, []);

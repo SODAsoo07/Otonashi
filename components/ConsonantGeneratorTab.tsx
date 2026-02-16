@@ -274,7 +274,14 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <input type="checkbox" checked={state.on} onChange={e => onChange({...state, on: e.target.checked})} className="rounded accent-indigo-500"/> 
                     {label}
                 </label>
-                {state.on && <span className="text-[10px] text-slate-900 font-mono font-black">{state.freq}Hz</span>}
+                {state.on && (
+                    <input 
+                        type="number" 
+                        value={state.freq} 
+                        onChange={e => onChange({...state, freq: Number(e.target.value)})} 
+                        className="w-16 text-[10px] text-slate-900 font-mono font-black bg-white border border-slate-300 rounded px-1 text-right focus:outline-none focus:border-indigo-500"
+                    />
+                )}
             </div>
             {state.on && (
                 <div className="space-y-1">
@@ -282,6 +289,13 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-400">Q</span>
                         <input type="range" min="0.1" max="20" step="0.1" value={state.q} onChange={e=>onChange({...state, q: Number(e.target.value)})} className="flex-1 h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-400"/>
+                        <input 
+                            type="number" 
+                            step="0.1"
+                            value={state.q} 
+                            onChange={e => onChange({...state, q: Number(e.target.value)})} 
+                            className="w-10 text-[9px] text-slate-500 font-mono bg-transparent text-right outline-none"
+                        />
                     </div>
                 </div>
             )}
