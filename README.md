@@ -1,20 +1,12 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Otonashi 오토나시</br>
+**AUgmented vocal-TracT and Nasal SImulator** </br>
+React로 제작된 무생물 우타우 창작 툴
 
-# Run and deploy your AI Studio app
+Pink Trombone (https://www.imaginary.org/ko/node/1520) 이라는 성도 시뮬레이션 라이브러리에서 영감을 받아 제작된 툴입니다. </br>
+99.9% 순수 바이브코딩으로 제작되었습니다. (사용 모델: 제미나이 3 Pro) </br>
 
-This contains everything you need to run your app locally.
+버그가 발생하면 이 트위터 계정으로 제보 주세요. AI에게 이래라저래라 시켜서 열심히 고쳐보겠습니다... </br>
 
-View your app in AI Studio: https://ai.studio/apps/drive/1FjYG__tRgESZzlSHRfNvXwbHDSz3GEyc
+이 툴은 베타 버전입니다. 게시 중단 혹은 수정될 수 있습니다. </br>
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+본 툴은 커스텀 라이선스를 따릅니다.해당 프로그램을 수정해 배포하기, 프로그램의 출력물(소리 파일)을 상업적인 용도로 이용하는 것은 전면 자유입니다.</br>**다만 본 프로그램에 아무런 수정도 거치지 않고 프로그램 자체로 수익을 창출하는 행위는 금지됩니다.(프로그램 대여, 프로그램 혹은 소스코드 자체를 판매 등)**</br>
