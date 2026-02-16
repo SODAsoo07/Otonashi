@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Info, X, Activity, Combine, Grid, Wand2 } from 'lucide-react';
+import { Info, X, Activity, Combine, Grid, Wand2, MousePointer2, Zap, AudioLines, Download, Layers, Sparkles, Mic2 } from 'lucide-react';
 
 interface HelpModalProps {
   onClose: () => void;
@@ -8,42 +8,73 @@ interface HelpModalProps {
 
 const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
   <div className="fixed inset-0 z-[130] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in font-sans" onClick={onClose}>
-    <div className="bg-white w-[600px] max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e=>e.stopPropagation()}>
+    <div className="bg-white w-[650px] max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e=>e.stopPropagation()}>
       <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-        <div className="flex items-center gap-2 text-indigo-600 font-black">
-          <Info size={20}/> <span>OTONASHI 가이드</span>
+        <div className="flex items-center gap-2 text-[#209ad6] font-black">
+          <Info size={20}/> <span>OTONASHI 사용 가이드</span>
         </div>
-        <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
+        <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full transition-colors"><X size={20} className="text-slate-400 hover:text-slate-600"/></button>
       </div>
-      <div className="p-6 overflow-y-auto custom-scrollbar text-slate-600 text-sm space-y-6">
-        <p className="text-[10px] text-slate-400 italic -mt-2">이 앱의 소스코드는 AI를 통해 작성되었습니다.</p>
-        <section>
-          <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
-            <Activity size={16}/> 스튜디오
+      
+      <div className="p-6 overflow-y-auto custom-scrollbar text-slate-600 text-sm space-y-8">
+        <div className="flex flex-col gap-1 border-b border-slate-100 pb-4">
+            <p className="text-[10px] text-slate-400 italic">※ 이 앱의 소스코드는 AI를 통해 작성되었습니다.</p>
+            <p className="text-xs text-slate-500 font-medium">OTONASHI는 웹 기반의 성도 시뮬레이터 및 오디오 합성 도구입니다. 아래 설명을 통해 각 탭의 기능을 익혀보세요.</p>
+        </div>
+
+        <section className="space-y-3">
+          <h3 className="text-base font-black text-slate-800 flex items-center gap-2 border-l-4 border-blue-400 pl-2">
+            <Activity size={18} className="text-blue-500"/> 스튜디오 (Studio)
           </h3>
-          <p>파형 편집, 이펙트 적용, 트랙 합성을 수행합니다. 파형을 드래그하여 파일을 열 수 있습니다.</p>
+          <div className="grid grid-cols-1 gap-2 pl-3">
+            <div className="flex gap-2 items-start"><Zap size={14} className="mt-1 text-amber-500 shrink-0"/><span><b>오토메이션 & EQ:</b> 파형 위에 직접 볼륨 변화를 그리고, 파라메트릭 EQ로 주파수를 정밀하게 제어합니다.</span></div>
+            <div className="flex gap-2 items-start"><AudioLines size={14} className="mt-1 text-indigo-500 shrink-0"/><span><b>Formant Filter:</b> Formant Pad를 사용하여 모음의 특성(F1, F2)을 시각적으로 변경하거나 성별(Gender)을 변조할 수 있습니다.</span></div>
+            <div className="flex gap-2 items-start"><Layers size={14} className="mt-1 text-slate-500 shrink-0"/><span><b>클립보드 고급 기능:</b> 복사한 오디오를 <b>Mix(겹쳐넣기)</b>하거나, <b>Imprint(텍스처 입히기)</b>를 통해 소리의 질감만 현재 선택 영역에 입힐 수 있습니다.</span></div>
+          </div>
         </section>
-        <section>
-          <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
-            <Wand2 size={16}/> 자음 생성기
+
+        <section className="space-y-3">
+          <h3 className="text-base font-black text-slate-800 flex items-center gap-2 border-l-4 border-cyan-400 pl-2">
+            <Wand2 size={18} className="text-cyan-500"/> 자음 생성기 (Consonant Gen)
           </h3>
-          <p>노이즈와 필터를 사용하여 파열음(T, K)이나 마찰음(S, SH) 등의 인공적인 자음 소리를 생성합니다. 프리셋을 선택하거나 필터와 엔벨로프(ADSR)를 직접 조작하여 원하는 소리를 만들고 보관함에 저장할 수 있습니다.</p>
+          <div className="pl-3 space-y-2">
+            <p className="leading-relaxed">노이즈와 필터를 조합하여 'S', 'T', 'K' 같은 자음을 합성합니다.</p>
+            <ul className="list-disc pl-5 space-y-1 text-xs text-slate-500">
+                <li><b>Transient (Burst):</b> 파열음(P, T, K)의 날카로운 시작음을 생성합니다.</li>
+                <li><b>Multi-Filter:</b> High/Low/Bandpass 필터를 조합하여 복잡한 공명을 만듭니다.</li>
+            </ul>
+          </div>
         </section>
-        <section>
-          <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
-            <Combine size={16}/> 자음-모음 합성기
+
+        <section className="space-y-3">
+          <h3 className="text-base font-black text-slate-800 flex items-center gap-2 border-l-4 border-indigo-400 pl-2">
+            <Combine size={18} className="text-indigo-500"/> 자음-모음 합성기 (C-V Mixer)
           </h3>
-          <p>자음과 모음 트랙을 정밀하게 결합합니다. [이동 모드]에서 드래그하여 타이밍을, [볼륨 모드]에서 키프레임을 조절하세요.</p>
+          <p className="pl-3 leading-relaxed">두 개의 오디오 파일(자음/모음)을 정밀하게 결합합니다. <b>Offset</b>으로 타이밍을 맞추고, <b>Stretch</b>로 길이를 조절한 뒤 <b>Master EQ</b>로 최종 톤을 정리하세요.</p>
         </section>
-        <section>
-          <h3 className="text-base font-bold text-slate-800 mb-2 flex items-center gap-2">
-            <Grid size={16}/> 성도 시뮬레이터
+
+        <section className="space-y-3">
+          <h3 className="text-base font-black text-slate-800 flex items-center gap-2 border-l-4 border-rose-400 pl-2">
+            <Grid size={18} className="text-rose-500"/> 성도 시뮬레이터 (Simulator)
           </h3>
-          <p>발성 기관 모델을 조작하여 소리를 생성합니다. 외부 노이즈 파일을 불러와 숨소리나 마찰음을 구현할 수 있습니다.</p>
+          <div className="pl-3 space-y-2">
+            <p>인간의 발성 기관을 물리적으로 모델링합니다. 혀, 입술, 연구개의 움직임을 타임라인에 기록하세요.</p>
+            <div className="grid grid-cols-1 gap-1 text-xs bg-slate-100 p-2 rounded-lg">
+                <div className="flex gap-2 items-center"><Sparkles size={12} className="text-purple-500"/><span><b>AI 분석 (Beta):</b> 오디오 파일의 발음을 분석하여 자동으로 혀와 입술의 움직임을 생성합니다.</span></div>
+                <div className="flex gap-2 items-center"><Mic2 size={12} className="text-red-500"/><span><b>Pitch 추출:</b> 녹음된 목소리의 피치 곡선을 추출하여 시뮬레이터에 적용합니다.</span></div>
+                <div className="flex gap-2 items-center"><AudioLines size={12} className="text-blue-500"/><span><b>Spectrogram:</b> 배경에 스펙트로그램을 띄워 주파수 변화를 눈으로 보며 작업할 수 있습니다.</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section className="bg-slate-50 p-4 rounded-xl space-y-2 border border-slate-100">
+            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2"><Download size={14}/> 프로젝트 관리</h4>
+            <p className="text-[11px] text-slate-500">상단 헤더의 <b>저장(Download)</b> 버튼을 누르면 작업 중인 모든 파일이 포함된 .json 프로젝트 파일을 내보냅니다. 나중에 <b>열기(Upload)</b> 버튼으로 다시 불러올 수 있습니다.</p>
         </section>
       </div>
+      
       <div className="p-4 border-t bg-slate-50 text-center">
-        <button onClick={onClose} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold">닫기</button>
+        <button onClick={onClose} className="px-10 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl font-bold transition-all shadow-md shadow-blue-100 active:scale-95">확인했습니다</button>
       </div>
     </div>
   </div>

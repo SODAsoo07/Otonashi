@@ -1,10 +1,12 @@
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind, Activity, Wand2, GitCommit, Spline, Waves, Eye, EyeOff } from 'lucide-react';
-import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand, KeyframePoint } from '../types';
-import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves } from 'lucide-react';
+import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
+import { AudioUtils } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
 import FormantAnalyzer from './FormantAnalyzer';
+import TractVisualizer from './TractVisualizer';
+import TimelineEditor from './TimelineEditor';
 
 interface AdvancedTractTabProps {
   audioContext: AudioContext;
@@ -17,7 +19,7 @@ interface AdvancedTractTabProps {
 const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number) => {
     const a = 2 * p0 - 5 * p1 + 4 * p2 - p3;
     const b = -p0 + 3 * p1 - 3 * p2 + p3;
-    const c = p2 - p0; // Tension factor omitted for standard Catmull-Rom
+    const c = p2 - p0; 
     const d = 2 * p1;
     return 0.5 * (a * t * t * t + b * t * t + c * t + d);
 };
@@ -42,8 +44,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     
     const [isEditMode, setIsEditMode] = useState(false);
     const [selectedTrackId, setSelectedTrackId] = useState('pitch'); 
-    const [hoveredKeyframe, setHoveredKeyframe] = useState<{trackId: string, index: number} | null>(null);
-    const [draggingKeyframe, setDraggingKeyframe] = useState<{trackId?: string, index?: number, isPlayhead?: boolean} | null>(null);
     
     const [sidebarWidth, setSidebarWidth] = useState(420);
     const [isResizing, setIsResizing] = useState(false);
@@ -51,7 +51,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
     const [showAnalyzer, setShowAnalyzer] = useState(false);
 
-    // New States for requested features
     const [showSpectrogram, setShowSpectrogram] = useState(false);
     const [pitchFileId, setPitchFileId] = useState("");
     const [pitchSensitivity, setPitchSensitivity] = useState(0.5);
@@ -86,7 +85,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const isAdvPlayingRef = useRef(false);
     const liveAudioRef = useRef<any>(null); 
     const animRef = useRef<number | null>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
     const lastRenderedRef = useRef<AudioBuffer | null>(null);
     const simStartTimeRef = useRef(0);
     const simPauseOffsetRef = useRef(0);
@@ -119,7 +117,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             return t;
         });
         setAdvTracks(newTracks);
-        setGhostTracks(newTracks); // Set as guide as well
+        setGhostTracks(newTracks); 
         setShowGhost(true);
         commitChange("AI 발음 분석 적용");
     };
@@ -128,12 +126,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (!pitchFileId) return;
         const f = files.find(f => f.id === pitchFileId);
         if (!f) return;
-
         const pts = AudioUtils.detectPitch(f.buffer, pitchSensitivity);
-        // Normalize time to duration
         const dur = advDuration;
         const normalizedPts = pts.map(p => ({ t: Math.min(1, p.t / dur), v: p.v })).filter(p => p.t <= 1);
-        
         setAdvTracks(prev => prev.map(t => {
             if (t.id === 'pitch') return { ...t, points: normalizedPts, interpolation: 'curve' };
             return t;
@@ -141,7 +136,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         commitChange("피치 추출 적용");
     };
 
-    // Spectrogram Generation Effect
     useEffect(() => {
         if (!showSpectrogram || !tractSourceFileId) {
              spectrogramCanvasRef.current = null;
@@ -168,7 +162,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     useEffect(() => { isAdvPlayingRef.current = isAdvPlaying; }, [isAdvPlaying]);
 
-    // Live Intensity Update
     useEffect(() => {
         if (liveAudioRef.current && audioContext) {
             const now = audioContext.currentTime;
@@ -222,24 +215,18 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if(t <= pts[0].t) return pts[0].v;
         if(t >= pts[pts.length-1].t) return pts[pts.length-1].v;
 
-        // Curve Interpolation
         if (track.interpolation === 'curve') {
-             // Find neighbors for Catmull-Rom spline
              let i = 0;
              while(i < pts.length - 1 && pts[i+1].t < t) i++;
-             
              const p0 = i > 0 ? pts[i-1] : pts[i];
              const p1 = pts[i];
              const p2 = pts[i+1];
              const p3 = i < pts.length - 2 ? pts[i+2] : pts[i+1];
-
              const range = p2.t - p1.t;
              if (range === 0) return p1.v;
              const tLocal = (t - p1.t) / range;
-             
              return Math.max(track.min, Math.min(track.max, cubicHermite(p0.v, p1.v, p2.v, p3.v, tLocal)));
         } 
-        // Linear Interpolation
         else {
             for(let i=0; i<pts.length-1; i++) {
                 if(t >= pts[i].t && t <= pts[i+1].t) {
@@ -285,7 +272,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         let sNode: any;
         let nNode: any;
 
-        // Tract Source
         if (tractSourceType === 'file' && tractSourceFileId) { 
             const f = files.find(f => f.id === tractSourceFileId); 
             if (f?.buffer) { sNode = audioContext.createBufferSource(); sNode.buffer = f.buffer; sNode.loop = larynxParams.loopOn; } 
@@ -304,7 +290,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }
         }
 
-        // Noise/Breath Source
         if (larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
             const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
             if (f?.buffer) { nNode = audioContext.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn; }
@@ -397,10 +382,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             } else {
                 const osc = offline.createOscillator(); 
                 osc.type = synthWaveform as any;
-                // Pitch automation
                 const pitchTrack = advTracks.find(t=>t.id==='pitch');
                 if(pitchTrack && pitchTrack.points.length > 0) {
-                    const steps = 100; // Use dense sampling for accurate curve pitch modulation
+                    const steps = 100;
                     for(let i=0; i<=steps; i++) {
                         const t = i/steps;
                         const val = getValueAtTime('pitch', t);
@@ -411,7 +395,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }
         }
 
-        // Noise Source (Breath)
         let nNode: AudioBufferSourceNode;
         if(larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
             const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
@@ -436,7 +419,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const mG = offline.createGain(); 
         const fG = offline.createGain(); 
         
-        // Gain automation
         const steps = 60; 
         for(let i=0; i<=steps; i++) {
              const t = i/steps;
@@ -455,30 +437,23 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         f3.type='peaking'; f3.Q.value=4; f3.gain.value=10 * simIntensity;
         nasF.type='lowpass';
 
-        // Automation scheduling
         for(let i=0; i<=steps; i++) {
             const t = i/steps; 
             const time = t * advDuration;
             const x=getV('tongueX', t), y=getV('tongueY', t), l=getV('lips', t), th=getV('throat', t), ln=getV('lipLen', t), n=getV('nasal', t), gFactor=getV('gender', t);
             const lF = 1.0 - (ln * 0.3), lipF = 0.5 + (l * 0.5);
-            
             f1.frequency.linearRampToValueAtTime(Math.max(50, (200 + (1-y)*600 - th*50)) * lF * lipF * gFactor, time); 
             f2.frequency.linearRampToValueAtTime((800 + x*1400) * lF * lipF * gFactor, time); 
             f3.frequency.linearRampToValueAtTime((2000 + l*1500) * lF * gFactor, time); 
             nasF.frequency.linearRampToValueAtTime(Math.max(400, 10000 - n*9000) * gFactor, time);
-            
             const breathV = getV('breath', t);
             nG.gain.linearRampToValueAtTime(breathV, time);
         }
 
         sNode.connect(mG); 
         nNode.connect(nG); nG.connect(f1); 
-        
         mG.connect(fG); 
-        fG.connect(f1); 
-        f1.connect(f2); 
-        f2.connect(f3); 
-        f3.connect(nasF); 
+        fG.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); 
         
         let lastNode: AudioNode = nasF;
         eqBands.forEach(b => { 
@@ -519,33 +494,25 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             isAdvPlayingRef.current = false;
         } else {
              if (audioContext.state === 'suspended') await audioContext.resume();
-             
              const res = lastRenderedRef.current || await renderAdvancedAudio(); 
              if(!res) return;
-             
              const s = audioContext.createBufferSource(); 
              s.buffer = res; 
              s.connect(audioContext.destination);
-             
              const offset = isPaused ? simPauseOffsetRef.current : 0;
              let effectiveOffset = offset >= res.duration ? 0 : offset;
-             
              s.start(0, effectiveOffset); 
              simStartTimeRef.current = audioContext.currentTime - effectiveOffset;
              simPlaySourceRef.current = s; 
-             
              setIsAdvPlaying(true); 
              isAdvPlayingRef.current = true; 
              setIsPaused(false);
-             
              const animate = () => { 
                  if(!isAdvPlayingRef.current) return;
                  const cur = audioContext.currentTime - simStartTimeRef.current;
                  const progress = Math.min(1, Math.max(0, cur / advDuration));
-                 
                  setPlayheadPos(progress); 
                  syncVisualsToTime(progress);
-                 
                  if (cur < advDuration) {
                      animRef.current = requestAnimationFrame(animate); 
                  } else { 
@@ -573,174 +540,16 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         }
     };
 
-    const handleTimelineMouseDown = (e: React.MouseEvent) => {
-        if(!canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); 
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const t = Math.max(0, Math.min(1, x / rect.width));
-        
-        if (y < RULER_HEIGHT + 3 && !isEditMode) {
-            setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; 
-            if(isAdvPlaying) handleSimulationPlay();
-            setDraggingKeyframe({ isPlayhead: true });
-            return;
-        }
-        if (isEditMode) {
-            const track = advTracks.find(tr => tr.id === selectedTrackId);
-            if (track) {
-                const graphH = rect.height - RULER_HEIGHT;
-                const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width)-x, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH)-y) < 15);
-                if (e.button === 2) { 
-                    e.preventDefault(); 
-                    if(hitIdx !== -1 && track.points.length > 2) { 
-                        setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: t.points.filter((_, i) => i !== hitIdx) } : t)); 
-                        commitChange("포인트 삭제"); 
-                    } 
-                    return; 
-                }
-                if (hitIdx !== -1) { setDraggingKeyframe({ trackId: selectedTrackId, index: hitIdx }); return; }
-                if (y >= RULER_HEIGHT) {
-                    const val = track.min + ((1 - ((y - RULER_HEIGHT) / graphH)) * (track.max - track.min)); 
-                    const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t); 
-                    setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr));
-                    setDraggingKeyframe({ trackId: selectedTrackId, index: nPts.findIndex(p => p.t === t) }); 
-                    commitChange("포인트 추가"); 
-                }
-            }
-        } else {
-            setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; 
-            if(isAdvPlaying) handleSimulationPlay();
-            setDraggingKeyframe({ isPlayhead: true });
-        }
-    };
-
-    const handleTimelineMouseMove = (e: React.MouseEvent) => {
-        if(!draggingKeyframe || !canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); 
-        const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        if (draggingKeyframe.isPlayhead) { 
-            setPlayheadPos(t); 
-            syncVisualsToTime(t); 
-        } 
-        else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
-            const gH = rect.height - RULER_HEIGHT; 
-            const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
-            setAdvTracks(prev => prev.map(tr => {
-                if (tr.id !== draggingKeyframe.trackId) return tr;
-                const valActual = tr.min + nV * (tr.max - tr.min);
-                return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: valActual } : p).sort((a,b)=>a.t-b.t) }; 
-            }));
-        }
-    };
-
-    useEffect(() => {
-        if(!canvasRef.current) return; 
-        const ctx = canvasRef.current.getContext('2d'); 
-        if(!ctx) return; 
-        const w = canvasRef.current.width, h = canvasRef.current.height;
-        const track = advTracks.find(t => t.id === selectedTrackId);
-        
-        ctx.clearRect(0, 0, w, h); 
-        ctx.fillStyle = '#f8f8f6'; 
-        ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT); 
-
-        // Draw Spectrogram background if available
-        if (showSpectrogram && spectrogramCanvasRef.current) {
-            ctx.drawImage(spectrogramCanvasRef.current, 0, RULER_HEIGHT, w, h - RULER_HEIGHT);
-        }
-        
-        // Draw Waveform Preview
-        if (previewBuffer) {
-            ctx.save(); 
-            ctx.globalAlpha = 0.4; 
-            ctx.beginPath(); 
-            ctx.strokeStyle = '#cbd5e1'; 
-            ctx.lineWidth = 1;
-            const data = previewBuffer.getChannelData(0); 
-            const step = Math.ceil(data.length / w);
-            const waveH = h - RULER_HEIGHT; 
-            const amp = waveH / 2; 
-            const center = RULER_HEIGHT + amp;
-            for (let i = 0; i < w; i++) {
-                let min = 1.0, max = -1.0; 
-                for (let j = 0; j < step; j++) { 
-                    const d = data[i * step + j] || 0; 
-                    if (d < min) min = d; if (d > max) max = d; 
-                }
-                ctx.moveTo(i, center + min * amp); 
-                ctx.lineTo(i, center + max * amp);
-            }
-            ctx.stroke(); 
-            ctx.restore();
-        }
-
-        // Draw Ghost Track (Guide)
-        if (showGhost && ghostTracks && track) {
-            const ghost = ghostTracks.find(t => t.id === selectedTrackId);
-            if (ghost) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.strokeStyle = track.color;
-                ctx.lineWidth = 2;
-                ctx.setLineDash([5, 5]);
-                ctx.globalAlpha = 0.4;
-                
-                if (ghost.interpolation === 'curve') {
-                     for(let i=0; i<w; i++) {
-                         const t = i / w;
-                         const v = getValueAtTime(ghost.id, t, ghostTracks);
-                         const y = RULER_HEIGHT + (1 - (v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT);
-                         if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
-                     }
-                } else {
-                     ghost.points.forEach((p, i) => { 
-                        const x = p.t * w; 
-                        const y = RULER_HEIGHT + (1 - (p.v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT); 
-                        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
-                    }); 
-                }
-                ctx.stroke();
-                ctx.restore();
-            }
-        }
-        
-        if (track) {
-            ctx.beginPath(); 
-            ctx.strokeStyle = track.color; 
-            ctx.lineWidth = 2.5; 
-
-            // Draw Curve/Line based on interpolation mode
-            if (track.interpolation === 'curve') {
-                 // Pixel-based plotting for accurate curves (simplest implementation)
-                 for(let i=0; i<w; i++) {
-                     const t = i / w;
-                     const v = getValueAtTime(track.id, t);
-                     const y = RULER_HEIGHT + (1 - (v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT);
-                     if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
-                 }
-            } else {
-                 track.points.forEach((p, i) => { 
-                    const x = p.t * w; 
-                    const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
-                    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
-                }); 
-            }
-            
-            ctx.stroke(); 
-            track.points.forEach((p, i) => { 
-                const x = p.t * w; 
-                const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
-                ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : track.color; 
-                ctx.beginPath(); 
-                ctx.arc(x, y, 6, 0, Math.PI*2); 
-                ctx.fill(); 
-            }); 
-        }
-        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
-    }, [selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks]);
+    const recordSnapshot = () => {
+        const t = playHeadPos; 
+        setAdvTracks(prev=>prev.map(tr=>{
+            if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; 
+            let val=0; 
+            if(tr.id==='tongueX')val=liveTract.x;else if(tr.id==='tongueY')val=liveTract.y;else if(tr.id==='lips')val=liveTract.lips;else if(tr.id==='lipLen')val=liveTract.lipLen;else if(tr.id==='throat')val=liveTract.throat;else if(tr.id==='nasal')val=liveTract.nasal; else if(tr.id==='pitch')val=manualPitch; else if(tr.id==='gender')val=manualGender; 
+            return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};
+        })); 
+        commitChange("기록");
+    }
 
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
 
@@ -754,43 +563,33 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
       </div>
     );
 
-    const lipOpening = liveTract.lips * 20; const lipProtrusion = liveTract.lipLen * 15; const nasalVelumAngle = liveTract.nasal * 40; 
-    const currentTrack = advTracks.find(t => t.id === selectedTrackId);
-
     return (
-        <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
+        <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden h-full">
             {showAnalyzer && <FormantAnalyzer files={files} audioContext={audioContext} onClose={()=>setShowAnalyzer(false)} onApply={handleAnalyzerApply} />}
-            <div className="flex-1 flex gap-0 shrink-0 min-h-0">
-                <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
-                    <div className="flex-1 relative flex items-center justify-center overflow-hidden min-h-[200px] py-[3px]">
-                        <svg viewBox="100 50 280 340" className="w-full h-full max-h-full drop-shadow-lg select-none transition-all duration-300 p-0">
-                            <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
-                            <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
-                            <path d={`M 220 380 L 220 250`} stroke="#e2e8f0" strokeWidth={30 + (1-liveTract.throat) * 40} strokeLinecap="round" opacity="0.6"/>
-                            <path d={`M 260 140 Q 290 ${140 + nasalVelumAngle} 310 ${140 + nasalVelumAngle}`} stroke="#fbbf24" strokeWidth="6" fill="none" strokeLinecap="round" className="cursor-ns-resize" onMouseDown={(e) => handleSimulationMouseDown(e, 'nasal')}/>
-                            <path d={`M 220 350 Q ${220 + liveTract.x * 120} ${330 - liveTract.y * 140} ${250 + liveTract.x * 90} ${230 + liveTract.y * 60}`} stroke="#f43f5e" strokeWidth={25 + liveTract.throat * 8} fill="none" strokeLinecap="round" opacity="0.9" className="cursor-crosshair" onMouseDown={(e) => handleSimulationMouseDown(e, 'tongue')}/>
-                            <g transform={`translate(${lipProtrusion}, 0)`} className="cursor-move" onMouseDown={(e) => handleSimulationMouseDown(e, 'lips')}>
-                                <path d={`M 350 ${150 - lipOpening/2} L 370 ${150 - lipOpening/2}`} stroke="#ec4899" strokeWidth="10" strokeLinecap="round" />
-                                <path d={`M 350 ${190 + lipOpening/2} L 370 ${190 + lipOpening/2}`} stroke="#ec4899" strokeWidth="10" strokeLinecap="round" />
-                                <rect x="340" y="140" width="40" height="60" fill="transparent"/>
-                            </g>
-                        </svg>
-                    </div>
-                    <div className="p-2 px-4 bg-white/80 border-t flex justify-between items-center shrink-0 shadow-inner">
-                        <div className="flex gap-2">
-                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 disabled:opacity-20 transition-all shadow-sm"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={redoStack.length===0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 disabled:opacity-20 transition-all shadow-sm"><Redo2 size={16}/></button>
-                        </div>
-                        <div className="flex gap-1.5 font-bold text-xs items-center">
-                            <button onClick={()=>{const t=playHeadPos; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; let val=0; if(tr.id==='tongueX')val=liveTract.x;else if(tr.id==='tongueY')val=liveTract.y;else if(tr.id==='lips')val=liveTract.lips;else if(tr.id==='lipLen')val=liveTract.lipLen;else if(tr.id==='throat')val=liveTract.throat;else if(tr.id==='nasal')val=liveTract.nasal; else if(tr.id==='pitch')val=manualPitch; else if(tr.id==='gender')val=manualGender; return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("기록");}} className="dynamic-primary text-slate-900 px-3 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5 shadow-md active:scale-95 transition-all"><CircleDot size={14}/> 기록</button>
-                            <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                            <button onClick={handleSimulationPlay} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md active:scale-95 transition-all font-black">{isAdvPlaying ? <Pause size={14}/> : <Play size={14}/>} {isAdvPlaying ? '중지' : '재생'}</button>
-                            <button onClick={handleDownloadResult} className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 shadow-sm transition-all flex items-center gap-1.5 font-black"><Download size={14}/> WAV</button>
-                            <button onClick={handleSaveToRack} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-black flex items-center gap-1.5"><Save size={14}/> 보관함</button>
-                        </div>
-                    </div>
-                </div>
+            
+            {/* Top Section (Visualizer + Settings) */}
+            <div className="flex-1 flex gap-0 shrink-0 min-h-0 flex-[3]">
+                {/* Responsive Visualizer */}
+                <TractVisualizer 
+                    liveTract={liveTract}
+                    manualPitch={manualPitch}
+                    manualGender={manualGender}
+                    isAdvPlaying={isAdvPlaying}
+                    undoStackLength={undoStack.length}
+                    redoStackLength={redoStack.length}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
+                    onRecordSnapshot={recordSnapshot}
+                    onPlayToggle={handleSimulationPlay}
+                    onDownload={handleDownloadResult}
+                    onSaveToRack={handleSaveToRack}
+                    onMouseDown={handleSimulationMouseDown}
+                />
+                
+                {/* Resizer Handle */}
                 <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'dynamic-primary' : ''}`} onMouseDown={(e)=>{setIsResizing(true); e.preventDefault();}} />
+                
+                {/* Sidebar (Settings/EQ) */}
                 <div className="bg-white/40 dynamic-radius border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
                     <div className="flex border-b border-slate-300 bg-white/40">
                         <button onClick={()=>setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='settings'?'bg-white dynamic-primary-text border-b-2 dynamic-primary-border shadow-sm':'text-slate-500'}`}><Settings2 size={14} className="inline mr-1"/> 설정</button>
@@ -799,7 +598,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 font-bold">
                         {sidebarTab === 'settings' ? (
                             <div className="space-y-6">
-                                {/* Vowel Presets */}
                                 <div className="space-y-2">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Vowel Presets</h3>
                                     <div className="flex gap-1 font-black">
@@ -807,15 +605,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                             <button key={v} onClick={() => applyVowelPreset(v)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-black text-slate-700 transition-all shadow-sm">{v}</button>
                                         ))}
                                     </div>
-                                    <button 
-                                        onClick={() => setShowAnalyzer(true)}
-                                        className="w-full py-2.5 mt-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"
-                                    >
-                                        <Wand2 size={14}/> AI 발음 분석 (Beta)
-                                    </button>
+                                    <button onClick={() => setShowAnalyzer(true)} className="w-full py-2.5 mt-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"><Wand2 size={14}/> AI 발음 분석 (Beta)</button>
                                 </div>
-
-                                {/* Pitch Extraction */}
                                 <div className="space-y-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={12}/> Pitch Analysis</h3>
                                     <select value={pitchFileId} onChange={e=>setPitchFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
@@ -823,22 +614,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                         {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                                     </select>
                                     <div className="space-y-1">
-                                        <div className="flex justify-between text-[10px] font-black text-slate-500">
-                                            <span>Keyframe Sensitivity</span>
-                                            <span className="text-indigo-600">{Math.round(pitchSensitivity * 100)}%</span>
-                                        </div>
+                                        <div className="flex justify-between text-[10px] font-black text-slate-500"><span>Sensitivity</span><span className="text-indigo-600">{Math.round(pitchSensitivity * 100)}%</span></div>
                                         <input type="range" min="0" max="1" step="0.05" value={pitchSensitivity} onChange={e => setPitchSensitivity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
                                     </div>
-                                    <button 
-                                        onClick={handlePitchExtraction}
-                                        disabled={!pitchFileId}
-                                        className="w-full py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-black text-slate-700 disabled:opacity-50 transition-all shadow-sm"
-                                    >
-                                        Extract Pitch & Apply
-                                    </button>
+                                    <button onClick={handlePitchExtraction} disabled={!pitchFileId} className="w-full py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-black text-slate-700 disabled:opacity-50 transition-all shadow-sm">Extract Pitch & Apply</button>
                                 </div>
-
-                                {/* --- Source Configuration --- */}
                                 <div className="space-y-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mic2 size={12}/> Glottis Source</h3>
                                     <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
@@ -847,56 +627,29 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     </div>
                                     {tractSourceType === 'synth' && (
                                         <div className="space-y-2">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-[10px] text-slate-500 uppercase font-black">Waveform</span>
-                                                <select value={synthWaveform} onChange={e=>setSynthWaveform(e.target.value)} className="text-[10px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900">
-                                                    <option value="sawtooth">Sawtooth (톱니파)</option>
-                                                    <option value="sine">Sine (사인파)</option>
-                                                    <option value="square">Square (구형파)</option>
-                                                    <option value="noise">Noise (노이즈)</option>
-                                                </select>
-                                            </div>
+                                            <div className="flex items-center justify-between"><span className="text-[10px] text-slate-500 uppercase font-black">Waveform</span><select value={synthWaveform} onChange={e=>setSynthWaveform(e.target.value)} className="text-[10px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"><option value="sawtooth">Sawtooth</option><option value="sine">Sine</option><option value="square">Square</option><option value="noise">Noise</option></select></div>
                                         </div>
                                     )}
                                     {tractSourceType === 'file' && (
                                         <div className="space-y-2">
-                                            <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
-                                                <option value="">파일 선택</option>
-                                                {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                            </select>
-                                            <div className="space-y-1">
-                                                <div className="flex justify-between text-[10px] font-black text-slate-500">
-                                                    <span>Simulation Intensity</span>
-                                                    <span className="text-indigo-600">{Math.round(simIntensity * 100)}%</span>
-                                                </div>
-                                                <input type="range" min="0" max="1.5" step="0.05" value={simIntensity} onChange={e => setSimIntensity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
-                                            </div>
+                                            <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900"><option value="">파일 선택</option>{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                                            <div className="space-y-1"><div className="flex justify-between text-[10px] font-black text-slate-500"><span>Simulation Intensity</span><span className="text-indigo-600">{Math.round(simIntensity * 100)}%</span></div><input type="range" min="0" max="1.5" step="0.05" value={simIntensity} onChange={e => setSimIntensity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                         </div>
                                     )}
-                                    
-                                    {/* Spectrogram Toggle */}
                                     <div className="flex items-center justify-between pt-1">
                                         <span className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1"><Waves size={12}/> Spectrogram</span>
-                                        <button onClick={()=>setShowSpectrogram(!showSpectrogram)} className={`w-8 h-4 rounded-full transition-colors relative ${showSpectrogram ? 'bg-indigo-500' : 'bg-slate-300'}`}>
-                                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${showSpectrogram ? 'left-4.5' : 'left-0.5'}`}/>
-                                        </button>
+                                        <button onClick={()=>setShowSpectrogram(!showSpectrogram)} className={`w-8 h-4 rounded-full transition-colors relative ${showSpectrogram ? 'bg-indigo-500' : 'bg-slate-300'}`}><div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${showSpectrogram ? 'left-4.5' : 'left-0.5'}`}/></button>
                                     </div>
-
                                     <div className="h-px bg-slate-200 my-2" />
-
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Wind size={12}/> Noise Source (Breath)</h3>
                                     <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
                                         <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'generated'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='generated'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>화이트 노이즈</button>
                                         <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'file'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일 소스</button>
                                     </div>
                                     {larynxParams.noiseSourceType === 'file' && (
-                                        <select value={larynxParams.noiseSourceFileId} onChange={e=>setLarynxParams({...larynxParams, noiseSourceFileId: e.target.value})} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
-                                            <option value="">노이즈 파일 선택</option>
-                                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                        </select>
+                                        <select value={larynxParams.noiseSourceFileId} onChange={e=>setLarynxParams({...larynxParams, noiseSourceFileId: e.target.value})} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900"><option value="">노이즈 파일 선택</option>{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
                                     )}
                                 </div>
-
                                 <div className="space-y-4">
                                     <ParamInput label="Pitch" value={manualPitch} min={50} max={600} step={1} onChange={setManualPitch} colorClass="text-amber-500" />
                                     <ParamInput label="Gender" value={manualGender} min={0.5} max={2.0} step={0.01} onChange={setManualGender} colorClass="text-pink-500" />
@@ -912,46 +665,33 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     </div>
                 </div>
             </div>
-            <div className="flex-1 min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0">
-                 <div className="flex items-center justify-between gap-1.5 pb-1 px-1">
-                    <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1 font-bold">
-                        {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                        {/* Toggle Guide View (only if ghost tracks exist) */}
-                        {ghostTracks && (
-                            <button 
-                                onClick={() => setShowGhost(!showGhost)}
-                                className={`px-2 py-1 text-[10px] font-black rounded-lg border transition-all flex items-center gap-1 ${showGhost ? 'bg-purple-50 border-purple-200 text-purple-600' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
-                                title="AI 가이드 트랙 보이기/숨기기"
-                            >
-                                {showGhost ? <Eye size={14}/> : <EyeOff size={14}/>} Guide
-                            </button>
-                        )}
-                        
-                        {/* Toggle Interpolation Button */}
-                        <button 
-                            onClick={() => {
-                                setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, interpolation: t.interpolation === 'curve' ? 'linear' : 'curve' } : t));
-                                commitChange("보간 모드 변경");
-                            }}
-                            className={`px-3 py-1 text-[10px] font-black rounded-lg border transition-all flex items-center gap-1 ${currentTrack?.interpolation === 'curve' ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
-                        >
-                            {currentTrack?.interpolation === 'curve' ? <Spline size={14}/> : <GitCommit size={14}/>}
-                            {currentTrack?.interpolation === 'curve' ? 'Curve' : 'Linear'}
-                        </button>
-
-                        <button onClick={()=>setIsEditMode(!isEditMode)} className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode?'bg-amber-400 text-white border-amber-500':'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`} title={isEditMode ? "키프레임 편집 중" : "플레이헤드 이동 모드"}><PencilLine size={16}/></button>
-                    </div>
-                </div>
-                <div className="h-full max-h-[220px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
-                    <canvas ref={canvasRef} width={1000} height={180} className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onContextMenu={e=>e.preventDefault()}/>
-                    <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[10px] font-black text-slate-600 flex gap-2 pointer-events-none shadow-sm">
-                        <span>Time: {playHeadPos.toFixed(3)}s</span>
-                        <span className="text-amber-600">Pitch: {Math.round(getCurrentValue('pitch'))}Hz</span>
-                        <span className="text-pink-500">Gender: x{Number(getCurrentValue('gender')).toFixed(2)}</span>
-                    </div>
-                </div>
+            
+            {/* Bottom Section (Timeline Editor) - Responsive Flex */}
+            <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[2]">
+                <TimelineEditor 
+                    advTracks={advTracks}
+                    setAdvTracks={setAdvTracks}
+                    selectedTrackId={selectedTrackId}
+                    setSelectedTrackId={setSelectedTrackId}
+                    playHeadPos={playHeadPos}
+                    setPlayheadPos={setPlayheadPos}
+                    syncVisualsToTime={syncVisualsToTime}
+                    handleSimulationPlay={handleSimulationPlay}
+                    isAdvPlaying={isAdvPlaying}
+                    commitChange={commitChange}
+                    isEditMode={isEditMode}
+                    setIsEditMode={setIsEditMode}
+                    showGhost={showGhost}
+                    setShowGhost={setShowGhost}
+                    ghostTracks={ghostTracks}
+                    showSpectrogram={showSpectrogram}
+                    spectrogramCanvas={spectrogramCanvasRef.current}
+                    previewBuffer={previewBuffer}
+                    getCurrentValue={getCurrentValue}
+                    getValueAtTime={getValueAtTime}
+                    simPauseOffsetRef={simPauseOffsetRef}
+                    advDuration={advDuration}
+                />
             </div>
         </div>
     );
