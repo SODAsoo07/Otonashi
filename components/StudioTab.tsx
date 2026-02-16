@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power
+  Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power, Copy, Layers, Fingerprint
 } from 'lucide-react';
 import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
@@ -32,6 +32,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [showAutomation, setShowAutomation] = useState(false);
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
     
+    // Clipboard State
+    const [clipboard, setClipboard] = useState<AudioBuffer | null>(null);
+
     // UI Tabs
     const [sideTab, setSideTab] = useState<'effects' | 'formant_filter' | 'formant'>('effects');
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
@@ -94,6 +97,55 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         setRedoStack(prevSt => prevSt.slice(0, -1)); 
         onUpdateFile(next.buffer); 
     }, [redoStack, onUpdateFile, activeBuffer]);
+
+    // --- Clipboard Operations ---
+    const handleCopy = useCallback(() => {
+        if (!activeBuffer) return;
+        const newBuf = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
+        if (newBuf) {
+            setClipboard(newBuf);
+            // Optional: Visual feedback could be added here
+        }
+    }, [activeBuffer, audioContext, editTrim]);
+
+    const handlePasteMix = useCallback(() => {
+        if (!activeBuffer || !clipboard) return;
+        pushUndo("오디오 겹쳐넣기 (Mix)");
+        
+        // Calculate insert point from playhead
+        const startSample = Math.floor((playheadPos / 100) * activeBuffer.duration * activeBuffer.sampleRate);
+        const newBuf = AudioUtils.mixBuffersAtTime(audioContext, activeBuffer, clipboard, startSample);
+        
+        if (newBuf) {
+            onUpdateFile(newBuf);
+        }
+    }, [activeBuffer, clipboard, audioContext, playheadPos, pushUndo, onUpdateFile]);
+
+    const handlePasteImprint = useCallback(async () => {
+        if (!activeBuffer || !clipboard) return;
+        pushUndo("오디오 텍스처 입히기 (Imprint)");
+
+        // Convolve the active buffer (carrier) with clipboard (modulator)
+        // This applies the clipboard's texture/reverb characteristic to the selection
+        
+        // 1. Extract selection to apply effect
+        const selectionBuf = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
+        
+        if (selectionBuf) {
+            const processedSelection = await AudioUtils.convolveBuffers(audioContext, selectionBuf, clipboard, 0.5);
+            if (processedSelection) {
+                // 2. Replace the selection with processed audio
+                // Delete original range
+                const tempBuf = AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end);
+                if (tempBuf) {
+                    // Insert processed
+                    const startSample = Math.floor(activeBuffer.duration * editTrim.start * activeBuffer.sampleRate);
+                    const finalBuf = AudioUtils.mixBuffersAtTime(audioContext, tempBuf, processedSelection, startSample);
+                     if (finalBuf) onUpdateFile(finalBuf);
+                }
+            }
+        }
+    }, [activeBuffer, clipboard, audioContext, editTrim, pushUndo, onUpdateFile]);
 
     const handleCutSelection = useCallback(() => {
         if (!activeBuffer) return;
@@ -361,6 +413,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 hover:bg-white text-red-500 transition-colors font-black"><Square size={14} fill="currentColor"/> 정지</button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             <button onClick={handleCutSelection} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-red-500 transition-all" title="선택 영역 자르기"><Scissors size={16}/></button>
+                            <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                            <button onClick={handleCopy} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white ${clipboard ? 'text-indigo-600' : 'text-slate-500'}`} title="선택 영역 복사">
+                                <Copy size={14}/> 복사
+                            </button>
+                            <button onClick={handlePasteMix} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent" title="현재 위치에 믹스 붙여넣기 (Mix Paste)">
+                                <Layers size={14}/> 겹쳐넣기
+                            </button>
+                             <button onClick={handlePasteImprint} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-pink-600 disabled:opacity-30 disabled:hover:bg-transparent" title="선택 영역에 클립보드 소스의 질감을 입힙니다 (Convolution)">
+                                <Fingerprint size={14}/> 텍스처 입히기
+                            </button>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
                         <div className="bg-slate-800 text-green-400 font-mono text-sm px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner min-w-[100px] flex justify-center tracking-widest font-black">
@@ -418,6 +480,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                          <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.end*100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.end; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, end: Math.min(1, Math.max(prev.start, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
                          {!activeBuffer && (
                             <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-black uppercase tracking-widest bg-slate-900/50 backdrop-blur-sm">작업할 파일을 보관함에서 선택하세요</div>
+                         )}
+                         {clipboard && (
+                             <div className="absolute top-4 right-4 bg-indigo-500/90 text-white text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg border border-white/20 backdrop-blur pointer-events-none animate-in fade-in slide-in-from-top-2">
+                                 📋 클립보드에 오디오 있음 ({clipboard.duration.toFixed(2)}s)
+                             </div>
                          )}
                     </div>
 

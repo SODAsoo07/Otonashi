@@ -14,6 +14,7 @@ interface FileRackProps {
   renameFile: (id: string, newName: string) => void;
   isOpen: boolean;
   toggleOpen: () => void;
+  width: number;
 }
 
 const FileRack: React.FC<FileRackProps> = ({ 
@@ -25,7 +26,8 @@ const FileRack: React.FC<FileRackProps> = ({
   removeFile, 
   renameFile, 
   isOpen, 
-  toggleOpen 
+  toggleOpen,
+  width
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState("");
@@ -66,7 +68,10 @@ const FileRack: React.FC<FileRackProps> = ({
 
   if (!isOpen) {
     return (
-        <aside className="w-12 bg-white/60 border-r border-slate-300 flex flex-col shrink-0 items-center py-4 gap-4 transition-all duration-300 ease-in-out font-sans">
+        <aside 
+            className="bg-white/60 border-r border-slate-300 flex flex-col shrink-0 items-center py-4 gap-4 transition-all duration-300 ease-in-out font-sans overflow-hidden"
+            style={{ width: `48px` }}
+        >
             <button 
                 onClick={toggleOpen}
                 className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors mb-2"
@@ -98,12 +103,13 @@ const FileRack: React.FC<FileRackProps> = ({
 
   return (
     <aside 
-      className={`w-64 bg-white/40 border-r border-slate-300 flex flex-col shrink-0 transition-all duration-300 ease-in-out font-sans relative ${isDragging ? 'bg-blue-50/80 border-dashed border-2 border-blue-400' : ''}`}
+      className={`bg-white/40 border-r border-slate-300 flex flex-col shrink-0 transition-none font-sans relative overflow-hidden ${isDragging ? 'bg-blue-50/80 border-dashed border-2 border-blue-400' : ''}`}
+      style={{ width: `${width}px` }}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className="p-4 border-b border-slate-300 flex justify-between items-center bg-slate-200/50">
+      <div className="p-4 border-b border-slate-300 flex justify-between items-center bg-slate-200/50 shrink-0">
         <div className="flex items-center gap-2">
             <button 
                 onClick={toggleOpen}
@@ -112,7 +118,7 @@ const FileRack: React.FC<FileRackProps> = ({
             >
                 <ChevronLeft size={16}/>
             </button>
-            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider font-black">파일 보관함</span>
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider font-black truncate">파일 보관함</span>
         </div>
         <label className="cursor-pointer hover:bg-slate-300 p-1 rounded transition text-[#209ad6]">
           <Plus className="w-4 h-4"/>
@@ -151,7 +157,7 @@ const FileRack: React.FC<FileRackProps> = ({
                </div>
                <span className="text-[9px] text-slate-400 pl-6">{f.buffer.duration.toFixed(2)}s | {f.buffer.sampleRate}Hz</span>
             </div>
-            <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+            <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1 shrink-0">
               <button onClick={(e) => handleDownload(e, f)} className="p-1 hover:text-green-600" title="WAV 다운로드"><Download size={12}/></button>
               <button onClick={() => { setEditingId(f.id); setTempName(f.name); }} className="p-1 hover:text-[#209ad6]" title="이름 변경"><Edit2 size={12}/></button>
               <button onClick={(e) => handleDelete(e, f.id)} className="p-1 hover:text-red-500" title="삭제"><X size={12}/></button>

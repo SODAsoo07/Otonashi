@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines, Wind, Music } from 'lucide-react';
+import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines, Wind, Music, Zap } from 'lucide-react';
 import { AudioFile, EQBand } from '../types';
 import ParametricEQ from './ParametricEQ';
 
@@ -24,6 +24,12 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [decay, setDecay] = useState(50); 
     const [sustain, setSustain] = useState(0.2); 
     const [release, setRelease] = useState(100); 
+    
+    // Transient (Burst) Params
+    const [transientOn, setTransientOn] = useState(false);
+    const [transientGain, setTransientGain] = useState(0.8);
+    const [transientFreq, setTransientFreq] = useState(1000); // Center freq for burst
+    const [transientDecay, setTransientDecay] = useState(15); // Very short decay
     
     // Filter Params
     const [hpFilter, setHpFilter] = useState<FilterState>({ on: false, freq: 2000, q: 1.0 });
@@ -59,37 +65,57 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
-    const applyGeneratorPreset = (type: 'unvoiced' | 'voiced') => {
-        if (type === 'unvoiced') {
-            setDuration(150);
-            setAttack(5);
-            setDecay(80);
-            setSustain(0.05);
-            setRelease(50);
-            setSourceMix(0.0); // 100% Noise
-            setNoiseType('white');
-            setHpFilter({ on: true, freq: 4000, q: 1.2 });
-            setBpFilter({ on: false, freq: 4000, q: 1.0 });
-            setLpFilter({ on: false, freq: 8000, q: 1.0 });
-        } else {
-            setDuration(300);
-            setAttack(40);
-            setDecay(100);
-            setSustain(0.4);
-            setRelease(100);
-            setSourceMix(0.4); // 40% Voice, 60% Noise
-            setVoiceWave('sawtooth');
-            setVoiceFreq(140);
-            setHpFilter({ on: false, freq: 2000, q: 1.0 });
-            setBpFilter({ on: true, freq: 3500, q: 1.5 });
-            setLpFilter({ on: true, freq: 12000, q: 0.7 });
+    const applyConsonantPreset = (char: 'S' | 'Sh' | 'T' | 'K' | 'P') => {
+        // Reset base params for clear start
+        setBaseSource('synth');
+        setSourceMix(0); 
+        setNoiseType('white');
+        
+        switch(char) {
+            case 'S':
+                setDuration(250); setAttack(30); setDecay(100); setSustain(0.7); setRelease(80);
+                setHpFilter({on:true, freq: 3500, q: 0.8});
+                setBpFilter({on:false, freq: 4000, q: 1});
+                setLpFilter({on:false, freq: 8000, q: 1});
+                setTransientOn(false);
+                break;
+            case 'Sh':
+                setDuration(250); setAttack(30); setDecay(100); setSustain(0.8); setRelease(100);
+                setHpFilter({on:true, freq: 1500, q: 0.7});
+                setBpFilter({on:true, freq: 2500, q: 0.8}); // Characteristic resonance
+                setLpFilter({on:true, freq: 6000, q: 1.0});
+                setTransientOn(false);
+                break;
+            case 'T':
+                setDuration(60); setAttack(2); setDecay(25); setSustain(0); setRelease(20);
+                setHpFilter({on:true, freq: 3500, q: 1.0});
+                setBpFilter({on:false, freq: 4000, q: 1});
+                setLpFilter({on:false, freq: 8000, q: 1});
+                setTransientOn(true); setTransientGain(0.9); setTransientFreq(4500); setTransientDecay(8);
+                break;
+            case 'K':
+                setDuration(80); setAttack(5); setDecay(40); setSustain(0); setRelease(30);
+                setHpFilter({on:false, freq: 2000, q: 1});
+                setBpFilter({on:true, freq: 1500, q: 2.5}); // Velar pinch (Mid resonance)
+                setLpFilter({on:false, freq: 8000, q: 1});
+                setTransientOn(true); setTransientGain(0.8); setTransientFreq(1500); setTransientDecay(12);
+                break;
+            case 'P':
+                setDuration(60); setAttack(2); setDecay(30); setSustain(0); setRelease(30);
+                setNoiseType('pink'); // Darker noise
+                setHpFilter({on:false, freq: 200, q: 1});
+                setBpFilter({on:false, freq: 500, q: 1});
+                setLpFilter({on:true, freq: 800, q: 1.0}); // Low focus
+                setTransientOn(true); setTransientGain(1.0); setTransientFreq(300); setTransientDecay(10);
+                break;
         }
-        commitChange(`${type} 자음 프리셋 적용`);
+        commitChange(`${char} 프리셋 적용`);
     };
 
     const getCurrentState = useCallback(() => ({
-        duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands
-    }), [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands]);
+        duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands,
+        transientOn, transientGain, transientFreq, transientDecay
+    }), [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
 
     const saveHistory = useCallback((label: string) => {
         const state = getCurrentState();
@@ -109,6 +135,9 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         setGain(state.gain); setNoiseType(state.noiseType);
         setBaseSource(state.baseSource); setSourceMix(state.sourceMix); setVoiceFreq(state.voiceFreq); setVoiceWave(state.voiceWave); setSelectedFileId(state.selectedFileId);
         if(state.eqBands) setEqBands(state.eqBands);
+        if(state.transientOn !== undefined) {
+            setTransientOn(state.transientOn); setTransientGain(state.transientGain); setTransientFreq(state.transientFreq); setTransientDecay(state.transientDecay);
+        }
     };
 
     const handleUndo = () => { if (historyIndex > 0) { const p = historyIndex - 1; restoreState(history[p].state); setHistoryIndex(p); } };
@@ -121,10 +150,40 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         const totalDurationSec = duration / 1000;
         const sr = audioContext.sampleRate;
         const offline = new OfflineAudioContext(1, Math.ceil(totalDurationSec * sr), sr);
+        const finalMix = offline.createGain();
 
+        // 1. Transient (Burst) Generator
+        if (transientOn) {
+            const tDur = transientDecay / 1000;
+            const tBufSize = Math.ceil(tDur * sr);
+            const tBuf = offline.createBuffer(1, tBufSize, sr);
+            const tData = tBuf.getChannelData(0);
+            
+            // Generate simple noise burst
+            for (let i = 0; i < tBufSize; i++) tData[i] = (Math.random() * 2 - 1);
+
+            const tSrc = offline.createBufferSource();
+            tSrc.buffer = tBuf;
+            
+            // Color the burst
+            const tFilter = offline.createBiquadFilter();
+            tFilter.type = 'bandpass';
+            tFilter.frequency.value = transientFreq;
+            tFilter.Q.value = 1.0;
+
+            const tAmp = offline.createGain();
+            tAmp.gain.setValueAtTime(transientGain, 0);
+            tAmp.gain.exponentialRampToValueAtTime(0.01, tDur);
+
+            tSrc.connect(tFilter);
+            tFilter.connect(tAmp);
+            tAmp.connect(finalMix);
+            tSrc.start(0);
+        }
+
+        // 2. Main Body (Noise + Tone)
         const sourceMixNode = offline.createGain();
 
-        // Source Generation
         if (baseSource === 'file') {
              const file = files.find(f => f.id === selectedFileId);
              if (file?.buffer) {
@@ -196,8 +255,10 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         amp.gain.linearRampToValueAtTime(0, totalDurationSec); 
 
         currentNode.connect(amp);
+        amp.connect(finalMix);
         
-        let eqNode: AudioNode = amp;
+        // Master EQ Chain
+        let eqNode: AudioNode = finalMix;
         eqBands.forEach(b => {
             if(b.on) {
                 const f = offline.createBiquadFilter(); f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = b.gain;
@@ -263,9 +324,9 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             }
         };
         draw();
-    }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId, playheadTime, eqBands]);
+    }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId, playheadTime, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
 
-    useEffect(() => { setGeneratedBuffer(null); }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, baseSource, selectedFileId, eqBands]);
+    useEffect(() => { setGeneratedBuffer(null); }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, baseSource, selectedFileId, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
 
     const FilterControl = ({ label, state, onChange, minFreq }: { label: string, state: FilterState, onChange: (s: FilterState) => void, minFreq: number }) => (
         <div className={`space-y-2 p-3 rounded-lg border transition-all ${state.on ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-200 opacity-70'}`}>
@@ -311,8 +372,13 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         <h2 className="text-xl text-slate-800 tracking-tight font-black">자음 생성기</h2>
                     </div>
                     <div className="flex items-center gap-2 font-black">
-                         <button onClick={()=>applyGeneratorPreset('unvoiced')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-black text-slate-900 transition-all flex items-center gap-2 shadow-sm"><Wind size={14}/> 무성 자음</button>
-                         <button onClick={()=>applyGeneratorPreset('voiced')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-black text-slate-900 transition-all flex items-center gap-2 shadow-sm"><Music size={14}/> 유성 자음</button>
+                         <span className="text-xs text-slate-400 font-black mr-2 uppercase tracking-tight">Quick Presets:</span>
+                         <button onClick={()=>applyConsonantPreset('S')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-indigo-50 border border-slate-300 rounded-lg text-xs font-black text-indigo-900 transition-all shadow-sm">S</button>
+                         <button onClick={()=>applyConsonantPreset('Sh')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-indigo-50 border border-slate-300 rounded-lg text-xs font-black text-indigo-900 transition-all shadow-sm">Sh</button>
+                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                         <button onClick={()=>applyConsonantPreset('T')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-pink-50 border border-slate-300 rounded-lg text-xs font-black text-pink-900 transition-all shadow-sm">T</button>
+                         <button onClick={()=>applyConsonantPreset('K')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-pink-50 border border-slate-300 rounded-lg text-xs font-black text-pink-900 transition-all shadow-sm">K</button>
+                         <button onClick={()=>applyConsonantPreset('P')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-pink-50 border border-slate-300 rounded-lg text-xs font-black text-pink-900 transition-all shadow-sm">P</button>
                          <div className="w-px h-6 bg-slate-300 mx-2"></div>
                          <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
                     </div>
@@ -342,22 +408,36 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                                     <div className="space-y-3">
                                         <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Noise Mix</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                         <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button></div>
-                                        <div className="h-px bg-slate-100"></div>
-                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Voice Mix</span><span>{Math.round(sourceMix*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={sourceMix} onChange={e=>setSourceMix(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
-                                        <div className="flex gap-1 overflow-x-auto pb-1">{['sawtooth', 'square', 'sine', 'triangle'].map(t=>(<button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`px-2 py-1 text-[10px] font-black rounded border uppercase flex-shrink-0 ${voiceWave===t?'bg-indigo-500 text-slate-900':'bg-white text-slate-500'}`}>{t}</button>))}</div>
-                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Freq</span><span>{voiceFreq} Hz</span></div><input type="range" min="50" max="1000" value={voiceFreq} onChange={e=>setVoiceFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                     </div>
                                 )}
                             </div>
+                        </div>
+
+                        {/* Transient Generator (New) */}
+                        <div className={`bg-white p-6 rounded-xl border transition-all shadow-sm space-y-4 ${transientOn ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200'}`}>
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Zap size={16} className={transientOn ? "text-amber-500" : ""}/> Transient (Burst)</h3>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" checked={transientOn} onChange={e=>setTransientOn(e.target.checked)} className="sr-only peer"/>
+                                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                                </label>
+                            </div>
+                            {transientOn && (
+                                <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Gain</span><span>{Math.round(transientGain*100)}%</span></div><input type="range" min="0" max="1.5" step="0.1" value={transientGain} onChange={e=>setTransientGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Freq</span><span>{transientFreq} Hz</span></div><input type="range" min="100" max="8000" step="100" value={transientFreq} onChange={e=>setTransientFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Decay</span><span>{transientDecay} ms</span></div><input type="range" min="5" max="50" step="1" value={transientDecay} onChange={e=>setTransientDecay(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/></div>
+                                </div>
+                            )}
                         </div>
                         
                         {/* Multi-Filter Section */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                             <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Sliders size={16}/> 멀티 필터</h3>
                             <div className="space-y-3">
-                                <FilterControl label="Highpass (>2k)" state={hpFilter} onChange={setHpFilter} minFreq={2000} />
-                                <FilterControl label="Bandpass (All)" state={bpFilter} onChange={setBpFilter} minFreq={100} />
-                                <FilterControl label="Lowpass (>8k)" state={lpFilter} onChange={setLpFilter} minFreq={8000} />
+                                <FilterControl label="Highpass" state={hpFilter} onChange={setHpFilter} minFreq={200} />
+                                <FilterControl label="Bandpass" state={bpFilter} onChange={setBpFilter} minFreq={100} />
+                                <FilterControl label="Lowpass" state={lpFilter} onChange={setLpFilter} minFreq={500} />
                             </div>
                         </div>
 
@@ -381,6 +461,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative overflow-hidden shadow-inner group">
                              <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-cover opacity-80"/>
                              <div className="absolute top-4 right-4 flex flex-col items-end gap-1 font-black">
+                                {transientOn && <span className="bg-amber-500/20 text-amber-400 px-2 py-1 rounded text-xs backdrop-blur font-mono border border-amber-500/30">Transient ON</span>}
                                 {hpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">HP {hpFilter.freq}Hz</span>}
                                 {bpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">BP {bpFilter.freq}Hz</span>}
                                 {lpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">LP {lpFilter.freq}Hz</span>}

@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind, Activity, Wand2, GitCommit, Spline } from 'lucide-react';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind, Activity, Wand2, GitCommit, Spline, Waves, Eye, EyeOff } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand, KeyframePoint } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -38,6 +38,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [manualPitch, setManualPitch] = useState(220);
     const [manualGender, setManualGender] = useState(1.0);
     const [simIndex, setSimIndex] = useState(1);
+    const [simIntensity, setSimIntensity] = useState(1.0);
     
     const [isEditMode, setIsEditMode] = useState(false);
     const [selectedTrackId, setSelectedTrackId] = useState('pitch'); 
@@ -49,6 +50,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
     const [showAnalyzer, setShowAnalyzer] = useState(false);
+
+    // New States for requested features
+    const [showSpectrogram, setShowSpectrogram] = useState(false);
+    const [pitchFileId, setPitchFileId] = useState("");
+    const [pitchSensitivity, setPitchSensitivity] = useState(0.5);
+    const [ghostTracks, setGhostTracks] = useState<AdvTrack[] | null>(null);
+    const [showGhost, setShowGhost] = useState(true);
+    const spectrogramCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },
@@ -99,8 +108,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     };
 
     const handleAnalyzerApply = (data: { tongueX?: any[], tongueY?: any[], lips?: any[], lipLen?: any[], throat?: any[], nasal?: any[] }) => {
-        setAdvTracks(prev => prev.map(t => {
-            const commonProps = { interpolation: 'curve' as const }; // Auto-enable curve for analyzer results
+        const commonProps = { interpolation: 'curve' as const };
+        const newTracks = advTracks.map(t => {
             if (t.id === 'tongueX' && data.tongueX) return { ...t, points: data.tongueX, ...commonProps };
             if (t.id === 'tongueY' && data.tongueY) return { ...t, points: data.tongueY, ...commonProps };
             if (t.id === 'lips' && data.lips) return { ...t, points: data.lips, ...commonProps };
@@ -108,15 +117,71 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             if (t.id === 'throat' && data.throat) return { ...t, points: data.throat, ...commonProps };
             if (t.id === 'nasal' && data.nasal) return { ...t, points: data.nasal, ...commonProps };
             return t;
-        }));
+        });
+        setAdvTracks(newTracks);
+        setGhostTracks(newTracks); // Set as guide as well
+        setShowGhost(true);
         commitChange("AI 발음 분석 적용");
     };
 
+    const handlePitchExtraction = () => {
+        if (!pitchFileId) return;
+        const f = files.find(f => f.id === pitchFileId);
+        if (!f) return;
+
+        const pts = AudioUtils.detectPitch(f.buffer, pitchSensitivity);
+        // Normalize time to duration
+        const dur = advDuration;
+        const normalizedPts = pts.map(p => ({ t: Math.min(1, p.t / dur), v: p.v })).filter(p => p.t <= 1);
+        
+        setAdvTracks(prev => prev.map(t => {
+            if (t.id === 'pitch') return { ...t, points: normalizedPts, interpolation: 'curve' };
+            return t;
+        }));
+        commitChange("피치 추출 적용");
+    };
+
+    // Spectrogram Generation Effect
+    useEffect(() => {
+        if (!showSpectrogram || !tractSourceFileId) {
+             spectrogramCanvasRef.current = null;
+             return;
+        }
+        const f = files.find(f => f.id === tractSourceFileId);
+        if (f && f.buffer) {
+            const width = 1000;
+            const height = 180;
+            const data = AudioUtils.computeSpectrogram(f.buffer, width, height);
+            if (data) {
+                const cvs = document.createElement('canvas');
+                cvs.width = width;
+                cvs.height = height;
+                const ctx = cvs.getContext('2d');
+                if (ctx) {
+                    const imgData = new ImageData(data, width, height);
+                    ctx.putImageData(imgData, 0, 0);
+                    spectrogramCanvasRef.current = cvs;
+                }
+            }
+        }
+    }, [showSpectrogram, tractSourceFileId, files]);
+
     useEffect(() => { isAdvPlayingRef.current = isAdvPlaying; }, [isAdvPlaying]);
 
+    // Live Intensity Update
+    useEffect(() => {
+        if (liveAudioRef.current && audioContext) {
+            const now = audioContext.currentTime;
+            const { f1, f2, f3 } = liveAudioRef.current;
+            if (f1) f1.gain.setTargetAtTime(12 * simIntensity, now, 0.02);
+            if (f2) f2.gain.setTargetAtTime(12 * simIntensity, now, 0.02);
+            if (f3) f3.gain.setTargetAtTime(10 * simIntensity, now, 0.02);
+        }
+    }, [simIntensity, audioContext]);
+
     const getCurrentState = useCallback(() => ({
-        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands
-    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands]);
+        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity
+    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity]);
 
     const commitChange = useCallback((label: string = "변경") => {
         const state = getCurrentState();
@@ -128,6 +193,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setLarynxParams(state.larynxParams); setTractSourceType(state.tractSourceType); setTractSourceFileId(state.tractSourceFileId);
         setSynthWaveform(state.synthWaveform); setPulseWidth(state.pulseWidth); setLiveTract(state.liveTract); setAdvTracks(state.advTracks);
         setManualPitch(state.manualPitch || 220); setManualGender(state.manualGender || 1.0); if(state.eqBands) setEqBands(state.eqBands);
+        setSimIntensity(state.simIntensity !== undefined ? state.simIntensity : 1.0);
     };
 
     const handleUndo = useCallback(() => {
@@ -148,8 +214,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         restoreState(nextState);
     }, [redoStack, getCurrentState]);
 
-    const getValueAtTime = useCallback((trackId: string, t: number) => {
-        const track = advTracks.find(tr => tr.id === trackId);
+    const getValueAtTime = useCallback((trackId: string, t: number, tracks: AdvTrack[] = advTracks) => {
+        const track = tracks.find(tr => tr.id === trackId);
         if (!track) return 0;
         const pts = track.points;
         if(pts.length === 0) return track.min;
@@ -253,9 +319,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const g = audioContext.createGain(); g.gain.value = 0.5;
         const nG = audioContext.createGain(); nG.gain.value = getValueAtTime('breath', playHeadPos);
 
-        const f1 = audioContext.createBiquadFilter(); f1.type = 'peaking'; f1.Q.value = 4; f1.gain.value = 12;
-        const f2 = audioContext.createBiquadFilter(); f2.type = 'peaking'; f2.Q.value = 4; f2.gain.value = 12;
-        const f3 = audioContext.createBiquadFilter(); f3.type = 'peaking'; f3.Q.value = 4; f3.gain.value = 10;
+        const f1 = audioContext.createBiquadFilter(); f1.type = 'peaking'; f1.Q.value = 4; f1.gain.value = 12 * simIntensity;
+        const f2 = audioContext.createBiquadFilter(); f2.type = 'peaking'; f2.Q.value = 4; f2.gain.value = 12 * simIntensity;
+        const f3 = audioContext.createBiquadFilter(); f3.type = 'peaking'; f3.Q.value = 4; f3.gain.value = 10 * simIntensity;
         const nasF = audioContext.createBiquadFilter(); nasF.type = 'lowpass';
         
         let lastNode: AudioNode = nasF;
@@ -270,7 +336,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         f1.connect(f2); f2.connect(f3); f3.connect(nasF); lastNode.connect(g); g.connect(audioContext.destination);
         sNode.start(); nNode.start();
         liveAudioRef.current = { sNode, nNode, nG, f1, f2, f3, nasF };
-    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, synthWaveform, manualPitch, eqBands, getValueAtTime, playHeadPos]);
+    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, synthWaveform, manualPitch, eqBands, getValueAtTime, playHeadPos, simIntensity]);
 
     const stopLivePreview = useCallback(() => { 
         if (liveAudioRef.current) { 
@@ -384,7 +450,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         fG.gain.linearRampToValueAtTime(0, advDuration);
 
         const f1=offline.createBiquadFilter(), f2=offline.createBiquadFilter(), f3=offline.createBiquadFilter(), nasF=offline.createBiquadFilter(); 
-        [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4; f.gain.value=12; }); 
+        f1.type='peaking'; f1.Q.value=4; f1.gain.value=12 * simIntensity;
+        f2.type='peaking'; f2.Q.value=4; f2.gain.value=12 * simIntensity;
+        f3.type='peaking'; f3.Q.value=4; f3.gain.value=10 * simIntensity;
         nasF.type='lowpass';
 
         // Automation scheduling
@@ -427,7 +495,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const renderedBuffer = await offline.startRendering();
         lastRenderedRef.current = renderedBuffer;
         return renderedBuffer;
-    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, eqBands, getValueAtTime]);
+    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, eqBands, getValueAtTime, simIntensity]);
 
     useEffect(() => {
         if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current);
@@ -578,7 +646,13 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         ctx.clearRect(0, 0, w, h); 
         ctx.fillStyle = '#f8f8f6'; 
         ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT); 
+
+        // Draw Spectrogram background if available
+        if (showSpectrogram && spectrogramCanvasRef.current) {
+            ctx.drawImage(spectrogramCanvasRef.current, 0, RULER_HEIGHT, w, h - RULER_HEIGHT);
+        }
         
+        // Draw Waveform Preview
         if (previewBuffer) {
             ctx.save(); 
             ctx.globalAlpha = 0.4; 
@@ -601,6 +675,36 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }
             ctx.stroke(); 
             ctx.restore();
+        }
+
+        // Draw Ghost Track (Guide)
+        if (showGhost && ghostTracks && track) {
+            const ghost = ghostTracks.find(t => t.id === selectedTrackId);
+            if (ghost) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.strokeStyle = track.color;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.globalAlpha = 0.4;
+                
+                if (ghost.interpolation === 'curve') {
+                     for(let i=0; i<w; i++) {
+                         const t = i / w;
+                         const v = getValueAtTime(ghost.id, t, ghostTracks);
+                         const y = RULER_HEIGHT + (1 - (v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT);
+                         if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
+                     }
+                } else {
+                     ghost.points.forEach((p, i) => { 
+                        const x = p.t * w; 
+                        const y = RULER_HEIGHT + (1 - (p.v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT); 
+                        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
+                    }); 
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
         }
         
         if (track) {
@@ -636,7 +740,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }); 
         }
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
-    }, [selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime]);
+    }, [selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks]);
 
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
 
@@ -711,6 +815,29 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     </button>
                                 </div>
 
+                                {/* Pitch Extraction */}
+                                <div className="space-y-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={12}/> Pitch Analysis</h3>
+                                    <select value={pitchFileId} onChange={e=>setPitchFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
+                                        <option value="">분석할 파일 선택</option>
+                                        {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                    </select>
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[10px] font-black text-slate-500">
+                                            <span>Keyframe Sensitivity</span>
+                                            <span className="text-indigo-600">{Math.round(pitchSensitivity * 100)}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="1" step="0.05" value={pitchSensitivity} onChange={e => setPitchSensitivity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                    </div>
+                                    <button 
+                                        onClick={handlePitchExtraction}
+                                        disabled={!pitchFileId}
+                                        className="w-full py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-black text-slate-700 disabled:opacity-50 transition-all shadow-sm"
+                                    >
+                                        Extract Pitch & Apply
+                                    </button>
+                                </div>
+
                                 {/* --- Source Configuration --- */}
                                 <div className="space-y-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mic2 size={12}/> Glottis Source</h3>
@@ -732,11 +859,28 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                         </div>
                                     )}
                                     {tractSourceType === 'file' && (
-                                        <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
-                                            <option value="">파일 선택</option>
-                                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                        </select>
+                                        <div className="space-y-2">
+                                            <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900">
+                                                <option value="">파일 선택</option>
+                                                {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                            </select>
+                                            <div className="space-y-1">
+                                                <div className="flex justify-between text-[10px] font-black text-slate-500">
+                                                    <span>Simulation Intensity</span>
+                                                    <span className="text-indigo-600">{Math.round(simIntensity * 100)}%</span>
+                                                </div>
+                                                <input type="range" min="0" max="1.5" step="0.05" value={simIntensity} onChange={e => setSimIntensity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                            </div>
+                                        </div>
                                     )}
+                                    
+                                    {/* Spectrogram Toggle */}
+                                    <div className="flex items-center justify-between pt-1">
+                                        <span className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1"><Waves size={12}/> Spectrogram</span>
+                                        <button onClick={()=>setShowSpectrogram(!showSpectrogram)} className={`w-8 h-4 rounded-full transition-colors relative ${showSpectrogram ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${showSpectrogram ? 'left-4.5' : 'left-0.5'}`}/>
+                                        </button>
+                                    </div>
 
                                     <div className="h-px bg-slate-200 my-2" />
 
@@ -774,6 +918,17 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
                     </div>
                     <div className="flex gap-1 shrink-0">
+                        {/* Toggle Guide View (only if ghost tracks exist) */}
+                        {ghostTracks && (
+                            <button 
+                                onClick={() => setShowGhost(!showGhost)}
+                                className={`px-2 py-1 text-[10px] font-black rounded-lg border transition-all flex items-center gap-1 ${showGhost ? 'bg-purple-50 border-purple-200 text-purple-600' : 'bg-slate-50 border-slate-200 text-slate-400'}`}
+                                title="AI 가이드 트랙 보이기/숨기기"
+                            >
+                                {showGhost ? <Eye size={14}/> : <EyeOff size={14}/>} Guide
+                            </button>
+                        )}
+                        
                         {/* Toggle Interpolation Button */}
                         <button 
                             onClick={() => {
