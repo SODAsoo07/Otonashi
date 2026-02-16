@@ -361,7 +361,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 hover:bg-white text-red-500 transition-colors font-black"><Square size={14} fill="currentColor"/> 정지</button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             <button onClick={handleCutSelection} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-red-500 transition-all" title="선택 영역 자르기"><Scissors size={16}/></button>
-                            <button onClick={handleSaveSelection} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-indigo-500 transition-all" title="선택 영역을 새 파일로 저장"><FilePlus size={16}/></button>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
                         <div className="bg-slate-800 text-green-400 font-mono text-sm px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner min-w-[100px] flex justify-center tracking-widest font-black">
@@ -369,25 +368,49 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                         <button 
+                            onClick={handleSaveSelection} 
+                            className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-indigo-50 hover:border-indigo-200 text-indigo-600 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-all"
+                         >
+                            <FilePlus size={16}/> 선택 영역 저장
+                         </button>
                          <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Studio_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Save size={16}/> 보관함 저장</button>
                     </div>
                 </div>
 
                 <div className="flex flex-col gap-6">
                     <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-inner overflow-hidden select-none h-[400px] relative">
-                         <canvas ref={canvasRef} width={1200} height={400} className="w-full h-full object-cover" 
+                         <canvas ref={canvasRef} width={1200} height={400} className="w-full h-full object-cover cursor-crosshair" 
                              onMouseDown={(e) => {
                                  const rect = canvasRef.current!.getBoundingClientRect();
                                  const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                                 if (e.shiftKey) {
-                                     const p = xPct;
-                                     if (Math.abs(p - editTrim.start) < Math.abs(p - editTrim.end)) setEditTrim({ ...editTrim, start: p });
-                                     else setEditTrim({ ...editTrim, end: p });
-                                 } else {
-                                     setPlayheadPos(xPct * 100);
-                                     pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
-                                     if (isPlaying) togglePlay('all'); 
-                                 }
+
+                                 // 1. Playhead Position Update
+                                 setPlayheadPos(xPct * 100);
+                                 pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
+
+                                 // 2. Init Selection Drag (Reset selection to start point)
+                                 const startX = xPct;
+                                 setEditTrim({ start: startX, end: startX });
+                                 
+                                 const move = (me: MouseEvent) => {
+                                     const curRect = canvasRef.current?.getBoundingClientRect();
+                                     if(!curRect) return;
+                                     const curX = Math.max(0, Math.min(1, (me.clientX - curRect.left) / curRect.width));
+                                     // Update selection based on drag
+                                     setEditTrim({ 
+                                        start: Math.min(startX, curX), 
+                                        end: Math.max(startX, curX) 
+                                     });
+                                 };
+
+                                 const up = () => {
+                                     window.removeEventListener('mousemove', move);
+                                     window.removeEventListener('mouseup', up);
+                                 };
+
+                                 window.addEventListener('mousemove', move);
+                                 window.addEventListener('mouseup', up);
                              }} 
                          />
                          <div className="absolute top-0 bottom-0 bg-white/10 border-x border-white/30 pointer-events-none" style={{ left: `${editTrim.start*100}%`, width: `${(editTrim.end-editTrim.start)*100}%` }} />
