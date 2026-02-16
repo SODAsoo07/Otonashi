@@ -138,7 +138,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         return pts[0].v;
     }, [advTracks]);
 
-    // Define syncVisualsToTime to synchronize the UI with the timeline position 't'
     const syncVisualsToTime = useCallback((t: number) => {
         setLiveTract({
             x: getValueAtTime('tongueX', t),
@@ -588,10 +587,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
-            <div className="flex-[2] flex gap-0 shrink-0 min-h-0">
+            <div className="flex-[1.5] flex gap-0 shrink-0 min-h-0">
                 <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
-                    <div className="flex-1 relative flex items-center justify-center px-5 py-2 overflow-hidden">
-                        <svg viewBox="100 50 280 340" className="w-[67%] h-[67%] drop-shadow-lg select-none transition-all duration-300">
+                    <div className="flex-1 relative flex items-center justify-center px-4 py-1 overflow-hidden">
+                        <svg viewBox="100 50 280 340" className="w-[50%] h-[50%] drop-shadow-lg select-none transition-all duration-300">
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d={`M 220 380 L 220 250`} stroke="#e2e8f0" strokeWidth={30 + (1-liveTract.throat) * 40} strokeLinecap="round" opacity="0.6"/>
@@ -640,7 +639,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 {/* --- Source Configuration --- */}
                                 <div className="space-y-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mic2 size={12}/> Glottis Source</h3>
-                                    <div className="flex gap-2 p-1 bg-slate-100 rounded-lg shadow-inner">
+                                    <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
                                         <button onClick={()=>setTractSourceType('synth')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='synth'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>신디사이저</button>
                                         <button onClick={()=>setTractSourceType('file')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일</button>
                                     </div>
