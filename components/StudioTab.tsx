@@ -361,8 +361,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 shadow-sm">
-                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30" title="실행 취소"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30" title="다시 실행"><Redo2 size={16}/></button>
+                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30" title="스튜디오 로컬 언두"><Undo2 size={16}/></button>
+                            <button onClick={handleRedo} disabled={redoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30" title="스튜디오 로컬 리두"><Redo2 size={16}/></button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             <button onClick={()=>setEditTrim({start:0, end:1})} className="p-1.5 hover:bg-white rounded text-slate-900" title="전체 선택"><ScanLine size={16}/></button>
                             <button onClick={handleCutSelection} className="p-1.5 hover:bg-red-500 hover:text-white rounded text-red-500 transition-colors" title="선택 영역 잘라내기"><Scissors size={18}/></button>
@@ -459,9 +459,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                     <button 
                                         onClick={() => setBypassEffects(!bypassEffects)}
                                         className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${bypassEffects ? 'bg-purple-600 text-white border-purple-400 shadow-lg' : 'bg-white text-slate-400 border-slate-200'}`}
+                                        title="Bypass all processing effects"
                                     >
                                         <Power size={14} className={bypassEffects ? "animate-pulse" : ""}/>
-                                        <span className="text-xs font-black uppercase tracking-tight">Effects Bypass</span>
+                                        <span className="text-xs font-black uppercase tracking-tight">Bypass</span>
                                     </button>
                                     <div className="flex-[1.5] space-y-1">
                                         <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">

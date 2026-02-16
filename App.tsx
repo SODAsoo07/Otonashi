@@ -21,12 +21,12 @@ const App: React.FC = () => {
     const [isRackOpen, setIsRackOpen] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Global History Stack for Files
+    // --- 글로벌 히스토리 시스템 ---
     const [globalUndoStack, setGlobalUndoStack] = useState<AudioFile[][]>([]);
     const [globalRedoStack, setGlobalRedoStack] = useState<AudioFile[][]>([]);
 
     const commitGlobalHistory = useCallback((currentFiles: AudioFile[]) => {
-        setGlobalUndoStack(prev => [...prev.slice(-19), currentFiles]);
+        setGlobalUndoStack(prev => [...prev.slice(-29), currentFiles]);
         setGlobalRedoStack([]);
     }, []);
 
@@ -46,14 +46,11 @@ const App: React.FC = () => {
         setFiles(nextState);
     }, [globalRedoStack, files]);
 
-    // Sidebar Resizing State
+    // --- 사이드바 및 UI 설정 ---
     const [isResizing, setIsResizing] = useState(false);
-
-    // --- 개발자 모드 전용 상태 ---
     const [isDevModeActive, setIsDevModeActive] = useState(false);
     const [inputBuffer, setInputBuffer] = useState("");
 
-    // UI 커스텀 설정 (기본값)
     const [uiConfig, setUiConfig] = useState<UIConfig>({
         primaryColor: '#209ad6',
         accentColor: '#ec4899',
@@ -63,7 +60,6 @@ const App: React.FC = () => {
         sidebarWidth: 256
     });
 
-    // 동적 테마 적용 (CSS Variables)
     useEffect(() => {
         const styleId = 'otonashi-theme-vars';
         let styleTag = document.getElementById(styleId) as HTMLStyleElement;
@@ -89,7 +85,6 @@ const App: React.FC = () => {
         `;
     }, [uiConfig, isRackOpen]);
 
-    // Hidden command detection
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -109,7 +104,6 @@ const App: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Global Mouse Events for Resizing
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isResizing) return;
@@ -159,7 +153,7 @@ const App: React.FC = () => {
             const base64 = await AudioUtils.blobToBase64(blob);
             return { id: f.id, name: f.name, data: base64 };
         }));
-        const projectData = { version: '1.2', files: fileData, ui: uiConfig };
+        const projectData = { version: '1.3', files: fileData, ui: uiConfig };
         const blob = new Blob([JSON.stringify(projectData)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -232,8 +226,8 @@ const App: React.FC = () => {
                 </nav>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                      <button onClick={handleGlobalUndo} disabled={globalUndoStack.length === 0} title="전체 작업 취소" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
-                      <button onClick={handleGlobalRedo} disabled={globalRedoStack.length === 0} title="전체 작업 다시 실행" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Redo2 size={16}/></button>
+                      <button onClick={handleGlobalUndo} disabled={globalUndoStack.length === 0} title="파일 목록 변경 취소" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
+                      <button onClick={handleGlobalRedo} disabled={globalRedoStack.length === 0} title="파일 목록 다시 실행" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Redo2 size={16}/></button>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
                       <button onClick={handleProjectExport} title="프로젝트 저장" className="p-1.5 text-slate-500 hover:bg-white hover:dynamic-primary-text rounded-md transition-all"><Download size={16}/></button>
@@ -258,7 +252,6 @@ const App: React.FC = () => {
                     width={isRackOpen ? uiConfig.sidebarWidth : 48}
                 />
                 
-                {/* Drag handle for resizing */}
                 {isRackOpen && (
                     <div 
                         onMouseDown={() => setIsResizing(true)}
@@ -267,18 +260,18 @@ const App: React.FC = () => {
                     />
                 )}
 
-                <div className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar">
-                    {/* Render all tabs but hide those that are not active to preserve state */}
-                    <div className={activeTab === 'editor' ? 'flex-1 flex flex-col' : 'hidden'}>
+                <div className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar relative">
+                    {/* 탭 전환 시에도 상태를 유지하기 위해 모든 탭을 렌더링하고 활성화된 탭만 표시함 */}
+                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'editor' ? 'flex' : 'none' }}>
                         <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
                     </div>
-                    <div className={activeTab === 'generator' ? 'flex-1 flex flex-col' : 'hidden'}>
+                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'generator' ? 'flex' : 'none' }}>
                         <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'generator'} />
                     </div>
-                    <div className={activeTab === 'consonant' ? 'flex-1 flex flex-col' : 'hidden'}>
+                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'consonant' ? 'flex' : 'none' }}>
                         <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'consonant'} />
                     </div>
-                    <div className={activeTab === 'sim' ? 'flex-1 flex flex-col' : 'hidden'}>
+                    <div className="absolute inset-0 flex flex-col" style={{ display: activeTab === 'sim' ? 'flex' : 'none' }}>
                         <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'sim'} />
                     </div>
                 </div>
