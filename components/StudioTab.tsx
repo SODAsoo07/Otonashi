@@ -1,11 +1,10 @@
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Undo2, Redo2, Scissors, Copy, Clipboard, Layers, TrendingUp, TrendingDown, 
-  Eraser, MoveHorizontal, Zap, LogIn, Upload, Sparkles, FlipHorizontal, 
-  Activity, SlidersHorizontal, Music, Square, Play, Pause, History, Save, FilePlus, ScanLine, AudioLines, Mic2, MousePointer2
+  Undo2, Redo2, Scissors, Copy, Layers, TrendingUp, TrendingDown, 
+  MoveHorizontal, Zap, Sparkles, Activity, Square, Play, Pause, Save, ScanLine, AudioLines, MousePointer2, FilePlus, Download
 } from 'lucide-react';
-import { AudioFile, KeyframePoint, FormantParams, EQParams, EQBand } from '../types';
+import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
 import FormantPad from './FormantPad';
@@ -28,17 +27,15 @@ interface UndoState {
 const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId, isActive }) => {
     const [editTrim, setEditTrim] = useState({ start: 0, end: 1 });
     const [isPlaying, setIsPlaying] = useState(false);
-    const [playMode, setPlayMode] = useState<'all' | 'selection'>('all');
+    // Fix: Rename playMode to playheadMode to match usage in updatePlayhead and render
+    const [playheadMode, setPlayheadMode] = useState<'all' | 'selection'>('all');
     const [isPaused, setIsPaused] = useState(false);
     const [playheadPos, setPlayheadPos] = useState(0); 
     const [dragTarget, setDragTarget] = useState<string | null>(null);
     const [showAutomation, setShowAutomation] = useState(false);
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
     
-    // Sidebar Tab State
     const [sideTab, setSideTab] = useState<'effects' | 'formant' | 'formantFilter'>('effects');
-
-    // History Stacks
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
     const [redoStack, setRedoStack] = useState<UndoState[]>([]);
     
@@ -50,7 +47,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [masterGain, setMasterGain] = useState(1.0);
     const [formant, setFormant] = useState<FormantParams>({ f1: 500, f2: 1500, f3: 2500, f4: 3500, resonance: 4.0 });
     
-    // EQ Bands
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 60, gain: 0, q: 0.7, on: true },
         { id: 2, type: 'lowshelf', freq: 100, gain: 0, q: 0.7, on: true },
@@ -70,11 +66,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const startTimeRef = useRef(0);
     const pauseOffsetRef = useRef(0);
     const animationRef = useRef<number | null>(null);
-    const activeBuffer = activeFile ? activeFile.buffer : null;
+    const activeBuffer = useMemo(() => activeFile ? activeFile.buffer : null, [activeFile]);
 
     const pushUndo = useCallback((label: string = "편집") => { 
         if (activeBuffer) {
-            setUndoStack(prev => [...prev.slice(-9), { buffer: activeBuffer, label }]); 
+            setUndoStack(prev => [...prev.slice(-19), { buffer: activeBuffer, label }]); 
             setRedoStack([]);
         }
     }, [activeBuffer]);
@@ -82,7 +78,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const handleUndo = useCallback(() => { 
         if (undoStack.length === 0 || !activeBuffer) return; 
         const prev = undoStack[undoStack.length - 1]; 
-        setRedoStack(prevSt => [...prevSt.slice(-9), { buffer: activeBuffer, label: prev.label }]);
+        setRedoStack(prevSt => [...prevSt.slice(-19), { buffer: activeBuffer, label: prev.label }]);
         setUndoStack(prevSt => prevSt.slice(0, -1)); 
         onUpdateFile(prev.buffer); 
     }, [undoStack, onUpdateFile, activeBuffer]);
@@ -90,7 +86,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const handleRedo = useCallback(() => { 
         if (redoStack.length === 0 || !activeBuffer) return; 
         const next = redoStack[redoStack.length - 1]; 
-        setUndoStack(prevSt => [...prevSt.slice(-9), { buffer: activeBuffer, label: next.label }]);
+        setUndoStack(prevSt => [...prevSt.slice(-19), { buffer: activeBuffer, label: next.label }]);
         setRedoStack(prevSt => prevSt.slice(0, -1)); 
         onUpdateFile(next.buffer); 
     }, [redoStack, onUpdateFile, activeBuffer]);
@@ -101,6 +97,24 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const newBuf = await AudioUtils.applyFade(audioContext, activeBuffer, type, editTrim.start, editTrim.end);
         if (newBuf) onUpdateFile(newBuf);
     };
+
+    const handleSaveSelection = useCallback(() => {
+        if (!activeBuffer || !activeFile) return;
+        const slice = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
+        if (slice) {
+            onAddToRack(slice, `${activeFile.name}_slice`);
+        }
+    }, [activeBuffer, activeFile, audioContext, editTrim, onAddToRack]);
+
+    const handleCutSelection = useCallback(() => {
+        if (!activeBuffer) return;
+        pushUndo("잘라내기");
+        const newBuf = AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end);
+        if (newBuf) {
+            onUpdateFile(newBuf);
+            setEditTrim({ start: 0, end: 1 });
+        }
+    }, [activeBuffer, audioContext, editTrim, onUpdateFile, pushUndo]);
 
     const stopPlayback = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
@@ -117,7 +131,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (!isPlaying || !activeBuffer) return;
         const elapsed = audioContext.currentTime - startTimeRef.current;
         let currentPos = 0;
-        if (playMode === 'all') {
+        if (playheadMode === 'all') {
             currentPos = ((elapsed / activeBuffer.duration) * 100);
         } else {
             const selDur = activeBuffer.duration * (editTrim.end - editTrim.start);
@@ -125,11 +139,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             currentPos = (editTrim.start + relPct * (editTrim.end - editTrim.start)) * 100;
         }
         
-        if (currentPos >= 100 && playMode === 'all') currentPos = 100;
-
+        if (currentPos >= 100 && playheadMode === 'all') currentPos = 100;
         setPlayheadPos(currentPos); 
         animationRef.current = requestAnimationFrame(updatePlayhead);
-    }, [isPlaying, activeBuffer, audioContext, playMode, editTrim]);
+    }, [isPlaying, activeBuffer, audioContext, playheadMode, editTrim]);
 
     useEffect(() => { 
         if (isPlaying) animationRef.current = requestAnimationFrame(updatePlayhead); 
@@ -143,12 +156,12 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const t1Dur = buf.duration;
         const offSec = mergeOffset / 1000;
         const totalDur = t2Buf ? Math.max(t1Dur, offSec + t2Buf.duration) : t1Dur;
-        const renderDur = totalDur + (reverbWet > 0 ? 2 : 0) + (delayTime > 0 ? 2 : 0);
+        const renderDur = totalDur + (delayTime > 0 ? 2 : 0);
         const offline = new OfflineAudioContext(buf.numberOfChannels, Math.ceil(renderDur * buf.sampleRate), buf.sampleRate);
         const finalOutput = offline.createGain(); finalOutput.gain.value = masterGain;
 
-        let inputNode: AudioNode = offline.createGain(); 
-        let currentNode = inputNode;
+        let currentNode: AudioNode = offline.createGain(); 
+        const inputNode = currentNode;
         
         eqBands.forEach(b => {
             if(b.on) {
@@ -163,31 +176,25 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         });
 
         const fShift = offline.createBiquadFilter(); fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
-        const f1Node = offline.createBiquadFilter(); f1Node.type = 'peaking'; f1Node.frequency.value = formant.f1; f1Node.Q.value = formant.resonance; f1Node.gain.value = 12;
-        const f2Node = offline.createBiquadFilter(); f2Node.type = 'peaking'; f2Node.frequency.value = formant.f2; f2Node.Q.value = formant.resonance; f2Node.gain.value = 10;
-        const f3Node = offline.createBiquadFilter(); f3Node.type = 'peaking'; f3Node.frequency.value = formant.f3; f3Node.Q.value = formant.resonance; f3Node.gain.value = 8;
-        const f4Node = offline.createBiquadFilter(); f4Node.type = 'peaking'; f4Node.frequency.value = formant.f4; f4Node.Q.value = formant.resonance; f4Node.gain.value = 6;
+        const fNodes = [formant.f1, formant.f2, formant.f3, formant.f4].map((freq, idx) => {
+            const f = offline.createBiquadFilter(); f.type = 'peaking'; f.frequency.value = freq; f.Q.value = formant.resonance; f.gain.value = 12 - (idx * 2);
+            return f;
+        });
         
         const singerF = offline.createBiquadFilter(); singerF.type = 'peaking'; singerF.frequency.value = 3000; singerF.Q.value = 1.5; singerF.gain.value = singerFormantGain;
         const compressor = offline.createDynamicsCompressor(); compressor.threshold.value = compThresh;
-        compressor.ratio.value = 12; compressor.attack.value = 0.003; compressor.release.value = 0.25;
 
-        // Chain: EQ -> Gender -> Formants -> Singer -> Compressor
         currentNode.connect(fShift);
-        fShift.connect(f1Node); f1Node.connect(f2Node); f2Node.connect(f3Node); f3Node.connect(f4Node);
-        f4Node.connect(singerF); singerF.connect(compressor);
+        let lastFNode = fShift;
+        fNodes.forEach(fn => { lastFNode.connect(fn); lastFNode = fn; });
+        lastFNode.connect(singerF); singerF.connect(compressor);
         
-        // Reverb & Delay
         let effectOut: AudioNode = compressor;
-        
         if (delayTime > 0) {
             const delay = offline.createDelay(); delay.delayTime.value = delayTime;
             const fb = offline.createGain(); fb.gain.value = delayFeedback;
-            const delayWet = offline.createGain(); delayWet.gain.value = 0.5;
-            
             effectOut.connect(delay); delay.connect(fb); fb.connect(delay);
-            delay.connect(delayWet); delayWet.connect(finalOutput);
-            effectOut.connect(finalOutput); // Dry signal
+            delay.connect(finalOutput); effectOut.connect(finalOutput); 
         } else {
             effectOut.connect(finalOutput);
         }
@@ -201,9 +208,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             volumeKeyframes.forEach(p => autoGain.gain.linearRampToValueAtTime(p.v, p.t * buf.duration));
         }
         
-        s1.connect(autoGain);
-        autoGain.connect(inputNode);
-        s1.start(0);
+        s1.connect(autoGain); autoGain.connect(inputNode); s1.start(0);
 
         if (t2Buf) {
             const s2 = offline.createBufferSource(); s2.buffer = t2Buf;
@@ -214,7 +219,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
         finalOutput.connect(offline.destination);
         return await offline.startRendering();
-    }, [audioContext, track2Id, mergeOffset, pitchCents, genderShift, masterGain, formant, eqBands, singerFormantGain, compThresh, reverbWet, delayTime, delayFeedback, volumeKeyframes, files]);
+    }, [audioContext, track2Id, mergeOffset, pitchCents, genderShift, masterGain, formant, eqBands, singerFormantGain, compThresh, delayTime, delayFeedback, volumeKeyframes, files]);
 
     const togglePlay = useCallback(async (mode: 'all' | 'selection') => {
         if (isPlaying) { handleStop(); return; }
@@ -232,49 +237,49 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (mode === 'selection') {
             startOffset = editTrim.start * activeBuffer.duration;
             dur = (editTrim.end - editTrim.start) * activeBuffer.duration;
-            if (isPaused) { pauseOffsetRef.current = 0; }
-        } else {
-             if (isPaused) startOffset = pauseOffsetRef.current;
+            if (isPaused) pauseOffsetRef.current = 0;
+        } else if (isPaused) {
+            startOffset = pauseOffsetRef.current;
         }
 
         s.start(0, startOffset, mode === 'selection' ? dur : undefined);
         sourceRef.current = s;
         startTimeRef.current = audioContext.currentTime - startOffset;
         setIsPlaying(true);
-        setPlayMode(mode);
+        setPlayheadMode(mode);
         s.onended = () => { setIsPlaying(false); if(mode === 'all') setPlayheadPos(0); };
     }, [isPlaying, activeBuffer, renderStudioAudio, audioContext, editTrim, isPaused, handleStop]);
 
-    // Spacebar Listener
+    const handleDownloadResult = async () => {
+        if (!activeBuffer) return;
+        const rendered = await renderStudioAudio(activeBuffer);
+        if (rendered) {
+            const name = activeFile ? `${activeFile.name}_render.wav` : "otonashi_render.wav";
+            AudioUtils.downloadWav(rendered, name);
+        }
+    };
+
     useEffect(() => {
         if (!isActive) return;
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                togglePlay('all');
-            }
+            if (e.code === 'Space') { e.preventDefault(); togglePlay('all'); }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isActive, togglePlay]);
 
-    // Canvas Drawing
     useEffect(() => {
         if (!canvasRef.current || !activeBuffer) return;
-        const ctx = canvasRef.current.getContext('2d');
+        const ctx = canvasRef.current.getContext('2d', { alpha: false });
         if (!ctx) return;
-        const w = canvasRef.current.width;
-        const h = canvasRef.current.height;
+        const { width: w, height: h } = canvasRef.current;
 
-        ctx.clearRect(0, 0, w, h);
-        
+        ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0, 0, w, RULER_HEIGHT);
-        ctx.fillStyle = '#1e293b'; ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT);
 
         const dur = activeBuffer.duration;
-        ctx.beginPath(); ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.font = '10px Inter'; ctx.fillStyle = '#64748b'; ctx.textAlign = 'left';
-        let tickInterval = 1;
-        if (dur > 10) tickInterval = 2; if (dur > 30) tickInterval = 5; if (dur > 60) tickInterval = 10; if (dur > 300) tickInterval = 30;
+        ctx.beginPath(); ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.font = '10px Inter'; ctx.fillStyle = '#64748b';
+        let tickInterval = dur > 60 ? 10 : (dur > 30 ? 5 : 1);
         for (let t = 0; t <= dur; t += tickInterval) {
             const x = (t / dur) * w;
             ctx.moveTo(x, 0); ctx.lineTo(x, RULER_HEIGHT); ctx.fillText(t + 's', x + 2, RULER_HEIGHT - 6);
@@ -289,25 +294,22 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
         ctx.beginPath(); ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1;
         for (let i = 0; i < w; i++) {
-            let min = 1.0; let max = -1.0;
-            for (let j = 0; j < step; j++) {
-                const idx = (i * step) + j;
-                if (idx < data.length) { const datum = data[idx]; if (datum < min) min = datum; if (datum > max) max = datum; }
+            let min = 1.0, max = -1.0;
+            const start = i * step;
+            const end = Math.min(start + step, data.length);
+            for (let j = start; j < end; j++) {
+                const datum = data[j]; if (datum < min) min = datum; if (datum > max) max = datum;
             }
             ctx.moveTo(i, yOffset + (amp + min * amp)); ctx.lineTo(i, yOffset + (amp + max * amp));
         }
         ctx.stroke();
 
-        // Selection with stronger visibility
-        const sX = editTrim.start * w;
-        const eX = editTrim.end * w;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'; // More visible
+        const sX = editTrim.start * w, eX = editTrim.end * w;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
         ctx.fillRect(sX, RULER_HEIGHT, eX - sX, waveH);
-        ctx.strokeStyle = '#38bdf8'; // Cyan border
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
         ctx.strokeRect(sX, RULER_HEIGHT, eX - sX, waveH);
 
-        // Playhead
         if (playheadPos >= 0) {
             const px = (playheadPos / 100) * w;
             ctx.beginPath(); ctx.fillStyle = '#ef4444'; ctx.moveTo(px - 6, 0); ctx.lineTo(px + 6, 0); ctx.lineTo(px, RULER_HEIGHT - 5); ctx.fill();
@@ -316,25 +318,21 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
         if (showAutomation) {
             ctx.beginPath(); ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2;
-            volumeKeyframes.forEach((p, i) => { const x = p.t * w; const y = yOffset + (1 - p.v) * waveH; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+            volumeKeyframes.forEach((p, i) => { const x = p.t * w, y = yOffset + (1 - p.v) * waveH; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
             ctx.stroke();
-            volumeKeyframes.forEach(p => { const x = p.t * w; const y = yOffset + (1 - p.v) * waveH; ctx.beginPath(); ctx.fillStyle = '#fbbf24'; ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); });
+            volumeKeyframes.forEach(p => { const x = p.t * w, y = yOffset + (1 - p.v) * waveH; ctx.beginPath(); ctx.fillStyle = '#fbbf24'; ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); });
         }
     }, [activeBuffer, editTrim, playheadPos, showAutomation, volumeKeyframes]);
 
-    // Mouse handlers remain same (omitted for brevity if not changed logic deeply, but must include for full file)
     const handleMouseDown = (e: React.MouseEvent) => {
         if (!canvasRef.current || !activeBuffer) return;
         const rect = canvasRef.current.getBoundingClientRect();
         const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const yRaw = e.clientY - rect.top;
-        if (yRaw < RULER_HEIGHT) {
-            if (isPlaying) { stopPlayback(); setIsPaused(true); }
+        if (e.clientY - rect.top < RULER_HEIGHT) {
+            if (isPlaying) stopPlayback(); setIsPaused(true);
             setPlayheadPos(xPct * 100); pauseOffsetRef.current = xPct * activeBuffer.duration; setDragTarget('playhead');
-        } else {
-             // Automation or Selection logic
-             if(showAutomation) { /* ... */ } 
-             else if (e.button === 0) { setEditTrim({ start: xPct, end: xPct }); setDragTarget('selection'); }
+        } else if (!showAutomation) {
+            setEditTrim({ start: xPct, end: xPct }); setDragTarget('selection');
         }
     };
     
@@ -343,85 +341,68 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const rect = canvasRef.current.getBoundingClientRect();
         const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         if (dragTarget === 'playhead') { setPlayheadPos(xPct * 100); pauseOffsetRef.current = xPct * activeBuffer.duration; }
-        else if (dragTarget === 'selection') { setEditTrim(prev => ({ ...prev, end: xPct })); }
+        else if (dragTarget === 'selection') setEditTrim(prev => ({ ...prev, end: xPct }));
     };
 
     const formatTime = (sec: number) => {
-        const m = Math.floor(sec / 60);
-        const s = Math.floor(sec % 60);
-        const ms = Math.floor((sec % 1) * 1000);
+        const m = Math.floor(sec / 60), s = Math.floor(sec % 60), ms = Math.floor((sec % 1) * 1000);
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
     };
 
-    const FormantSlider = ({ label, val, min, max, onChange }: { label: string, val: number, min: number, max: number, onChange: (v: number) => void }) => (
-        <div className="space-y-1">
-            <div className="flex justify-between text-xs font-bold text-slate-600"><span>{label}</span><span className="text-cyan-600">{Math.round(val)} Hz</span></div>
-            <div className="flex gap-2">
-                <input type="range" min={min} max={max} step="10" value={val} onChange={e => onChange(Number(e.target.value))} className="flex-1 h-1.5 bg-slate-200 rounded-full appearance-none accent-cyan-500" />
-                <input type="number" value={val} onChange={e => onChange(Number(e.target.value))} className="w-16 px-1 py-0.5 text-xs border rounded text-right font-mono" />
-            </div>
-        </div>
-    );
-
     return (
         <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold" onMouseUp={() => setDragTarget(null)}>
-            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm font-sans font-bold">
+            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
-                        <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
-                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={redoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30"><Redo2 size={16}/></button>
+                        <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 shadow-sm">
+                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30" title="실행 취소"><Undo2 size={16}/></button>
+                            <button onClick={handleRedo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30" title="다시 실행"><Redo2 size={16}/></button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                            <button onClick={()=>setEditTrim({start:0, end:1})} className="p-1.5 hover:bg-white rounded text-slate-600"><ScanLine size={16}/></button>
+                            <button onClick={()=>setEditTrim({start:0, end:1})} className="p-1.5 hover:bg-white rounded text-slate-600" title="전체 선택"><ScanLine size={16}/></button>
+                            <button onClick={handleCutSelection} className="p-1.5 hover:bg-red-500 hover:text-white rounded text-red-500 transition-colors" title="선택 영역 잘라내기"><Scissors size={18}/></button>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                        <button onClick={()=>setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 ${showAutomation ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}><Zap size={14}/> 오토메이션</button>
+                        <button onClick={()=>setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border transition-all ${showAutomation ? 'bg-amber-100 text-amber-700 border-amber-300 shadow-inner' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}><Zap size={14}/> 오토메이션</button>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                        <div className="flex bg-yellow-50 border border-yellow-200 p-1 rounded-lg gap-1">
-                            <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 ${isPlaying && playMode==='all' ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playMode==='all' ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} 전체 재생</button>
-                            <button onClick={() => togglePlay('selection')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 ${isPlaying && playMode==='selection' ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playMode==='selection' ? <Pause size={14} fill="currentColor"/> : <ScanLine size={14}/>} 선택 재생</button>
-                            <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 hover:bg-white text-red-500"><Square size={14} fill="currentColor"/> 정지</button>
+                        <div className="flex bg-slate-100 border border-slate-200 p-1 rounded-lg gap-1 shadow-sm">
+                            <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${isPlaying && playheadMode==='all' ? 'bg-white shadow text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playheadMode==='all' ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} 전체 재생</button>
+                            <button onClick={() => togglePlay('selection')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${isPlaying && playheadMode==='selection' ? 'bg-white shadow text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playheadMode==='selection' ? <Pause size={14} fill="currentColor"/> : <ScanLine size={14}/>} 선택 재생</button>
+                            <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 hover:bg-white text-red-500 transition-colors"><Square size={14} fill="currentColor"/> 정지</button>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                        <div className="bg-slate-800 text-green-400 font-mono text-sm px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner flex items-center min-w-[100px] justify-center tracking-widest">
+                        <div className="bg-slate-800 text-green-400 font-mono text-sm px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner min-w-[100px] flex justify-center tracking-widest font-black">
                             {formatTime((playheadPos / 100) * (activeBuffer?.duration || 0))}
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                         <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Result_Mix"); } }} className="px-4 py-2 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-lg text-xs font-bold flex items-center gap-2"><Save size={14}/> 결과물 저장</button>
+                         <button onClick={handleSaveSelection} className="px-4 py-2.5 bg-white border border-slate-300 text-blue-600 hover:bg-blue-50 rounded-xl text-xs font-bold flex items-center gap-2 transition-all" title="선택 영역을 보관함에 새 파일로 저장"><FilePlus size={16}/> 선택 영역 보관</button>
+                         <button onClick={handleDownloadResult} className="px-4 py-2.5 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"><Download size={16}/> WAV 다운로드</button>
+                         <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Result_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-100 active:scale-95 transition-all"><Save size={16}/> 보관함 저장</button>
                     </div>
                 </div>
 
                 <div className="flex flex-col gap-6">
-                    <div className="bg-slate-900 rounded-2xl relative border border-slate-700 shadow-inner overflow-hidden select-none h-[500px]">
-                         <canvas ref={canvasRef} width={1000} height={500} className={`w-full h-full object-cover ${showAutomation ? 'cursor-crosshair' : 'cursor-text'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onContextMenu={e=>e.preventDefault()} />
+                    <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-inner overflow-hidden select-none h-[500px] relative">
+                         <canvas ref={canvasRef} width={1200} height={500} className={`w-full h-full object-cover transition-opacity duration-300 ${showAutomation ? 'cursor-crosshair opacity-90' : 'cursor-text'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onContextMenu={e=>e.preventDefault()} />
+                         {!activeBuffer && (
+                            <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-black uppercase tracking-widest bg-slate-900/50 backdrop-blur-sm">
+                                보관함에서 파일을 선택하세요
+                            </div>
+                         )}
                     </div>
 
                     <div className="flex gap-6 flex-col lg:flex-row">
                         <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative flex flex-col shadow-inner h-[320px] overflow-hidden">
                             <div className="flex-1 min-h-0 relative z-0">
-                                <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current} activeBuffer={activeBuffer} currentTime={(playheadPos/100)*(activeBuffer?.duration||0)} />
-                            </div>
-                            <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center px-4 py-2 pointer-events-none">
-                                <div className="bg-black/40 backdrop-blur rounded px-2 py-1 flex flex-col">
-                                    <span className="text-[9px] text-slate-400 uppercase font-bold">Current</span>
-                                    <span className="text-xs text-cyan-400 font-mono">{formatTime((playheadPos/100)*(activeBuffer?.duration||0))}</span>
-                                </div>
-                                <div className="bg-black/40 backdrop-blur rounded px-2 py-1 flex flex-col">
-                                    <span className="text-[9px] text-slate-400 uppercase font-bold">Selection</span>
-                                    <span className="text-xs text-emerald-400 font-mono">{(editTrim.end - editTrim.start).toFixed(3)}s</span>
-                                </div>
-                                <div className="bg-black/40 backdrop-blur rounded px-2 py-1">
-                                    <span className="text-xs text-amber-400 font-bold uppercase">{showAutomation ? 'AUTO' : 'EDIT'}</span>
-                                </div>
+                                <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current} />
                             </div>
                         </div>
 
                         <div className="w-full lg:w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm h-[320px]">
-                            <div className="flex border-b border-slate-200">
-                                <button onClick={()=>setSideTab('effects')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='effects'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Effects</button>
-                                <button onClick={()=>setSideTab('formant')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='formant'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Formant</button>
-                                <button onClick={()=>setSideTab('formantFilter')} className={`flex-1 py-3 text-xs font-bold uppercase transition-all ${sideTab==='formantFilter'?'bg-indigo-50 text-indigo-600 border-b-2 border-indigo-500':'text-slate-500 hover:bg-slate-50'}`}>Formant Filter</button>
+                            <div className="flex border-b border-slate-200 bg-slate-50/50">
+                                {['effects', 'formant', 'formantFilter'].map((t) => (
+                                    <button key={t} onClick={()=>setSideTab(t as any)} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-tight transition-all ${sideTab===t?'bg-white text-indigo-600 border-b-2 border-indigo-500 shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>{t}</button>
+                                ))}
                             </div>
                             <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
                                 {sideTab === 'effects' && (
@@ -429,41 +410,34 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                         <div className="space-y-3">
                                             <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><MoveHorizontal size={14}/> Fades</h3>
                                             <div className="flex gap-2">
-                                                 <button onClick={()=>handleFade('in')} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded text-xs font-bold text-slate-600 flex items-center justify-center gap-2"><TrendingUp size={14}/> Fade In</button>
-                                                 <button onClick={()=>handleFade('out')} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded text-xs font-bold text-slate-600 flex items-center justify-center gap-2"><TrendingDown size={14}/> Fade Out</button>
+                                                 <button onClick={()=>handleFade('in')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingUp size={14}/> Fade In</button>
+                                                 <button onClick={()=>handleFade('out')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingDown size={14}/> Fade Out</button>
                                             </div>
                                         </div>
-                                        <div className="h-px bg-slate-100"></div>
                                         <div className="space-y-3">
-                                            <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Sparkles size={14}/> Delay & Reverb</h3>
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between text-xs font-bold text-slate-600"><span>Delay Time</span><span>{delayTime.toFixed(2)}s</span></div>
-                                                <input type="range" min="0" max="1.0" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                            <div className="flex justify-between items-center">
+                                                <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Sparkles size={14}/> Delay</h3>
+                                                <span className="text-[10px] font-mono text-indigo-600">{delayTime.toFixed(2)}s</span>
                                             </div>
-                                            <div className="space-y-2">
-                                                <div className="flex justify-between text-xs font-bold text-slate-600"><span>Reverb Wet</span><span>{Math.round(reverbWet*100)}%</span></div>
-                                                <input type="range" min="0" max="1.0" step="0.05" value={reverbWet} onChange={e=>setReverbWet(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-purple-500"/>
-                                            </div>
+                                            <input type="range" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
                                         </div>
                                     </div>
                                 )}
                                 {sideTab === 'formant' && (
                                     <div className="space-y-5 animate-in fade-in">
-                                        <div className="space-y-4">
-                                            <FormantSlider label="Formant 1 (F1)" val={formant.f1} min={200} max={1200} onChange={v => setFormant({...formant, f1: v})} />
-                                            <FormantSlider label="Formant 2 (F2)" val={formant.f2} min={500} max={3000} onChange={v => setFormant({...formant, f2: v})} />
-                                            <FormantSlider label="Formant 3 (F3)" val={formant.f3} min={1500} max={4000} onChange={v => setFormant({...formant, f3: v})} />
-                                            <FormantSlider label="Formant 4 (F4)" val={formant.f4} min={2500} max={5000} onChange={v => setFormant({...formant, f4: v})} />
-                                        </div>
-                                        <div className="h-px bg-slate-100"></div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-xs font-bold text-slate-600"><span>Resonance (Q)</span><span>{formant.resonance}</span></div>
-                                            <input type="range" min="0.1" max="10" step="0.1" value={formant.resonance} onChange={e => setFormant({...formant, resonance: Number(e.target.value)})} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-cyan-500"/>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-xs font-bold text-slate-600"><span>Singer's Formant</span><span>{singerFormantGain} dB</span></div>
-                                            <input type="range" min="0" max="12" step="0.5" value={singerFormantGain} onChange={e=>setSingerFormantGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/>
-                                        </div>
+                                        {[formant.f1, formant.f2, formant.f3, formant.f4].map((f, i) => (
+                                            <div key={i} className="flex flex-col gap-1.5">
+                                                <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase">
+                                                    <span>Formant {i+1}</span>
+                                                    <span className="text-cyan-600 font-mono">{Math.round(f)}Hz</span>
+                                                </div>
+                                                <input type="range" min="200" max="5000" value={f} onChange={e => {
+                                                    const n = [formant.f1, formant.f2, formant.f3, formant.f4];
+                                                    n[i] = Number(e.target.value);
+                                                    setFormant({ ...formant, f1: n[0], f2: n[1], f3: n[2], f4: n[3] });
+                                                }} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-cyan-500" />
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                                 {sideTab === 'formantFilter' && (

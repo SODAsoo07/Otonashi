@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine } from 'lucide-react';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -175,30 +176,23 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setControlMode(mode);
         const rect = e.currentTarget.closest('svg')?.getBoundingClientRect();
         if (!rect) return;
-        
         const update = (ce: any) => { 
             const relX = Math.max(0, Math.min(1, (ce.clientX - rect.left) / rect.width)); 
             const relY = Math.max(0, Math.min(1, 1 - (ce.clientY - rect.top) / rect.height)); 
-            
             setLiveTract(prev => { 
                 let n = { ...prev };
                 if (mode === 'tongue') { n.x = relX; n.y = relY; }
                 else if (mode === 'lips') { n.lipLen = 1 - relX; n.lips = relY; } 
                 else if (mode === 'nasal') { n.nasal = relY; }
-                
                 updateLiveAudio(n.x, n.y, n.lips, n.throat, n.lipLen, n.nasal, manualPitch, manualGender); 
                 return n; 
             }); 
         };
-        
         update(e); startLivePreview(); 
         const mv = (me: MouseEvent) => update(me); 
         const up = () => { 
-            window.removeEventListener('mousemove', mv); 
-            window.removeEventListener('mouseup', up); 
-            stopLivePreview(); 
-            setControlMode(null);
-            commitChange(`${mode} 조작`); 
+            window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); 
+            stopLivePreview(); setControlMode(null); commitChange(`${mode} 조작`); 
         }; 
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
     }, [startLivePreview, stopLivePreview, updateLiveAudio, manualPitch, manualGender, commitChange]);
@@ -237,7 +231,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         sNode.connect(mG); mG.connect(fG); fG.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); 
         let lastNode: AudioNode = nasF;
         eqBands.forEach(b => { if(b.on) { 
-            const eq = offline.createBiquadFilter(); eq.type = b.type; eq.frequency.value = b.freq; eq.gain.value = b.gain; eq.Q.value = b.q;
+            const eq = audioContext.createBiquadFilter(); eq.type = b.type; eq.frequency.value = b.freq; eq.gain.value = b.gain; eq.Q.value = b.q;
             lastNode.connect(eq); lastNode = eq; 
         } });
         lastNode.connect(offline.destination); if((sNode as any).start) (sNode as any).start(0); return await offline.startRendering();
@@ -266,15 +260,18 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                  if(!isAdvPlayingRef.current) return;
                  const cur = audioContext.currentTime - simStartTimeRef.current;
                  const progress = Math.min(1, Math.max(0, cur / advDuration));
-                 // Fix: Corrected setPlayHeadPos to setPlayheadPos
                  setPlayheadPos(progress); syncVisualsToTime(progress);
                  if (cur < advDuration) animRef.current = requestAnimationFrame(animate); 
-                 // Fix: Corrected setPlayHeadPos to setPlayheadPos
                  else { setIsAdvPlaying(false); setPlayheadPos(0); simPauseOffsetRef.current = 0; syncVisualsToTime(0); } 
              };
              animRef.current = requestAnimationFrame(animate);
         }
     }, [isAdvPlaying, isPaused, renderAdvancedAudio, audioContext, advDuration, syncVisualsToTime]);
+
+    const handleDownloadResult = async () => {
+        const res = lastRenderedRef.current || await renderAdvancedAudio();
+        if (res) AudioUtils.downloadWav(res, `sim_output_${simIndex}.wav`);
+    };
 
     const handleTimelineMouseDown = (e: React.MouseEvent) => {
         if(!canvasRef.current) return;
@@ -284,19 +281,16 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const t = Math.max(0, Math.min(1, x / rect.width));
         
         if (y < RULER_HEIGHT + 3 && !isEditMode) {
-            // Fix: Corrected setPlayHeadPos to setPlayheadPos
             setPlayheadPos(t); syncVisualsToTime(t);
             simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
             return;
         }
-
         if (isEditMode) {
             const track = advTracks.find(tr => tr.id === selectedTrackId);
             if (track) {
                 const graphH = rect.height - RULER_HEIGHT;
                 const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width)-x, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH)-y) < 15);
-                
                 if (e.button === 2) { 
                     e.preventDefault(); 
                     if(hitIdx !== -1 && track.points.length > 2) { 
@@ -305,9 +299,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     } 
                     return; 
                 }
-                
                 if (hitIdx !== -1) { setDraggingKeyframe({ trackId: selectedTrackId, index: hitIdx }); return; }
-                
                 if (y >= RULER_HEIGHT) {
                     const val = track.min + ((1 - ((y - RULER_HEIGHT) / graphH)) * (track.max - track.min)); 
                     const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t); 
@@ -317,7 +309,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 }
             }
         } else {
-            // Fix: Corrected setPlayHeadPos to setPlayheadPos
             setPlayheadPos(t); syncVisualsToTime(t);
             simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
@@ -327,10 +318,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const handleTimelineMouseMove = (e: React.MouseEvent) => {
         if(!draggingKeyframe || !canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        if (draggingKeyframe.isPlayhead) { 
-            // Fix: Corrected setPlayHeadPos to setPlayheadPos
-            setPlayheadPos(t); syncVisualsToTime(t); 
-        } 
+        if (draggingKeyframe.isPlayhead) { setPlayheadPos(t); syncVisualsToTime(t); } 
         else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
             const gH = rect.height - RULER_HEIGHT; const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
             setAdvTracks(prev => prev.map(tr => {
@@ -375,16 +363,13 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
       </div>
     );
 
-    const lipOpening = liveTract.lips * 20; 
-    const lipProtrusion = liveTract.lipLen * 15; 
-    const nasalVelumAngle = liveTract.nasal * 40; 
+    const lipOpening = liveTract.lips * 20; const lipProtrusion = liveTract.lipLen * 15; const nasalVelumAngle = liveTract.nasal * 40; 
 
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
             <div className="flex-[2] flex gap-0 shrink-0 min-h-0">
                 <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
                     <div className="flex-1 relative flex items-center justify-center px-5 py-2 overflow-hidden">
-                        {/* 성도 가이드 그래픽 (SVG) - w-[67%] h-[67%]로 조정됨 */}
                         <svg viewBox="100 50 280 340" className="w-[67%] h-[67%] drop-shadow-lg select-none transition-all duration-300">
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
@@ -407,7 +392,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             <button onClick={()=>{const t=playHeadPos; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; let val=0; if(tr.id==='tongueX')val=liveTract.x;else if(tr.id==='tongueY')val=liveTract.y;else if(tr.id==='lips')val=liveTract.lips;else if(tr.id==='lipLen')val=liveTract.lipLen;else if(tr.id==='throat')val=liveTract.throat;else if(tr.id==='nasal')val=liveTract.nasal; else if(tr.id==='pitch')val=manualPitch; else if(tr.id==='gender')val=manualGender; return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("기록");}} className="dynamic-primary text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-all"><CircleDot size={14}/> 기록</button>
                             <div className="w-px h-4 bg-slate-200 mx-1"></div>
                             <button onClick={handleSimulationPlay} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md active:scale-95 transition-all">{isAdvPlaying ? <Pause size={14}/> : <Play size={14}/>} {isAdvPlaying ? '중지' : '재생'}</button>
-                            <button onClick={async()=>{ const res = await renderAdvancedAudio(); if(res) onAddToRack(res, "Sim_" + simIndex); setSimIndex(s=>s+1); }} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-bold">보관함 저장</button>
+                            <button onClick={handleDownloadResult} className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 shadow-sm transition-all flex items-center gap-1.5 font-bold"><Download size={14}/> WAV</button>
+                            <button onClick={async()=>{ const res = await renderAdvancedAudio(); if(res) onAddToRack(res, "Sim_" + simIndex); setSimIndex(s=>s+1); }} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-bold flex items-center gap-1.5"><Save size={14}/> 보관함</button>
                         </div>
                     </div>
                 </div>
@@ -439,25 +425,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-white dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
                     </div>
                     <div className="flex gap-1 shrink-0">
-                        <button 
-                            onClick={()=>setIsEditMode(!isEditMode)} 
-                            className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode?'bg-amber-400 text-white border-amber-500':'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}
-                            title={isEditMode ? "키프레임 편집 중" : "플레이헤드 이동 모드"}
-                        >
-                            <PencilLine size={16}/>
-                        </button>
+                        <button onClick={()=>setIsEditMode(!isEditMode)} className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode?'bg-amber-400 text-white border-amber-500':'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`} title={isEditMode ? "키프레임 편집 중" : "플레이헤드 이동 모드"}><PencilLine size={16}/></button>
                     </div>
                 </div>
                 <div className="h-[180px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
-                    <canvas 
-                        ref={canvasRef} 
-                        width={1000} 
-                        height={180} 
-                        className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} 
-                        onMouseDown={handleTimelineMouseDown} 
-                        onMouseMove={handleTimelineMouseMove} 
-                        onContextMenu={e=>e.preventDefault()}
-                    />
+                    <canvas ref={canvasRef} width={1000} height={180} className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onContextMenu={e=>e.preventDefault()}/>
                     <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[10px] font-bold text-slate-600 flex gap-2 pointer-events-none shadow-sm">
                         <span>Time: {playHeadPos.toFixed(3)}s</span>
                         <span className="text-amber-600">Pitch: {Math.round(getCurrentValue('pitch'))}Hz</span>

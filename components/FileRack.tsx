@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import { Plus, FileAudio, Edit2, X, FolderOpen, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, FileAudio, Edit2, X, FolderOpen, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { AudioFile } from '../types';
+import { AudioUtils } from '../utils/audioUtils';
 
 interface FileRackProps {
   files: AudioFile[];
@@ -38,6 +39,12 @@ const FileRack: React.FC<FileRackProps> = ({
   const handleDelete = (e: React.MouseEvent, id: string) => { 
     e.stopPropagation(); 
     if(window.confirm("파일을 삭제하시겠습니까?")) removeFile(id); 
+  };
+
+  const handleDownload = (e: React.MouseEvent, file: AudioFile) => {
+    e.stopPropagation();
+    const fileName = file.name.endsWith('.wav') ? file.name : `${file.name}.wav`;
+    AudioUtils.downloadWav(file.buffer, fileName);
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -145,8 +152,9 @@ const FileRack: React.FC<FileRackProps> = ({
                <span className="text-[9px] text-slate-400 pl-6">{f.buffer.duration.toFixed(2)}s | {f.buffer.sampleRate}Hz</span>
             </div>
             <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
-              <button onClick={() => { setEditingId(f.id); setTempName(f.name); }} className="p-1 hover:text-[#209ad6]"><Edit2 size={12}/></button>
-              <button onClick={(e) => handleDelete(e, f.id)} className="p-1 hover:text-red-500"><X size={12}/></button>
+              <button onClick={(e) => handleDownload(e, f)} className="p-1 hover:text-green-600" title="WAV 다운로드"><Download size={12}/></button>
+              <button onClick={() => { setEditingId(f.id); setTempName(f.name); }} className="p-1 hover:text-[#209ad6]" title="이름 변경"><Edit2 size={12}/></button>
+              <button onClick={(e) => handleDelete(e, f.id)} className="p-1 hover:text-red-500" title="삭제"><X size={12}/></button>
             </div>
           </div>
         ))}
