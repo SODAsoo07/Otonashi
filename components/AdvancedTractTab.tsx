@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save } from 'lucide-react';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -150,26 +150,48 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const startLivePreview = useCallback(() => {
         if (!audioContext || liveAudioRef.current) return;
         let sNode: any;
+        let nNode: any;
+
+        // Tract Source
         if (tractSourceType === 'file' && tractSourceFileId) { 
             const f = files.find(f => f.id === tractSourceFileId); 
             if (f?.buffer) { sNode = audioContext.createBufferSource(); sNode.buffer = f.buffer; sNode.loop = larynxParams.loopOn; } 
         }
         if (!sNode) { sNode = audioContext.createOscillator(); sNode.type = (synthWaveform === 'noise' || synthWaveform === 'complex') ? 'sawtooth' : (synthWaveform as OscillatorType); sNode.frequency.value = manualPitch; }
+
+        // Noise/Breath Source
+        if (larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
+            const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
+            if (f?.buffer) { nNode = audioContext.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn; }
+        }
+        
         const g = audioContext.createGain(); g.gain.value = 0.5;
+        const nG = audioContext.createGain(); nG.gain.value = larynxParams.breathGain;
+
         const f1 = audioContext.createBiquadFilter(); f1.type = 'peaking'; f1.Q.value = 4; f1.gain.value = 12;
         const f2 = audioContext.createBiquadFilter(); f2.type = 'peaking'; f2.Q.value = 4; f2.gain.value = 12;
         const f3 = audioContext.createBiquadFilter(); f3.type = 'peaking'; f3.Q.value = 4; f3.gain.value = 10;
         const nasF = audioContext.createBiquadFilter(); nasF.type = 'lowpass';
+        
         let lastNode: AudioNode = nasF;
         eqBands.forEach(b => { if(b.on) { 
             const eq = audioContext.createBiquadFilter(); eq.type = b.type; eq.frequency.value = b.freq; eq.gain.value = b.gain; eq.Q.value = b.q;
             lastNode.connect(eq); lastNode = eq; 
         } });
-        sNode.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); lastNode.connect(g); g.connect(audioContext.destination);
-        sNode.start(); liveAudioRef.current = { sNode, f1, f2, f3, nasF };
+
+        sNode.connect(f1); 
+        if(nNode) { nNode.connect(nG); nG.connect(f1); nNode.start(); }
+        
+        f1.connect(f2); f2.connect(f3); f3.connect(nasF); lastNode.connect(g); g.connect(audioContext.destination);
+        sNode.start(); liveAudioRef.current = { sNode, nNode, f1, f2, f3, nasF };
     }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, synthWaveform, manualPitch, eqBands]);
 
-    const stopLivePreview = useCallback(() => { if (liveAudioRef.current) { try { liveAudioRef.current.sNode.stop(); } catch(e) {} liveAudioRef.current = null; } }, []);
+    const stopLivePreview = useCallback(() => { 
+        if (liveAudioRef.current) { 
+            try { liveAudioRef.current.sNode.stop(); if(liveAudioRef.current.nNode) liveAudioRef.current.nNode.stop(); } catch(e) {} 
+            liveAudioRef.current = null; 
+        } 
+    }, []);
 
     const [controlMode, setControlMode] = useState<'tongue' | 'lips' | 'nasal' | null>(null);
 
@@ -214,9 +236,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 b.loop = larynxParams.loopOn; 
                 sNode = b; 
             } else {
-                const osc = offline.createOscillator();
-                osc.type = 'sawtooth';
-                sNode = osc;
+                const osc = offline.createOscillator(); osc.type = 'sawtooth'; sNode = osc;
             }
         } else {
             const osc = offline.createOscillator(); 
@@ -229,6 +249,18 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             sNode = osc;
         }
 
+        // Noise Source from File
+        let nNode: AudioBufferSourceNode | null = null;
+        const nG = offline.createGain();
+        if(larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
+            const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
+            if(f?.buffer) {
+                nNode = offline.createBufferSource();
+                nNode.buffer = f.buffer;
+                nNode.loop = larynxParams.loopOn;
+            }
+        }
+        
         const mG = offline.createGain(); 
         const fG = offline.createGain(); 
         const gainPts = advTracks.find(t=>t.id==='gain')?.points || [];
@@ -258,9 +290,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             f2.frequency.linearRampToValueAtTime((800 + x*1400) * lF * lipF * gFactor, time); 
             f3.frequency.linearRampToValueAtTime((2000 + l*1500) * lF * gFactor, time); 
             nasF.frequency.linearRampToValueAtTime(Math.max(400, 10000 - n*9000) * gFactor, time);
+            
+            const breathV = getV('breath', t);
+            nG.gain.linearRampToValueAtTime(breathV, time);
         }
 
         sNode.connect(mG); 
+        if(nNode) { nNode.connect(nG); nG.connect(f1); nNode.start(0); }
+        
         mG.connect(fG); 
         fG.connect(f1); 
         f1.connect(f2); 
@@ -271,12 +308,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         eqBands.forEach(b => { 
             if(b.on) { 
                 const eq = offline.createBiquadFilter(); 
-                eq.type = b.type; 
-                eq.frequency.value = b.freq; 
-                eq.gain.value = b.gain; 
-                eq.Q.value = b.q;
-                lastNode.connect(eq); 
-                lastNode = eq; 
+                eq.type = b.type; eq.frequency.value = b.freq; eq.gain.value = b.gain; eq.Q.value = b.q;
+                lastNode.connect(eq); lastNode = eq; 
             } 
         });
         
@@ -533,19 +566,49 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'dynamic-primary' : ''}`} onMouseDown={(e)=>{setIsResizing(true); e.preventDefault();}} />
                 <div className="bg-white/40 dynamic-radius border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
                     <div className="flex border-b border-slate-300 bg-white/40">
-                        {/* Fix: Using Settings2 instead of undefined Settings */}
                         <button onClick={()=>setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='settings'?'bg-white dynamic-primary-text border-b-2 dynamic-primary-border shadow-sm':'text-slate-500'}`}><Settings2 size={14} className="inline mr-1"/> 설정</button>
                         <button onClick={()=>setSidebarTab('eq')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='eq'?'bg-white text-pink-600 border-b-2 border-pink-500 shadow-sm':'text-slate-500'}`}><AudioLines size={14} className="inline mr-1"/> EQ</button>
                     </div>
-                    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4 font-bold">
+                    <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 font-bold">
                         {sidebarTab === 'settings' ? (
-                            <div className="space-y-4">
-                                <ParamInput label="Pitch" value={manualPitch} min={50} max={600} step={1} onChange={setManualPitch} colorClass="text-amber-500" />
-                                <ParamInput label="Gender" value={manualGender} min={0.5} max={2.0} step={0.01} onChange={setManualGender} colorClass="text-pink-500" />
-                                <div className="h-px bg-slate-200 my-1" />
-                                {[ ['lips','입술 열기','text-pink-400'], ['lipLen','입술 길이','text-pink-600'], ['throat','목 조임','text-purple-400'], ['nasal','비성','text-orange-400'] ].map(([id,l,c]) => (
-                                    <ParamInput key={id} label={l} value={(liveTract as any)[id]} min={0} max={1} step={0.01} onChange={(v:number)=>setLiveTract(p=>({...p,[id]:v}))} colorClass={c} />
-                                ))}
+                            <div className="space-y-6">
+                                {/* --- Source Configuration --- */}
+                                <div className="space-y-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mic2 size={12}/> Glottis Source (Main)</h3>
+                                    <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
+                                        <button onClick={()=>setTractSourceType('synth')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='synth'?'bg-white dynamic-primary-text shadow-sm':'text-slate-500'}`}>신시사이저</button>
+                                        <button onClick={()=>setTractSourceType('file')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='file'?'bg-white dynamic-primary-text shadow-sm':'text-slate-500'}`}>보관함 파일</button>
+                                    </div>
+                                    {tractSourceType === 'file' && (
+                                        <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none">
+                                            <option value="">파일 선택</option>
+                                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                        </select>
+                                    )}
+
+                                    <div className="h-px bg-slate-200 my-2" />
+
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Wind size={12}/> Noise Source (Breath)</h3>
+                                    <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
+                                        <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'generated'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='generated'?'bg-white text-cyan-600 shadow-sm':'text-slate-500'}`}>화이트 노이즈</button>
+                                        <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'file'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='file'?'bg-white text-cyan-600 shadow-sm':'text-slate-500'}`}>보관함 파일</button>
+                                    </div>
+                                    {larynxParams.noiseSourceType === 'file' && (
+                                        <select value={larynxParams.noiseSourceFileId} onChange={e=>setLarynxParams({...larynxParams, noiseSourceFileId: e.target.value})} className="w-full p-2 border rounded-lg text-xs font-bold outline-none">
+                                            <option value="">파일 선택</option>
+                                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                        </select>
+                                    )}
+                                </div>
+
+                                <div className="space-y-4">
+                                    <ParamInput label="Pitch" value={manualPitch} min={50} max={600} step={1} onChange={setManualPitch} colorClass="text-amber-500" />
+                                    <ParamInput label="Gender" value={manualGender} min={0.5} max={2.0} step={0.01} onChange={setManualGender} colorClass="text-pink-500" />
+                                    <div className="h-px bg-slate-200 my-1" />
+                                    {[ ['lips','입술 열기','text-pink-400'], ['lipLen','입술 길이','text-pink-600'], ['throat','목 조임','text-purple-400'], ['nasal','비성','text-orange-400'] ].map(([id,l,c]) => (
+                                        <ParamInput key={id} label={l} value={(liveTract as any)[id]} min={0} max={1} step={0.01} onChange={(v:number)=>setLiveTract(p=>({...p,[id]:v}))} colorClass={c} />
+                                    ))}
+                                </div>
                             </div>
                         ) : (
                             <div className="h-[300px]"><ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={simPlaySourceRef.current} /></div>
