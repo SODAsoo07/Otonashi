@@ -63,6 +63,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [undoStack, setUndoStack] = useState<any[]>([]);
     const [redoStack, setRedoStack] = useState<any[]>([]);
 
+    // Refs for simulation
     const isAdvPlayingRef = useRef(false);
     const liveAudioRef = useRef<any>(null); 
     const animRef = useRef<number | null>(null);
@@ -199,70 +200,152 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     const renderAdvancedAudio = useCallback(async () => {
         if (!audioContext) return null;
-        const sr = audioContext.sampleRate; const len = Math.max(1, Math.floor(sr * advDuration)); const offline = new OfflineAudioContext(1, len, sr);
+        const sr = audioContext.sampleRate; 
+        const len = Math.max(1, Math.floor(sr * advDuration)); 
+        const offline = new OfflineAudioContext(1, len, sr);
         const getV = (id: string, t: number) => getValueAtTime(id, t);
+        
         let sNode: AudioNode;
         if (tractSourceType === 'file' && tractSourceFileId) { 
             const f = files.find(f => f.id === tractSourceFileId); 
-            if (f?.buffer) { const b = offline.createBufferSource(); b.buffer = f.buffer; b.loop = larynxParams.loopOn; sNode = b; } else sNode = offline.createOscillator();
+            if (f?.buffer) { 
+                const b = offline.createBufferSource(); 
+                b.buffer = f.buffer; 
+                b.loop = larynxParams.loopOn; 
+                sNode = b; 
+            } else {
+                const osc = offline.createOscillator();
+                osc.type = 'sawtooth';
+                sNode = osc;
+            }
         } else {
-            const osc = offline.createOscillator(); osc.type = (synthWaveform === 'noise' || synthWaveform === 'complex') ? 'sawtooth' : (synthWaveform as any);
+            const osc = offline.createOscillator(); 
+            osc.type = (synthWaveform === 'noise' || synthWaveform === 'complex') ? 'sawtooth' : (synthWaveform as any);
             const pitchPts = advTracks.find(t=>t.id==='pitch')?.points || [];
             if(pitchPts.length) {
-                osc.frequency.setValueAtTime(pitchPts[0].v, 0); pitchPts.forEach(p => osc.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
+                osc.frequency.setValueAtTime(pitchPts[0].v, 0); 
+                pitchPts.forEach(p => osc.frequency.linearRampToValueAtTime(p.v, p.t * advDuration));
             }
             sNode = osc;
         }
-        const mG = offline.createGain(); const fG = offline.createGain(); 
+
+        const mG = offline.createGain(); 
+        const fG = offline.createGain(); 
         const gainPts = advTracks.find(t=>t.id==='gain')?.points || [];
-        if(gainPts.length) { mG.gain.setValueAtTime(gainPts[0].v, 0); gainPts.forEach(p => mG.gain.linearRampToValueAtTime(p.v, p.t * advDuration)); }
-        const startFade = Math.max(0, advDuration - fadeOutDuration); fG.gain.setValueAtTime(1, 0); fG.gain.setValueAtTime(1, startFade); fG.gain.linearRampToValueAtTime(0, advDuration);
+        if(gainPts.length) { 
+            mG.gain.setValueAtTime(gainPts[0].v, 0); 
+            gainPts.forEach(p => mG.gain.linearRampToValueAtTime(p.v, p.t * advDuration)); 
+        }
+        
+        const startFade = Math.max(0, advDuration - fadeOutDuration); 
+        fG.gain.setValueAtTime(1, 0); 
+        fG.gain.setValueAtTime(1, startFade); 
+        fG.gain.linearRampToValueAtTime(0, advDuration);
+
         const f1=offline.createBiquadFilter(), f2=offline.createBiquadFilter(), f3=offline.createBiquadFilter(), nasF=offline.createBiquadFilter(); 
-        [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4; f.gain.value=12; }); nasF.type='lowpass';
-        const steps = 60; for(let i=0; i<=steps; i++) {
-            const t = i/steps; const time = t * advDuration;
+        [f1,f2,f3].forEach(f=>{ f.type='peaking'; f.Q.value=4; f.gain.value=12; }); 
+        nasF.type='lowpass';
+
+        // Frequency scheduling
+        const steps = 60; 
+        for(let i=0; i<=steps; i++) {
+            const t = i/steps; 
+            const time = t * advDuration;
             const x=getV('tongueX', t), y=getV('tongueY', t), l=getV('lips', t), th=getV('throat', t), ln=getV('lipLen', t), n=getV('nasal', t), gFactor=getV('gender', t);
             const lF = 1.0 - (ln * 0.3), lipF = 0.5 + (l * 0.5);
+            
             f1.frequency.linearRampToValueAtTime(Math.max(50, (200 + (1-y)*600 - th*50)) * lF * lipF * gFactor, time); 
             f2.frequency.linearRampToValueAtTime((800 + x*1400) * lF * lipF * gFactor, time); 
             f3.frequency.linearRampToValueAtTime((2000 + l*1500) * lF * gFactor, time); 
             nasF.frequency.linearRampToValueAtTime(Math.max(400, 10000 - n*9000) * gFactor, time);
         }
-        sNode.connect(mG); mG.connect(fG); fG.connect(f1); f1.connect(f2); f2.connect(f3); f3.connect(nasF); 
+
+        sNode.connect(mG); 
+        mG.connect(fG); 
+        fG.connect(f1); 
+        f1.connect(f2); 
+        f2.connect(f3); 
+        f3.connect(nasF); 
+        
         let lastNode: AudioNode = nasF;
-        eqBands.forEach(b => { if(b.on) { 
-            const eq = audioContext.createBiquadFilter(); eq.type = b.type; eq.frequency.value = b.freq; eq.gain.value = b.gain; eq.Q.value = b.q;
-            lastNode.connect(eq); lastNode = eq; 
-        } });
-        lastNode.connect(offline.destination); if((sNode as any).start) (sNode as any).start(0); return await offline.startRendering();
+        eqBands.forEach(b => { 
+            if(b.on) { 
+                const eq = offline.createBiquadFilter(); 
+                eq.type = b.type; 
+                eq.frequency.value = b.freq; 
+                eq.gain.value = b.gain; 
+                eq.Q.value = b.q;
+                lastNode.connect(eq); 
+                lastNode = eq; 
+            } 
+        });
+        
+        lastNode.connect(offline.destination); 
+        if((sNode as any).start) (sNode as any).start(0); 
+        
+        const renderedBuffer = await offline.startRendering();
+        lastRenderedRef.current = renderedBuffer;
+        return renderedBuffer;
     }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, pulseWidth, eqBands, getValueAtTime]);
 
     useEffect(() => {
         if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current);
-        previewDebounceRef.current = window.setTimeout(async () => { const buf = await renderAdvancedAudio(); if (buf) { setPreviewBuffer(buf); lastRenderedRef.current = buf; } }, 300);
+        previewDebounceRef.current = window.setTimeout(async () => { 
+            const buf = await renderAdvancedAudio(); 
+            if (buf) setPreviewBuffer(buf); 
+        }, 500);
         return () => { if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current); };
     }, [renderAdvancedAudio]);
 
     const handleSimulationPlay = useCallback(async () => {
         if(isAdvPlaying) { 
-            if(simPlaySourceRef.current) try { simPlaySourceRef.current.stop(); } catch(e) {}
+            if(simPlaySourceRef.current) {
+                try { simPlaySourceRef.current.stop(); } catch(e) {}
+                simPlaySourceRef.current = null;
+            }
             simPauseOffsetRef.current = audioContext.currentTime - simStartTimeRef.current; 
             if(animRef.current) cancelAnimationFrame(animRef.current); 
-            setIsAdvPlaying(false); setIsPaused(true); 
+            setIsAdvPlaying(false); 
+            setIsPaused(true); 
+            isAdvPlayingRef.current = false;
         } else {
-             const res = lastRenderedRef.current || await renderAdvancedAudio(); if(!res) return;
-             const s = audioContext.createBufferSource(); s.buffer = res; s.connect(audioContext.destination);
+             if (audioContext.state === 'suspended') await audioContext.resume();
+             
+             const res = lastRenderedRef.current || await renderAdvancedAudio(); 
+             if(!res) return;
+             
+             const s = audioContext.createBufferSource(); 
+             s.buffer = res; 
+             s.connect(audioContext.destination);
+             
              const offset = isPaused ? simPauseOffsetRef.current : 0;
              let effectiveOffset = offset >= res.duration ? 0 : offset;
-             s.start(0, effectiveOffset); simStartTimeRef.current = audioContext.currentTime - effectiveOffset;
-             simPlaySourceRef.current = s; setIsAdvPlaying(true); isAdvPlayingRef.current = true; setIsPaused(false);
+             
+             s.start(0, effectiveOffset); 
+             simStartTimeRef.current = audioContext.currentTime - effectiveOffset;
+             simPlaySourceRef.current = s; 
+             
+             setIsAdvPlaying(true); 
+             isAdvPlayingRef.current = true; 
+             setIsPaused(false);
+             
              const animate = () => { 
                  if(!isAdvPlayingRef.current) return;
                  const cur = audioContext.currentTime - simStartTimeRef.current;
                  const progress = Math.min(1, Math.max(0, cur / advDuration));
-                 setPlayheadPos(progress); syncVisualsToTime(progress);
-                 if (cur < advDuration) animRef.current = requestAnimationFrame(animate); 
-                 else { setIsAdvPlaying(false); setPlayheadPos(0); simPauseOffsetRef.current = 0; syncVisualsToTime(0); } 
+                 
+                 setPlayheadPos(progress); 
+                 syncVisualsToTime(progress);
+                 
+                 if (cur < advDuration) {
+                     animRef.current = requestAnimationFrame(animate); 
+                 } else { 
+                     setIsAdvPlaying(false); 
+                     setPlayheadPos(0); 
+                     simPauseOffsetRef.current = 0; 
+                     syncVisualsToTime(0); 
+                     isAdvPlayingRef.current = false;
+                 } 
              };
              animRef.current = requestAnimationFrame(animate);
         }
@@ -271,6 +354,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const handleDownloadResult = async () => {
         const res = lastRenderedRef.current || await renderAdvancedAudio();
         if (res) AudioUtils.downloadWav(res, `sim_output_${simIndex}.wav`);
+    };
+
+    const handleSaveToRack = async () => {
+        const res = lastRenderedRef.current || await renderAdvancedAudio();
+        if(res) {
+            onAddToRack(res, "Sim_" + simIndex); 
+            setSimIndex(s=>s+1);
+        }
     };
 
     const handleTimelineMouseDown = (e: React.MouseEvent) => {
@@ -282,7 +373,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         
         if (y < RULER_HEIGHT + 3 && !isEditMode) {
             setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
+            simPauseOffsetRef.current = t * advDuration; 
+            if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
             return;
         }
@@ -310,17 +402,23 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }
         } else {
             setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; if(isAdvPlaying) handleSimulationPlay();
+            simPauseOffsetRef.current = t * advDuration; 
+            if(isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
         }
     };
 
     const handleTimelineMouseMove = (e: React.MouseEvent) => {
         if(!draggingKeyframe || !canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        if (draggingKeyframe.isPlayhead) { setPlayheadPos(t); syncVisualsToTime(t); } 
+        const rect = canvasRef.current.getBoundingClientRect(); 
+        const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        if (draggingKeyframe.isPlayhead) { 
+            setPlayheadPos(t); 
+            syncVisualsToTime(t); 
+        } 
         else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
-            const gH = rect.height - RULER_HEIGHT; const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
+            const gH = rect.height - RULER_HEIGHT; 
+            const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
                 const valActual = tr.min + nV * (tr.max - tr.min);
@@ -330,23 +428,58 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     };
 
     useEffect(() => {
-        if(!canvasRef.current) return; const ctx = canvasRef.current.getContext('2d'); if(!ctx) return; const w = canvasRef.current.width, h = canvasRef.current.height;
+        if(!canvasRef.current) return; 
+        const ctx = canvasRef.current.getContext('2d'); 
+        if(!ctx) return; 
+        const w = canvasRef.current.width, h = canvasRef.current.height;
         const track = advTracks.find(t => t.id === selectedTrackId);
-        ctx.clearRect(0, 0, w, h); ctx.fillStyle = '#f8f8f6'; ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT); 
+        
+        ctx.clearRect(0, 0, w, h); 
+        ctx.fillStyle = '#f8f8f6'; 
+        ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT); 
+        
         if (previewBuffer) {
-            ctx.save(); ctx.globalAlpha = 0.4; ctx.beginPath(); ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
-            const data = previewBuffer.getChannelData(0); const step = Math.ceil(data.length / w);
-            const waveH = h - RULER_HEIGHT; const amp = waveH / 2; const center = RULER_HEIGHT + amp;
+            ctx.save(); 
+            ctx.globalAlpha = 0.4; 
+            ctx.beginPath(); 
+            ctx.strokeStyle = '#cbd5e1'; 
+            ctx.lineWidth = 1;
+            const data = previewBuffer.getChannelData(0); 
+            const step = Math.ceil(data.length / w);
+            const waveH = h - RULER_HEIGHT; 
+            const amp = waveH / 2; 
+            const center = RULER_HEIGHT + amp;
             for (let i = 0; i < w; i++) {
-                let min = 1.0, max = -1.0; for (let j = 0; j < step; j++) { const d = data[i * step + j] || 0; if (d < min) min = d; if (d > max) max = d; }
-                ctx.moveTo(i, center + min * amp); ctx.lineTo(i, center + max * amp);
+                let min = 1.0, max = -1.0; 
+                for (let j = 0; j < step; j++) { 
+                    const d = data[i * step + j] || 0; 
+                    if (d < min) min = d; if (d > max) max = d; 
+                }
+                ctx.moveTo(i, center + min * amp); 
+                ctx.lineTo(i, center + max * amp);
             }
-            ctx.stroke(); ctx.restore();
+            ctx.stroke(); 
+            ctx.restore();
         }
+        
         if (track) {
-            ctx.beginPath(); ctx.strokeStyle = track.color; ctx.lineWidth = 2.5; 
-            track.points.forEach((p, i) => { const x = p.t * w; const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); 
-            ctx.stroke(); track.points.forEach((p, i) => { const x = p.t * w; const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : track.color; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI*2); ctx.fill(); }); 
+            ctx.beginPath(); 
+            ctx.strokeStyle = track.color; 
+            ctx.lineWidth = 2.5; 
+            track.points.forEach((p, i) => { 
+                const x = p.t * w; 
+                const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
+                if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
+            }); 
+            ctx.stroke(); 
+            track.points.forEach((p, i) => { 
+                const x = p.t * w; 
+                const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
+                ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : track.color; 
+                ctx.beginPath(); 
+                ctx.arc(x, y, 6, 0, Math.PI*2); 
+                ctx.fill(); 
+            }); 
         }
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
     }, [selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer]);
@@ -393,13 +526,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             <div className="w-px h-4 bg-slate-200 mx-1"></div>
                             <button onClick={handleSimulationPlay} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md active:scale-95 transition-all">{isAdvPlaying ? <Pause size={14}/> : <Play size={14}/>} {isAdvPlaying ? '중지' : '재생'}</button>
                             <button onClick={handleDownloadResult} className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 shadow-sm transition-all flex items-center gap-1.5 font-bold"><Download size={14}/> WAV</button>
-                            <button onClick={async()=>{ const res = await renderAdvancedAudio(); if(res) onAddToRack(res, "Sim_" + simIndex); setSimIndex(s=>s+1); }} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-bold flex items-center gap-1.5"><Save size={14}/> 보관함</button>
+                            <button onClick={handleSaveToRack} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-bold flex items-center gap-1.5"><Save size={14}/> 보관함</button>
                         </div>
                     </div>
                 </div>
                 <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'dynamic-primary' : ''}`} onMouseDown={(e)=>{setIsResizing(true); e.preventDefault();}} />
                 <div className="bg-white/40 dynamic-radius border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
                     <div className="flex border-b border-slate-300 bg-white/40">
+                        {/* Fix: Using Settings2 instead of undefined Settings */}
                         <button onClick={()=>setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='settings'?'bg-white dynamic-primary-text border-b-2 dynamic-primary-border shadow-sm':'text-slate-500'}`}><Settings2 size={14} className="inline mr-1"/> 설정</button>
                         <button onClick={()=>setSidebarTab('eq')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='eq'?'bg-white text-pink-600 border-b-2 border-pink-500 shadow-sm':'text-slate-500'}`}><AudioLines size={14} className="inline mr-1"/> EQ</button>
                     </div>
