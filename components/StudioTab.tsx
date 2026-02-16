@@ -27,7 +27,6 @@ interface UndoState {
 const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId, isActive }) => {
     const [editTrim, setEditTrim] = useState({ start: 0, end: 1 });
     const [isPlaying, setIsPlaying] = useState(false);
-    // Fix: Rename playMode to playheadMode to match usage in updatePlayhead and render
     const [playheadMode, setPlayheadMode] = useState<'all' | 'selection'>('all');
     const [isPaused, setIsPaused] = useState(false);
     const [playheadPos, setPlayheadPos] = useState(0); 
@@ -355,19 +354,19 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 shadow-sm">
-                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30" title="실행 취소"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30" title="다시 실행"><Redo2 size={16}/></button>
+                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30" title="실행 취소"><Undo2 size={16}/></button>
+                            <button onClick={handleRedo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30" title="다시 실행"><Redo2 size={16}/></button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                            <button onClick={()=>setEditTrim({start:0, end:1})} className="p-1.5 hover:bg-white rounded text-slate-600" title="전체 선택"><ScanLine size={16}/></button>
-                            <button onClick={handleCutSelection} className="p-1.5 hover:bg-red-500 hover:text-white rounded text-red-500 transition-colors" title="선택 영역 잘라내기"><Scissors size={18}/></button>
+                            <button onClick={()=>setEditTrim({start:0, end:1})} className="p-1.5 hover:bg-white rounded text-slate-900" title="전체 선택"><ScanLine size={16}/></button>
+                            <button onClick={handleCutSelection} className="p-1.5 hover:bg-red-500 hover:text-slate-900 rounded text-red-500 transition-colors" title="선택 영역 잘라내기"><Scissors size={18}/></button>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                        <button onClick={()=>setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border transition-all ${showAutomation ? 'bg-amber-100 text-amber-700 border-amber-300 shadow-inner' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}><Zap size={14}/> 오토메이션</button>
+                        <button onClick={()=>setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 border transition-all ${showAutomation ? 'bg-amber-100 text-slate-900 border-amber-300 shadow-inner' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}><Zap size={14}/> 오토메이션</button>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                        <div className="flex bg-slate-100 border border-slate-200 p-1 rounded-lg gap-1 shadow-sm">
-                            <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${isPlaying && playheadMode==='all' ? 'bg-white shadow text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playheadMode==='all' ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} 전체 재생</button>
-                            <button onClick={() => togglePlay('selection')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${isPlaying && playheadMode==='selection' ? 'bg-white shadow text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playheadMode==='selection' ? <Pause size={14} fill="currentColor"/> : <ScanLine size={14}/>} 선택 재생</button>
-                            <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 hover:bg-white text-red-500 transition-colors"><Square size={14} fill="currentColor"/> 정지</button>
+                        <div className="flex bg-slate-100 border border-slate-200 p-1 rounded-lg gap-1 shadow-sm font-black">
+                            <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${isPlaying && playheadMode==='all' ? 'bg-white shadow text-slate-900' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playheadMode==='all' ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} 전체 재생</button>
+                            <button onClick={() => togglePlay('selection')} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${isPlaying && playheadMode==='selection' ? 'bg-white shadow text-slate-900' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playheadMode==='selection' ? <Pause size={14} fill="currentColor"/> : <ScanLine size={14}/>} 선택 재생</button>
+                            <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 hover:bg-white text-red-500 transition-colors font-black"><Square size={14} fill="currentColor"/> 정지</button>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
                         <div className="bg-slate-800 text-green-400 font-mono text-sm px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner min-w-[100px] flex justify-center tracking-widest font-black">
@@ -375,9 +374,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                         <button onClick={handleSaveSelection} className="px-4 py-2.5 bg-white border border-slate-300 text-blue-600 hover:bg-blue-50 rounded-xl text-xs font-bold flex items-center gap-2 transition-all" title="선택 영역을 보관함에 새 파일로 저장"><FilePlus size={16}/> 선택 영역 보관</button>
-                         <button onClick={handleDownloadResult} className="px-4 py-2.5 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"><Download size={16}/> WAV 다운로드</button>
-                         <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Result_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-100 active:scale-95 transition-all"><Save size={16}/> 보관함 저장</button>
+                         <button onClick={handleSaveSelection} className="px-4 py-2.5 bg-white border border-slate-300 text-slate-900 hover:bg-blue-50 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-sm" title="선택 영역을 보관함에 새 파일로 저장"><FilePlus size={16}/> 선택 영역 보관</button>
+                         <button onClick={handleDownloadResult} className="px-4 py-2.5 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-all"><Download size={16}/> WAV 다운로드</button>
+                         <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Result_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-slate-900 rounded-xl text-xs font-black flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Save size={16}/> 보관함 저장</button>
                     </div>
                 </div>
 
@@ -401,22 +400,22 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         <div className="w-full lg:w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm h-[320px]">
                             <div className="flex border-b border-slate-200 bg-slate-50/50">
                                 {['effects', 'formant', 'formantFilter'].map((t) => (
-                                    <button key={t} onClick={()=>setSideTab(t as any)} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-tight transition-all ${sideTab===t?'bg-white text-indigo-600 border-b-2 border-indigo-500 shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>{t}</button>
+                                    <button key={t} onClick={()=>setSideTab(t as any)} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-tight transition-all ${sideTab===t?'bg-white text-slate-900 border-b-2 border-indigo-500 shadow-sm font-black':'text-slate-500 hover:bg-slate-50'}`}>{t}</button>
                                 ))}
                             </div>
                             <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
                                 {sideTab === 'effects' && (
-                                    <div className="space-y-6 animate-in fade-in">
+                                    <div className="space-y-6 animate-in fade-in font-black">
                                         <div className="space-y-3">
-                                            <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><MoveHorizontal size={14}/> Fades</h3>
-                                            <div className="flex gap-2">
-                                                 <button onClick={()=>handleFade('in')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingUp size={14}/> Fade In</button>
-                                                 <button onClick={()=>handleFade('out')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingDown size={14}/> Fade Out</button>
+                                            <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2 tracking-widest"><MoveHorizontal size={14}/> Fades</h3>
+                                            <div className="flex gap-2 font-black">
+                                                 <button onClick={()=>handleFade('in')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-black text-slate-700 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingUp size={14}/> Fade In</button>
+                                                 <button onClick={()=>handleFade('out')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-black text-slate-700 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingDown size={14}/> Fade Out</button>
                                             </div>
                                         </div>
                                         <div className="space-y-3">
                                             <div className="flex justify-between items-center">
-                                                <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Sparkles size={14}/> Delay</h3>
+                                                <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2 tracking-widest"><Sparkles size={14}/> Delay</h3>
                                                 <span className="text-[10px] font-mono text-indigo-600">{delayTime.toFixed(2)}s</span>
                                             </div>
                                             <input type="range" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
@@ -429,7 +428,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                             <div key={i} className="flex flex-col gap-1.5">
                                                 <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase">
                                                     <span>Formant {i+1}</span>
-                                                    <span className="text-cyan-600 font-mono">{Math.round(f)}Hz</span>
+                                                    <span className="text-slate-900 font-mono font-black">{Math.round(f)}Hz</span>
                                                 </div>
                                                 <input type="range" min="200" max="5000" value={f} onChange={e => {
                                                     const n = [formant.f1, formant.f2, formant.f3, formant.f4];

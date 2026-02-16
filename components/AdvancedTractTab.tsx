@@ -74,6 +74,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const simPlaySourceRef = useRef<AudioBufferSourceNode | null>(null);
     const previewDebounceRef = useRef<number | null>(null);
 
+    const applyVowelPreset = (v: 'A' | 'E' | 'I' | 'O' | 'U') => {
+        const presets = {
+            'A': { x: 0.2, y: 0.1, lips: 0.9, nasal: 0.0, throat: 0.1 },
+            'E': { x: 0.6, y: 0.5, lips: 0.7, nasal: 0.0, throat: 0.3 },
+            'I': { x: 0.9, y: 0.9, lips: 0.2, nasal: 0.0, throat: 0.2 },
+            'O': { x: 0.2, y: 0.4, lips: 0.3, nasal: 0.0, throat: 0.5 },
+            'U': { x: 0.1, y: 0.8, lips: 0.2, nasal: 0.0, throat: 0.4 }
+        };
+        const p = presets[v];
+        setLiveTract({ ...liveTract, ...p, lipLen: 0.5 });
+        updateLiveAudio(p.x, p.y, p.lips, p.throat, 0.5, p.nasal, manualPitch, manualGender);
+        commitChange(`${v} 모음 프리셋 적용`);
+    };
+
     useEffect(() => { isAdvPlayingRef.current = isAdvPlaying; }, [isAdvPlaying]);
 
     const getCurrentState = useCallback(() => ({
@@ -555,11 +569,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             <button onClick={handleRedo} disabled={redoStack.length===0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 disabled:opacity-20 transition-all shadow-sm"><Redo2 size={16}/></button>
                         </div>
                         <div className="flex gap-1.5 font-bold text-xs items-center">
-                            <button onClick={()=>{const t=playHeadPos; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; let val=0; if(tr.id==='tongueX')val=liveTract.x;else if(tr.id==='tongueY')val=liveTract.y;else if(tr.id==='lips')val=liveTract.lips;else if(tr.id==='lipLen')val=liveTract.lipLen;else if(tr.id==='throat')val=liveTract.throat;else if(tr.id==='nasal')val=liveTract.nasal; else if(tr.id==='pitch')val=manualPitch; else if(tr.id==='gender')val=manualGender; return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("기록");}} className="dynamic-primary text-white px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 transition-all"><CircleDot size={14}/> 기록</button>
+                            <button onClick={()=>{const t=playHeadPos; setAdvTracks(prev=>prev.map(tr=>{if(tr.group!=='adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr; let val=0; if(tr.id==='tongueX')val=liveTract.x;else if(tr.id==='tongueY')val=liveTract.y;else if(tr.id==='lips')val=liveTract.lips;else if(tr.id==='lipLen')val=liveTract.lipLen;else if(tr.id==='throat')val=liveTract.throat;else if(tr.id==='nasal')val=liveTract.nasal; else if(tr.id==='pitch')val=manualPitch; else if(tr.id==='gender')val=manualGender; return{...tr,points:[...tr.points.filter(p=>Math.abs(p.t-t)>0.005),{t,v:val}].sort((a,b)=>a.t-b.t)};})); commitChange("기록");}} className="dynamic-primary text-slate-900 px-3 py-1.5 rounded-full text-xs font-black flex items-center gap-1.5 shadow-md active:scale-95 transition-all"><CircleDot size={14}/> 기록</button>
                             <div className="w-px h-4 bg-slate-200 mx-1"></div>
-                            <button onClick={handleSimulationPlay} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md active:scale-95 transition-all">{isAdvPlaying ? <Pause size={14}/> : <Play size={14}/>} {isAdvPlaying ? '중지' : '재생'}</button>
-                            <button onClick={handleDownloadResult} className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 shadow-sm transition-all flex items-center gap-1.5 font-bold"><Download size={14}/> WAV</button>
-                            <button onClick={handleSaveToRack} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-bold flex items-center gap-1.5"><Save size={14}/> 보관함</button>
+                            <button onClick={handleSimulationPlay} className="bg-slate-800 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md active:scale-95 transition-all font-black">{isAdvPlaying ? <Pause size={14}/> : <Play size={14}/>} {isAdvPlaying ? '중지' : '재생'}</button>
+                            <button onClick={handleDownloadResult} className="bg-green-50 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg hover:bg-green-100 shadow-sm transition-all flex items-center gap-1.5 font-black"><Download size={14}/> WAV</button>
+                            <button onClick={handleSaveToRack} className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50 shadow-sm active:scale-95 transition-all font-black flex items-center gap-1.5"><Save size={14}/> 보관함</button>
                         </div>
                     </div>
                 </div>
@@ -572,29 +586,25 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 font-bold">
                         {sidebarTab === 'settings' ? (
                             <div className="space-y-6">
+                                {/* Vowel Presets */}
+                                <div className="space-y-2">
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Vowel Presets</h3>
+                                    <div className="flex gap-1 font-black">
+                                        {(['A', 'E', 'I', 'O', 'U'] as const).map(v => (
+                                            <button key={v} onClick={() => applyVowelPreset(v)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-black text-slate-700 transition-all shadow-sm">{v}</button>
+                                        ))}
+                                    </div>
+                                </div>
+
                                 {/* --- Source Configuration --- */}
                                 <div className="space-y-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mic2 size={12}/> Glottis Source (Main)</h3>
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mic2 size={12}/> Glottis Source</h3>
                                     <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
-                                        <button onClick={()=>setTractSourceType('synth')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='synth'?'bg-white dynamic-primary-text shadow-sm':'text-slate-500'}`}>신시사이저</button>
-                                        <button onClick={()=>setTractSourceType('file')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='file'?'bg-white dynamic-primary-text shadow-sm':'text-slate-500'}`}>보관함 파일</button>
+                                        <button onClick={()=>setTractSourceType('synth')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='synth'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>신시사이저</button>
+                                        <button onClick={()=>setTractSourceType('file')} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${tractSourceType==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일</button>
                                     </div>
                                     {tractSourceType === 'file' && (
                                         <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none">
-                                            <option value="">파일 선택</option>
-                                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                                        </select>
-                                    )}
-
-                                    <div className="h-px bg-slate-200 my-2" />
-
-                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Wind size={12}/> Noise Source (Breath)</h3>
-                                    <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
-                                        <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'generated'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='generated'?'bg-white text-cyan-600 shadow-sm':'text-slate-500'}`}>화이트 노이즈</button>
-                                        <button onClick={()=>setLarynxParams({...larynxParams, noiseSourceType: 'file'})} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType==='file'?'bg-white text-cyan-600 shadow-sm':'text-slate-500'}`}>보관함 파일</button>
-                                    </div>
-                                    {larynxParams.noiseSourceType === 'file' && (
-                                        <select value={larynxParams.noiseSourceFileId} onChange={e=>setLarynxParams({...larynxParams, noiseSourceFileId: e.target.value})} className="w-full p-2 border rounded-lg text-xs font-bold outline-none">
                                             <option value="">파일 선택</option>
                                             {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                                         </select>
@@ -619,7 +629,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             <div className="min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0">
                  <div className="flex items-center justify-between gap-1.5 pb-1 px-1">
                     <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1 font-bold">
-                        {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-white dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
+                        {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
                     </div>
                     <div className="flex gap-1 shrink-0">
                         <button onClick={()=>setIsEditMode(!isEditMode)} className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode?'bg-amber-400 text-white border-amber-500':'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`} title={isEditMode ? "키프레임 편집 중" : "플레이헤드 이동 모드"}><PencilLine size={16}/></button>
@@ -627,7 +637,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 </div>
                 <div className="h-[180px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
                     <canvas ref={canvasRef} width={1000} height={180} className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onContextMenu={e=>e.preventDefault()}/>
-                    <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[10px] font-bold text-slate-600 flex gap-2 pointer-events-none shadow-sm">
+                    <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[10px] font-black text-slate-600 flex gap-2 pointer-events-none shadow-sm">
                         <span>Time: {playHeadPos.toFixed(3)}s</span>
                         <span className="text-amber-600">Pitch: {Math.round(getCurrentValue('pitch'))}Hz</span>
                         <span className="text-pink-500">Gender: x{Number(getCurrentValue('gender')).toFixed(2)}</span>

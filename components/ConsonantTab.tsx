@@ -55,6 +55,21 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
+    const applyConsonantPreset = (type: 'unvoiced' | 'voiced') => {
+        if (type === 'unvoiced') {
+            setCVolPts([{t:0,v:0}, {t:0.05,v:1.2}, {t:0.2,v:0.4}, {t:1,v:0}]);
+            setVVolPts([{t:0,v:0}, {t:0.1,v:0}, {t:0.2,v:1}, {t:1,v:1}]);
+            setOffsetMs(50);
+            setVOffMs(150);
+        } else {
+            setCVolPts([{t:0,v:0.5}, {t:0.3,v:1}, {t:0.7,v:0.8}, {t:1,v:0}]);
+            setVVolPts([{t:0,v:0}, {t:0.1,v:0.5}, {t:1,v:1}]);
+            setOffsetMs(0);
+            setVOffMs(100);
+        }
+        commitChange(`${type} 프리셋 적용`);
+    };
+
     const getCurrentState = useCallback(() => ({
         vowelId, consonantId, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, vowelGain, consonantGain, eqBands
     }), [vowelId, consonantId, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, vowelGain, consonantGain, eqBands]);
@@ -299,21 +314,24 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     }, [vowelId, consonantId, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, selectedTrack, files, vowelGain, consonantGain, playheadTime]);
 
     return (
-        <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold font-black" onMouseUp={handleMouseUp}>
-            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm font-sans h-full overflow-y-auto custom-scrollbar">
+        <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={handleMouseUp}>
+            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm h-full overflow-y-auto custom-scrollbar">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
-                    <div className="flex items-center gap-3 font-black"><div className="p-2 bg-indigo-500 rounded-xl text-white font-bold font-black"><Combine size={24}/></div><h2 className="text-xl text-slate-800 tracking-tight font-black font-sans">자음-모음 합성기</h2></div>
+                    <div className="flex items-center gap-3"><div className="p-2 bg-indigo-500 rounded-xl text-white font-bold font-black"><Combine size={24}/></div><h2 className="text-xl text-slate-800 tracking-tight font-black">자음-모음 합성기</h2></div>
                     <div className="flex items-center gap-2">
-                        <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
-                        <div className="w-px h-6 bg-slate-300 mx-2"></div>
+                        <button onClick={()=>applyConsonantPreset('unvoiced')} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-[10px] font-black text-slate-700 transition-all shadow-sm">무성자음 프리셋</button>
+                        <button onClick={()=>applyConsonantPreset('voiced')} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-[10px] font-black text-slate-700 transition-all shadow-sm">유성자음 프리셋</button>
+                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                        <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
+                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
                             <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Undo2 size={16}/></button>
                             <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Redo2 size={16}/></button>
                         </div>
-                        <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                        <div className="flex bg-slate-100 p-1 rounded-lg gap-1 font-black">
-                            <button onClick={()=>setEditMode('move')} className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all font-bold ${editMode==='move'?'bg-white shadow text-indigo-600 font-bold':'text-slate-500 font-bold'}`}><MousePointer2 size={16}/> 배치 모드</button>
-                            <button onClick={()=>setEditMode('volume')} className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all font-bold ${editMode==='volume'?'bg-white shadow text-indigo-600 font-bold':'text-slate-500 font-bold'}`}><TrendingUp size={16}/> 볼륨 모드</button>
+                        <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                        <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
+                            <button onClick={()=>setEditMode('move')} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode==='move'?'bg-white shadow text-slate-900':'text-slate-500'}`}><MousePointer2 size={16}/> 배치</button>
+                            <button onClick={()=>setEditMode('volume')} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode==='volume'?'bg-white shadow text-slate-900':'text-slate-500'}`}><TrendingUp size={16}/> 볼륨</button>
                         </div>
                     </div>
                 </div>
@@ -324,35 +342,32 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 font-black flex-shrink-0">
-                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer font-bold ${selectedTrack==='vowel'?'bg-blue-50 border-blue-300 ring-2 ring-blue-100':'bg-white border-slate-200'}`} onClick={()=>setSelectedTrack('vowel')} onMouseUp={()=>commitChange()}>
-                        <label className="text-sm font-black text-indigo-500 uppercase tracking-widest block">모음 (Vowel)</label>
-                        <select value={vowelId} onChange={e=>{setVowelId(e.target.value); commitChange("모음 변경");}} className="w-full p-2.5 border rounded-lg font-black text-base">{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-shrink-0">
+                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack==='vowel'?'bg-blue-50 border-blue-300 ring-2 ring-blue-100':'bg-white border-slate-200'}`} onClick={()=>setSelectedTrack('vowel')} onMouseUp={()=>commitChange()}>
+                        <label className="text-sm font-black text-slate-900 uppercase tracking-widest block">모음 (Vowel)</label>
+                        <select value={vowelId} onChange={e=>{setVowelId(e.target.value); commitChange("모음 변경");}} className="w-full p-2.5 border rounded-lg font-black text-base text-slate-900">{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                         <div className="space-y-3">
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-bold text-slate-500 px-1"><span>Offset</span><span>{Math.round(vOffMs)}ms</span></div><input type="range" min="0" max="1000" value={vOffMs} onChange={e=>setVOffMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-400"/></div>
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-bold text-slate-500 px-1"><span>Stretch (길이)</span><span className="text-indigo-600">{vStretch}%</span></div><div className="flex items-center gap-2"><MoveHorizontal size={14} className="text-indigo-400"/><input type="range" min="50" max="200" value={vStretch} onChange={e=>setVStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div></div>
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-bold text-slate-500 px-1"><span>Volume</span><span>{Math.round(vowelGain*100)}%</span></div><div className="flex items-center gap-2"><Volume2 size={14} className="text-slate-400"/><input type="range" min="0" max="2" step="0.05" value={vowelGain} onChange={e=>setVowelGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-500"/></div></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Offset</span><span>{Math.round(vOffMs)}ms</span></div><input type="range" min="0" max="1000" value={vOffMs} onChange={e=>setVOffMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-400"/></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Stretch</span><span className="text-indigo-600">{vStretch}%</span></div><input type="range" min="50" max="200" value={vStretch} onChange={e=>setVStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                         </div>
                     </div>
 
-                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer font-bold ${selectedTrack==='consonant'?'bg-orange-50 border-orange-300 ring-2 ring-orange-100':'bg-white border-slate-200'}`} onClick={()=>setSelectedTrack('consonant')} onMouseUp={()=>commitChange()}>
-                        <label className="text-sm font-black text-pink-500 uppercase tracking-widest block">자음 (Consonant)</label>
-                        <select value={consonantId} onChange={e=>{setConsonantId(e.target.value); commitChange("자음 변경");}} className="w-full p-2.5 border rounded-lg font-bold text-base"><option value="">선택 안 함</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack==='consonant'?'bg-orange-50 border-orange-300 ring-2 ring-orange-100':'bg-white border-slate-200'}`} onClick={()=>setSelectedTrack('consonant')} onMouseUp={()=>commitChange()}>
+                        <label className="text-sm font-black text-slate-900 uppercase tracking-widest block">자음 (Consonant)</label>
+                        <select value={consonantId} onChange={e=>{setConsonantId(e.target.value); commitChange("자음 변경");}} className="w-full p-2.5 border rounded-lg font-black text-base text-slate-900"><option value="">선택 안 함</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                         <div className="space-y-3">
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-bold text-slate-500 px-1"><span>Offset</span><span>{Math.round(offsetMs)}ms</span></div><input type="range" min="0" max="1000" value={offsetMs} onChange={e=>setOffsetMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-400"/></div>
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-bold text-slate-500 px-1"><span>Stretch (길이)</span><span className="text-pink-600">{cStretch}%</span></div><div className="flex items-center gap-2"><MoveHorizontal size={14} className="text-pink-400"/><input type="range" min="50" max="200" value={cStretch} onChange={e=>setCStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-500"/></div></div>
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-bold text-slate-500 px-1"><span>Volume</span><span>{Math.round(consonantGain*100)}%</span></div><div className="flex items-center gap-2"><Volume2 size={14} className="text-slate-400"/><input type="range" min="0" max="2" step="0.05" value={consonantGain} onChange={e=>setConsonantGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-500"/></div></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Offset</span><span>{Math.round(offsetMs)}ms</span></div><input type="range" min="0" max="1000" value={offsetMs} onChange={e=>setOffsetMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-400"/></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Stretch</span><span className="text-pink-600">{cStretch}%</span></div><input type="range" min="50" max="200" value={cStretch} onChange={e=>setCStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-500"/></div>
                         </div>
                     </div>
                 </div>
                 <div className="bg-slate-900 border border-slate-700 p-0 rounded-2xl shadow-inner min-h-[256px] flex-1 relative overflow-hidden select-none" onContextMenu={e=>e.preventDefault()}>
                     <canvas ref={canvasRef} width={1000} height={300} className={`w-full h-full ${editMode==='move'?'cursor-ew-resize':'cursor-crosshair'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}/>
-                    <div className="absolute bottom-3 right-3 text-xs text-slate-500 font-bold pointer-events-none">{editMode==='move' ? '드래그하여 타이밍 조절' : '클릭: 점 추가 | 우클릭: 점 삭제'}</div>
                 </div>
-                <div className="flex justify-end gap-3 flex-shrink-0 pb-2">
-                    <button onClick={togglePlay} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 transition-all text-base"><Play size={20} fill="currentColor"/> {isPlaying ? 'STOP' : 'PREVIEW'}</button>
-                    <button onClick={handleDownload} className="px-6 py-3 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl font-bold flex items-center gap-2 transition-all"><Download size={20}/> WAV 다운로드</button>
-                    <button onClick={async () => { const b = await mixConsonant(); if(b) onAddToRack(b, "Consonant_Mix"); }} className="px-8 py-3 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded-xl font-bold flex items-center gap-2 transition-all text-base"><Save size={20}/> 보관함 저장</button>
+                <div className="flex justify-end gap-3 flex-shrink-0">
+                    <button onClick={togglePlay} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all text-base"><Play size={20} fill="currentColor"/> {isPlaying ? 'STOP' : 'PREVIEW'}</button>
+                    <button onClick={handleDownload} className="px-6 py-3 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl font-black flex items-center gap-2 transition-all"><Download size={20}/> WAV</button>
+                    <button onClick={async () => { const b = await mixConsonant(); if(b) onAddToRack(b, "Consonant_Mix"); }} className="px-8 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all text-base"><Save size={20}/> 보관함</button>
                 </div>
             </div>
         </div>

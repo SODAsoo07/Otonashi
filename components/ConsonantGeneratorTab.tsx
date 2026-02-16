@@ -270,7 +270,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <input type="checkbox" checked={state.on} onChange={e => onChange({...state, on: e.target.checked})} className="rounded accent-indigo-500"/> 
                     {label}
                 </label>
-                {state.on && <span className="text-[10px] text-indigo-600 font-mono">{state.freq}Hz</span>}
+                {state.on && <span className="text-[10px] text-slate-900 font-mono font-black">{state.freq}Hz</span>}
             </div>
             {state.on && (
                 <div className="space-y-1">
@@ -293,7 +293,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         <h2 className="text-xl text-slate-800 tracking-tight font-black">자음 생성기</h2>
                     </div>
                     <div className="flex items-center gap-2">
-                         <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
+                         <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
                          <div className="w-px h-6 bg-slate-300 mx-2"></div>
                          <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
                             <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Undo2 size={16}/></button>
@@ -317,18 +317,18 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                             <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={16}/> 소스 (Source)</h3>
                             <div className="space-y-3">
                                 <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-                                    <button onClick={()=>setBaseSource('synth')} className={`flex-1 py-1.5 rounded text-xs font-bold transition-all ${baseSource==='synth'?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>신디사이저</button>
-                                    <button onClick={()=>setBaseSource('file')} className={`flex-1 py-1.5 rounded text-xs font-bold transition-all ${baseSource==='file'?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>파일</button>
+                                    <button onClick={()=>setBaseSource('synth')} className={`flex-1 py-1.5 rounded text-xs font-black transition-all ${baseSource==='synth'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>신디사이저</button>
+                                    <button onClick={()=>setBaseSource('file')} className={`flex-1 py-1.5 rounded text-xs font-black transition-all ${baseSource==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일</button>
                                 </div>
                                 {baseSource==='file' ? (
-                                    <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 border rounded text-xs"><option value="">파일 선택</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                                    <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 border rounded text-xs font-black text-slate-900"><option value="">파일 선택</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                                 ) : (
                                     <div className="space-y-3">
                                         <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Noise Mix</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
-                                        <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button></div>
+                                        <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button></div>
                                         <div className="h-px bg-slate-100"></div>
                                         <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Voice Mix</span><span>{Math.round(sourceMix*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={sourceMix} onChange={e=>setSourceMix(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
-                                        <div className="flex gap-1 overflow-x-auto pb-1">{['sawtooth', 'square', 'sine', 'triangle'].map(t=>(<button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`px-2 py-1 text-[10px] rounded border uppercase flex-shrink-0 ${voiceWave===t?'bg-indigo-500 text-white':'bg-white text-slate-500'}`}>{t}</button>))}</div>
+                                        <div className="flex gap-1 overflow-x-auto pb-1">{['sawtooth', 'square', 'sine', 'triangle'].map(t=>(<button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`px-2 py-1 text-[10px] font-black rounded border uppercase flex-shrink-0 ${voiceWave===t?'bg-indigo-500 text-slate-900':'bg-white text-slate-500'}`}>{t}</button>))}</div>
                                         <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Freq</span><span>{voiceFreq} Hz</span></div><input type="range" min="50" max="1000" value={voiceFreq} onChange={e=>setVoiceFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                     </div>
                                 )}
@@ -364,7 +364,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <div className="lg:col-span-2 flex flex-col gap-4">
                         <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative overflow-hidden shadow-inner group">
                              <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-cover opacity-80"/>
-                             <div className="absolute top-4 right-4 flex flex-col items-end gap-1">
+                             <div className="absolute top-4 right-4 flex flex-col items-end gap-1 font-black">
                                 {hpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">HP {hpFilter.freq}Hz</span>}
                                 {bpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">BP {bpFilter.freq}Hz</span>}
                                 {lpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">LP {lpFilter.freq}Hz</span>}
@@ -373,19 +373,19 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         <div className="h-24 bg-white rounded-2xl border border-slate-300 p-6 flex items-center justify-between shadow-sm">
                              <div className="flex items-center gap-6">
                                 <div className="flex flex-col gap-1">
-                                    <span className="text-xs font-black text-slate-400 uppercase">Output Gain</span>
+                                    <span className="text-xs font-black text-slate-400 uppercase tracking-tighter">Output Gain</span>
                                     <div className="flex items-center gap-3">
                                         <Volume2 size={20} className="text-slate-500"/>
                                         <input type="range" min="0" max="2" step="0.1" value={gain} onChange={e=>setGain(Number(e.target.value))} className="w-32 h-2 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
-                                        <span className="text-sm font-bold text-slate-600 w-10">{Math.round(gain*100)}%</span>
+                                        <span className="text-sm font-black text-slate-900 w-10">{Math.round(gain*100)}%</span>
                                     </div>
                                 </div>
                              </div>
                              <div className="flex gap-4">
-                                 <button onClick={handleGenerateAndPlay} className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 transition-all active:scale-95 text-base">
+                                 <button onClick={handleGenerateAndPlay} className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all active:scale-95 text-base">
                                     <Play size={20} fill="currentColor"/> {isPlaying ? '재생 중...' : '생성 및 재생'}
                                  </button>
-                                 <button onClick={handleSave} className="px-8 py-4 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 text-base">
+                                 <button onClick={handleSave} className="px-8 py-4 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all active:scale-95 text-base">
                                     <Save size={20}/> 보관함에 저장
                                  </button>
                              </div>
