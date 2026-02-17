@@ -25,7 +25,7 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
 
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext, files, onAddToRack, isActive }) => {
     const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: true, jitterDepth: 0.1, jitterRate: 20, breathOn: true, breathGain: 0.05, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
-    const [shimmerAmount, setShimmerAmount] = useState(0.05); // 진폭 변동
+    const [shimmerAmount, setShimmerAmount] = useState(0.05); 
     const [tractSourceType, setTractSourceType] = useState<'synth' | 'file'>('synth'); 
     const [tractSourceFileId, setTractSourceFileId] = useState("");
     const [synthWaveform, setSynthWaveform] = useState('sawtooth'); 
@@ -139,18 +139,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
       const now = audioContext.currentTime;
       const { x, y, lips, nasal } = liveTract;
       const gFactor = manualGender;
-      
-      // Jitter 적용
       const jitterVal = larynxParams.jitterOn ? (Math.random() - 0.5) * larynxParams.jitterDepth * manualPitch * 0.1 : 0;
-      
       f1.frequency.setTargetAtTime(Math.max(50, (200 + (1-y)*600)) * gFactor, now, 0.02);
       f2.frequency.setTargetAtTime((800 + x * 1400) * gFactor, now, 0.02);
       f3.frequency.setTargetAtTime((2000 + lips * 1500) * gFactor, now, 0.02);
       nasF.frequency.setTargetAtTime(Math.max(400, 10000 - nasal * 9000) * gFactor, now, 0.02);
-      
       if(sNode instanceof OscillatorNode) sNode.frequency.setTargetAtTime(manualPitch + jitterVal, now, 0.02);
-      
-      // Shimmer 적용
       const shim = 1.0 + (Math.random() - 0.5) * shimmerAmount;
       g.gain.setTargetAtTime(0.5 * shim, now, 0.02);
     }, [liveTract, manualPitch, manualGender, audioContext, larynxParams, shimmerAmount]);

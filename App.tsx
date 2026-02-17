@@ -59,7 +59,6 @@ const App: React.FC = () => {
     }, [redoStack, files]);
 
     const [isResizing, setIsResizing] = useState(false);
-
     const [uiConfig, setUiConfig] = useState<UIConfig>({
         primaryColor: '#209ad6',
         accentColor: '#ec4899',
@@ -97,7 +96,7 @@ const App: React.FC = () => {
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (!isResizing) return;
-            const newWidth = Math.max(200, Math.min(600, e.clientX));
+            const newWidth = Math.max(180, Math.min(600, e.clientX));
             setUiConfig(prev => ({ ...prev, sidebarWidth: newWidth }));
         };
         const handleMouseUp = () => setIsResizing(false);
