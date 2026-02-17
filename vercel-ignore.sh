@@ -7,7 +7,7 @@ echo "Current Vercel Branch: $VERCEL_GIT_COMMIT_REF"
 # 여기에 적히지 않은 모든 브랜치는 Vercel 배포가 자동으로 취소됩니다.
 
 case "$VERCEL_GIT_COMMIT_REF" in
-  "main")
+  "public")
     # 1. 배포를 허용할 브랜치들 (Exit Code 1 -> 빌드 진행)
     echo "✅ Proceeding with deployment for ALLOWED branch: $VERCEL_GIT_COMMIT_REF"
     exit 1
