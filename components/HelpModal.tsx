@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Info, X, Activity, Combine, Grid, Wand2, MousePointer2, Zap, AudioLines, Download, Layers, Sparkles, Mic2, Play, Save, Undo2, PencilLine, Spline } from 'lucide-react';
+import { Info, X, Activity, Combine, Grid, Wand2, MousePointer2, Zap, AudioLines, Download, Layers, Sparkles, Mic2, Play, Save, Undo2, PencilLine, Spline, MonitorCheck } from 'lucide-react';
 
 interface HelpModalProps {
   onClose: () => void;
@@ -84,6 +85,31 @@ const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
         <section className="bg-slate-50 p-4 rounded-xl space-y-2 border border-slate-100">
             <h4 className="text-xs font-bold text-slate-700 flex items-center gap-2"><Download size={14}/> 프로젝트 관리</h4>
             <p className="text-[11px] text-slate-500">상단 헤더의 <b>저장(Download)</b> 버튼을 누르면 작업 중인 모든 파일이 포함된 .json 프로젝트 파일을 내보냅니다. 나중에 <b>열기(Upload)</b> 버튼으로 다시 불러올 수 있습니다.</p>
+        </section>
+
+        <section className="bg-slate-800 text-slate-300 p-4 rounded-xl space-y-2 border border-slate-700">
+            <h4 className="text-xs font-bold text-white flex items-center gap-2"><MonitorCheck size={14} className="text-emerald-400"/> 시스템 권장 사양</h4>
+            <div className="grid grid-cols-2 gap-4 text-[11px]">
+                <div>
+                    <span className="block font-black text-slate-400 mb-1">최소 사양 (Minimum)</span>
+                    <ul className="list-disc pl-3 space-y-0.5 opacity-80">
+                        <li>CPU: Intel Core i3 (6세대+) / Ryzen 3</li>
+                        <li>RAM: 4GB</li>
+                        <li>GPU: Intel HD Graphics 520+</li>
+                        <li>OS: Windows 10 (64bit)</li>
+                    </ul>
+                </div>
+                <div>
+                    <span className="block font-black text-emerald-400 mb-1">권장 사양 (Recommended)</span>
+                    <ul className="list-disc pl-3 space-y-0.5 text-white">
+                        <li>CPU: <b>Intel Core i5/i7 (8세대+) / Ryzen 5 (3000+)</b></li>
+                        <li>RAM: <b>16GB+</b></li>
+                        <li>GPU: GTX 1050+</li>
+                        <li>OS: Windows 10 (64bit)</li>
+                    </ul>
+                </div>
+            </div>
+            <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-700 mt-2">* 보코더 및 AI 분석 기능은 CPU 연산을 많이 사용합니다.</p>
         </section>
       </div>
       
