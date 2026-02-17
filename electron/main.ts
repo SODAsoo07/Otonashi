@@ -1,3 +1,4 @@
+
 import { app, BrowserWindow, shell, globalShortcut } from 'electron';
 import path from 'path';
 import { platform } from 'os';
@@ -34,11 +35,9 @@ async function createWindow() {
 
   if (isDev) {
     await win.loadURL('http://localhost:5173');
-    win.webContents.openDevTools();
   } else {
     // 빌드된 파일 구조에 맞춰 경로를 지정합니다.
     await win.loadFile(path.join(__dirname, '../dist/index.html'));
-    win.webContents.openDevTools({ mode: 'detach' }); 
   }
 
   win.once('ready-to-show', () => {
