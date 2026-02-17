@@ -1,8 +1,12 @@
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow, shell, globalShortcut } from 'electron';
 import path from 'path';
 import { platform } from 'os';
+import { fileURLToPath } from 'url';
 
-// Windows에서 중복 실행 방지
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Prevent multiple instances
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   app.exit(0);
@@ -19,63 +23,66 @@ async function createWindow() {
     title: 'OTONASHI',
     backgroundColor: '#f8f8f6',
     webPreferences: {
-      // CommonJS 환경에서 __dirname은 전역 변수로 제공되므로 직접 사용합니다.
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false, // 로컬 오디오 파일 로드 및 크로스 도메인 이슈 방지
+      webSecurity: false, // Temporarily disabled to allow Tailwind CDN loading from local file context
     },
-    show: false,
+    show: false, // Wait until ready-to-show to prevent flickering
   });
 
-  win.setMenuBarVisibility(false);
+  win.setMenuBarVisibility(false); // Hide default menu bar
 
+  // Check if we are running in development mode
   const isDev = process.env.NODE_ENV === 'development';
 
-  // F12 키로 개발자 도구를 언제든 열 수 있도록 단축키 강제 등록
-  win.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'F12' && input.type === 'keyDown') {
-      win?.webContents.toggleDevTools();
-    }
-    // 새로고침 단축키 (Ctrl+R) 허용
-    if (input.control && input.key.toLowerCase() === 'r' && input.type === 'keyDown') {
-      win?.webContents.reload();
-    }
-  });
-
   if (isDev) {
-    // 개발 모드: Vite 서버 접속
+    // In dev, load from the Vite dev server
+    await win.loadURL('http://localhost:5173');
     win.webContents.openDevTools();
-    await win.loadURL('http://localhost:5173').catch((err) => {
-      console.error("Vite server load failed. Ensure 'npm run dev' is running.", err);
-    });
   } else {
-    // 빌드 모드: dist 폴더의 index.html 로드
-    // tsc로 빌드된 main.js는 dist-electron 폴더에 위치하므로 ..를 통해 상위로 이동 후 dist에 접근합니다.
-    const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
-    console.log("Loading production index from:", indexPath);
+    // In production, load the built html file
+    await win.loadFile(path.join(__dirname, '../dist/index.html'));
     
-    await win.loadFile(indexPath).catch((err) => {
-      console.error("Failed to load production index.html:", err);
-    });
+    // DEBUG: Force open DevTools in detached mode
+    win.webContents.openDevTools({ mode: 'detach' }); 
   }
 
   win.once('ready-to-show', () => {
     win?.show();
   });
 
+  // Open external links in default browser, not Electron
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:')) shell.openExternal(url);
     return { action: 'deny' };
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  
+  // Register F12 global shortcut as a backup
+  globalShortcut.register('F12', () => {
+    if (win) {
+      if (win.webContents.isDevToolsOpened()) {
+        win.webContents.closeDevTools();
+      } else {
+        win.webContents.openDevTools({ mode: 'detach' });
+      }
+    }
+  });
+});
 
 app.on('window-all-closed', () => {
   if (platform() !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('will-quit', () => {
+  // Unregister all shortcuts.
+  globalShortcut.unregisterAll();
 });
 
 app.on('activate', () => {
