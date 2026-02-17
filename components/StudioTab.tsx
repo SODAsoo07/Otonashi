@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power, Copy, Layers, Fingerprint
@@ -7,6 +6,7 @@ import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
 import FormantPad from './FormantPad';
+import RangeControl from './common/RangeControl';
 
 interface StudioTabProps {
   audioContext: AudioContext;
@@ -104,7 +104,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const newBuf = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
         if (newBuf) {
             setClipboard(newBuf);
-            // Optional: Visual feedback could be added here
         }
     }, [activeBuffer, audioContext, editTrim]);
 
@@ -112,7 +111,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (!activeBuffer || !clipboard) return;
         pushUndo("오디오 겹쳐넣기 (Mix)");
         
-        // Calculate insert point from playhead
         const startSample = Math.floor((playheadPos / 100) * activeBuffer.duration * activeBuffer.sampleRate);
         const newBuf = AudioUtils.mixBuffersAtTime(audioContext, activeBuffer, clipboard, startSample);
         
@@ -125,20 +123,13 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (!activeBuffer || !clipboard) return;
         pushUndo("오디오 텍스처 입히기 (Imprint)");
 
-        // Convolve the active buffer (carrier) with clipboard (modulator)
-        // This applies the clipboard's texture/reverb characteristic to the selection
-        
-        // 1. Extract selection to apply effect
         const selectionBuf = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
         
         if (selectionBuf) {
             const processedSelection = await AudioUtils.convolveBuffers(audioContext, selectionBuf, clipboard, 0.5);
             if (processedSelection) {
-                // 2. Replace the selection with processed audio
-                // Delete original range
                 const tempBuf = AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end);
                 if (tempBuf) {
-                    // Insert processed
                     const startSample = Math.floor(activeBuffer.duration * editTrim.start * activeBuffer.sampleRate);
                     const finalBuf = AudioUtils.mixBuffersAtTime(audioContext, tempBuf, processedSelection, startSample);
                      if (finalBuf) onUpdateFile(finalBuf);
@@ -188,7 +179,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const inputNode = currentNode;
 
         if (!bypassEffects) {
-            // EQ
             eqBands.forEach(b => {
                 if(b.on) {
                     const f = offline.createBiquadFilter();
@@ -197,7 +187,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 }
             });
 
-            // Formant
             const fShift = offline.createBiquadFilter(); 
             fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
             
@@ -213,7 +202,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             let lastFNode = fShift;
             fNodes.forEach(fn => { lastFNode.connect(fn); lastFNode = fn; });
             
-            // Compressor
             const compressor = offline.createDynamicsCompressor();
             compressor.threshold.value = compThresh;
             compressor.ratio.value = compRatio;
@@ -221,7 +209,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             compressor.release.value = compRelease;
             lastFNode.connect(compressor);
             
-            // Time-based (Delay/Reverb)
             const dryGain = offline.createGain(); 
             const effectMerge = offline.createGain(); 
             
@@ -390,16 +377,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
     };
 
-    const RangeControl = ({ label, value, min, max, step, onChange, unit }: any) => (
-        <div className="space-y-1">
-            <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-500">
-                <span>{label}</span>
-                <span className="text-indigo-600">{value}{unit}</span>
-            </div>
-            <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
-        </div>
-    );
-
     return (
         <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold h-full overflow-y-auto custom-scrollbar">
             <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm">
@@ -446,38 +423,28 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                              onMouseDown={(e) => {
                                  const rect = canvasRef.current!.getBoundingClientRect();
                                  const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-
-                                 // 1. Playhead Position Update
                                  setPlayheadPos(xPct * 100);
                                  pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
-
-                                 // 2. Init Selection Drag (Reset selection to start point)
                                  const startX = xPct;
                                  setEditTrim({ start: startX, end: startX });
-                                 
                                  const move = (me: MouseEvent) => {
                                      const curRect = canvasRef.current?.getBoundingClientRect();
                                      if(!curRect) return;
                                      const curX = Math.max(0, Math.min(1, (me.clientX - curRect.left) / curRect.width));
-                                     // Update selection based on drag
                                      setEditTrim({ 
                                         start: Math.min(startX, curX), 
                                         end: Math.max(startX, curX) 
                                      });
                                  };
-
                                  const up = () => {
                                      window.removeEventListener('mousemove', move);
                                      window.removeEventListener('mouseup', up);
                                  };
-
                                  window.addEventListener('mousemove', move);
                                  window.addEventListener('mouseup', up);
                              }} 
                          />
                          <div className="absolute top-0 bottom-0 bg-white/10 border-x border-white/30 pointer-events-none" style={{ left: `${editTrim.start*100}%`, width: `${(editTrim.end-editTrim.start)*100}%` }} />
-                         <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.start*100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.start; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, start: Math.max(0, Math.min(prev.end, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
-                         <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.end*100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.end; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, end: Math.min(1, Math.max(prev.start, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
                          {!activeBuffer && (
                             <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-black uppercase tracking-widest bg-slate-900/50 backdrop-blur-sm">작업할 파일을 보관함에서 선택하세요</div>
                          )}
@@ -561,7 +528,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                             <span>Gain</span>
                                             <span className="text-indigo-600">{(masterGain * 100).toFixed(0)}%</span>
                                         </div>
-                                        <input type="range" min="0" max="2" step="0.01" value={masterGain} onChange={e => setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                        <input type="range" min="0" max="2" step="0.01" value={masterGain} onChange={e => setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/>
                                     </div>
                                 </div>
                             </div>

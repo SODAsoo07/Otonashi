@@ -18,6 +18,7 @@ export interface AdvTrack {
   points: KeyframePoint[];
   min: number;
   max: number;
+  interpolation?: 'linear' | 'curve';
 }
 
 export interface LiveTractState {
@@ -44,13 +45,8 @@ export interface FormantParams {
   f1: number;
   f2: number;
   f3: number;
+  f4: number;
   resonance: number;
-}
-
-export interface EQParams {
-  low: number;
-  mid: number;
-  high: number;
 }
 
 export interface EQBand {
@@ -60,4 +56,13 @@ export interface EQBand {
   gain: number;
   q: number;
   on: boolean;
+}
+
+export interface UIConfig {
+  primaryColor: string;
+  accentColor: string;
+  bgColor: string;
+  panelRadius: string;
+  headerHeight: string;
+  sidebarWidth: number;
 }
