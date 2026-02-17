@@ -6,29 +6,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OTONASHI - Vocal Tract Simulator</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Vercel Web Analytics & Speed Insights (Native Script Mode) -->
-    <script defer src="/_vercel/insights/script.js" type="module"></script>
-    <script defer src="/_vercel/speed-insights/script.js" type="module"></script>
     <style>
       .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       body { font-family: 'Inter', sans-serif; background-color: #f8f8f6; }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "lucide-react": "https://esm.sh/lucide-react@0.460.0?deps=react@19.0.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/"
-  }
-}
-</script>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.4",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+        "react/": "https://esm.sh/react@^19.2.4/",
+        "lucide-react": "https://esm.sh/lucide-react@^0.564.0"
+      }
+    }
+    </script>
 </head>
   <body>
     <div id="root"></div>
+    <!-- Dynamically inject Vercel Analytics/Speed Insights to avoid Vite build resolution errors -->
+    <script>
+      (function() {
+        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+          var s1 = document.createElement('script'); 
+          s1.src = '/_vercel/insights/script.js'; 
+          s1.defer = true; 
+          document.body.appendChild(s1);
+          
+          var s2 = document.createElement('script'); 
+          s2.src = '/_vercel/speed-insights/script.js'; 
+          s2.defer = true; 
+          document.body.appendChild(s2);
+        }
+      })();
+    </script>
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>
