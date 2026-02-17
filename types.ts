@@ -44,6 +44,7 @@ export interface FormantParams {
   f1: number;
   f2: number;
   f3: number;
+  f4: number;
   resonance: number;
 }
 

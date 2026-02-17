@@ -1,17 +1,16 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power, Trash2, 
-  ArrowLeftRight, Volume2, MoveHorizontal, Wand2, RefreshCw, Layers, ZoomIn, TrendingUp, TrendingDown, Gauge
+  Undo2, Redo2, Scissors, Copy, Layers, TrendingUp, TrendingDown, 
+  MoveHorizontal, Zap, Sparkles, Activity, Square, Play, Pause, Save, ScanLine, AudioLines, MousePointer2, FilePlus
 } from 'lucide-react';
 import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
-import { Language, i18n } from '../utils/i18n';
 import ParametricEQ from './ParametricEQ';
 import FormantPad from './FormantPad';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface StudioTabProps {
-  lang: Language;
   audioContext: AudioContext;
   activeFile: AudioFile | undefined;
   files: AudioFile[];
@@ -26,18 +25,26 @@ interface UndoState {
     label: string;
 }
 
-const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId, isActive }) => {
+const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId, isActive }) => {
+    const { t } = useLanguage();
     const [editTrim, setEditTrim] = useState({ start: 0, end: 1 });
     const [isPlaying, setIsPlaying] = useState(false);
+    const [playMode, setPlayheadMode] = useState<'all' | 'selection'>('all');
+    const [isPaused, setIsPaused] = useState(false);
     const [playheadPos, setPlayheadPos] = useState(0); 
-    const [showAutomation, setShowAutomation] = useState(true);
+    const [dragTarget, setDragTarget] = useState<string | null>(null);
+    const [showAutomation, setShowAutomation] = useState(false);
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
-    const [zoomLevel, setZoomLevel] = useState(1); // 확대 레벨 (1~10)
     
-    const [sideTab, setSideTab] = useState<'effects' | 'formant'>('effects');
+    const [sideTab, setSideTab] = useState<'effects' | 'formant' | 'formantFilter'>('effects');
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
     const [redoStack, setRedoStack] = useState<UndoState[]>([]);
     
+    // Params
+    const [track2Id, setTrack2Id] = useState("");
+    const [mergeOffset, setMergeOffset] = useState(0);
+    const [pitchCents, setPitchCents] = useState(0);
+    const [genderShift, setGenderShift] = useState(1.0);
     const [masterGain, setMasterGain] = useState(1.0);
     const [formant, setFormant] = useState<FormantParams>({ f1: 500, f2: 1500, f3: 2500, f4: 3500, resonance: 4.0 });
     
@@ -49,292 +56,414 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
         { id: 5, type: 'lowpass', freq: 18000, gain: 0, q: 0.7, on: true }
     ]);
     
+    const [singerFormantGain, setSingerFormantGain] = useState(0);
+    const [compThresh, setCompThresh] = useState(-24);
+    const [reverbWet, setReverbWet] = useState(0);
+    const [delayTime, setDelayTime] = useState(0);
+    const [delayFeedback, setDelayFeedback] = useState(0.3);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-    const animRef = useRef<number | null>(null);
     const startTimeRef = useRef(0);
-    const [dragging, setDragging] = useState<{type: 'selection' | 'automation', index?: number} | null>(null);
+    const pauseOffsetRef = useRef(0);
+    const animationRef = useRef<number | null>(null);
+    const activeBuffer = useMemo(() => activeFile ? activeFile.buffer : null, [activeFile]);
 
-    const t = i18n[lang].common;
-
-    const pushUndo = useCallback((buf: AudioBuffer, label: string) => {
-        setUndoStack(prev => [...prev.slice(-19), { buffer: buf, label }]);
-        setRedoStack([]);
-    }, []);
-
-    const handleLocalUndo = () => {
-        if (undoStack.length === 0 || !activeFile) return;
-        const last = undoStack[undoStack.length - 1];
-        setRedoStack(prev => [...prev, { buffer: activeFile.buffer, label: last.label }]);
-        setUndoStack(prev => prev.slice(0, -1));
-        onUpdateFile(last.buffer);
-    };
-
-    const handleLocalRedo = () => {
-        if (redoStack.length === 0 || !activeFile) return;
-        const last = redoStack[redoStack.length - 1];
-        setUndoStack(prev => [...prev, { buffer: activeFile.buffer, label: last.label }]);
-        setRedoStack(prev => prev.slice(0, -1));
-        onUpdateFile(last.buffer);
-    };
-
-    const handleCrop = () => {
-        if (!activeFile) return;
-        const newBuf = AudioUtils.createBufferFromSlice(audioContext, activeFile.buffer, editTrim.start, editTrim.end);
-        if (newBuf) {
-            pushUndo(activeFile.buffer, "Crop");
-            onUpdateFile(newBuf);
-            setEditTrim({ start: 0, end: 1 });
+    const pushUndo = useCallback((label: string = "편집") => { 
+        if (activeBuffer) {
+            setUndoStack(prev => [...prev.slice(-19), { buffer: activeBuffer, label }]); 
+            setRedoStack([]);
         }
-    };
+    }, [activeBuffer]);
 
-    const handleDeleteRange = () => {
-        if (!activeFile) return;
-        const newBuf = AudioUtils.deleteRange(audioContext, activeFile.buffer, editTrim.start, editTrim.end);
-        if (newBuf) {
-            pushUndo(activeFile.buffer, "Delete Range");
-            onUpdateFile(newBuf);
-            setEditTrim({ start: 0, end: 1 });
-        }
-    };
+    const handleUndo = useCallback(() => { 
+        if (undoStack.length === 0 || !activeBuffer) return; 
+        const prev = undoStack[undoStack.length - 1]; 
+        setRedoStack(prevSt => [...prevSt.slice(-19), { buffer: activeBuffer, label: prev.label }]);
+        setUndoStack(prevSt => prevSt.slice(0, -1)); 
+        onUpdateFile(prev.buffer); 
+    }, [undoStack, onUpdateFile, activeBuffer]);
 
-    const handleNormalize = () => {
-      if (!activeFile) return;
-      const newBuf = AudioUtils.normalizeBuffer(audioContext, activeFile.buffer);
-      pushUndo(activeFile.buffer, "Normalize");
-      onUpdateFile(newBuf);
-    };
-
-    const handleReverse = () => {
-      if (!activeFile) return;
-      const newBuf = AudioUtils.reverseBuffer(audioContext, activeFile.buffer);
-      pushUndo(activeFile.buffer, "Reverse");
-      onUpdateFile(newBuf);
-    };
-
-    const handleSpeed = async () => {
-        if(!activeFile) return;
-        const rate = prompt("변경할 속도 비율을 입력하세요 (예: 0.8 = 느리게/저음, 1.5 = 빠르게/고음)", "1.0");
-        if(rate && !isNaN(Number(rate))) {
-             const r = Number(rate);
-             if(r <= 0.1 || r > 4.0) { alert("0.1 ~ 4.0 사이의 값을 입력해주세요."); return; }
-             const newBuf = await AudioUtils.applyStretch(activeFile.buffer, r);
-             if(newBuf) {
-                 pushUndo(activeFile.buffer, "Speed Change");
-                 onUpdateFile(newBuf);
-             }
-        }
-    };
+    const handleRedo = useCallback(() => { 
+        if (redoStack.length === 0 || !activeBuffer) return; 
+        const next = redoStack[redoStack.length - 1]; 
+        setUndoStack(prevSt => [...prevSt.slice(-19), { buffer: activeBuffer, label: next.label }]);
+        setRedoStack(prevSt => prevSt.slice(0, -1)); 
+        onUpdateFile(next.buffer); 
+    }, [redoStack, onUpdateFile, activeBuffer]);
 
     const handleFade = async (type: 'in' | 'out') => {
-        if (!activeFile) return;
-        const newBuf = await AudioUtils.applyFade(audioContext, activeFile.buffer, type, editTrim.start, editTrim.end);
+        if (!activeBuffer) return;
+        pushUndo(`Fade ${type === 'in' ? 'In' : 'Out'}`);
+        const newBuf = await AudioUtils.applyFade(audioContext, activeBuffer, type, editTrim.start, editTrim.end);
+        if (newBuf) onUpdateFile(newBuf);
+    };
+
+    const handleSaveSelection = useCallback(() => {
+        if (!activeBuffer || !activeFile) return;
+        const slice = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
+        if (slice) {
+            onAddToRack(slice, `${activeFile.name}_slice`);
+        }
+    }, [activeBuffer, activeFile, audioContext, editTrim, onAddToRack]);
+
+    const handleCutSelection = useCallback(() => {
+        if (!activeBuffer) return;
+        pushUndo(t.studio.cut);
+        const newBuf = AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end);
         if (newBuf) {
-            pushUndo(activeFile.buffer, `Fade ${type}`);
             onUpdateFile(newBuf);
+            setEditTrim({ start: 0, end: 1 });
+            // 재생 중이라면 중지
+            if (isPlaying) handleStop();
         }
-    };
+    }, [activeBuffer, audioContext, editTrim, onUpdateFile, pushUndo, isPlaying, t]);
 
-    const renderProcessed = async () => {
-        if (!activeFile) return null;
-        const sr = activeFile.buffer.sampleRate;
-        const offline = new OfflineAudioContext(activeFile.buffer.numberOfChannels, activeFile.buffer.length, sr);
-        const source = offline.createBufferSource();
-        source.buffer = activeFile.buffer;
-        const gain = offline.createGain();
-        gain.gain.setValueAtTime(volumeKeyframes[0].v * masterGain, 0);
-        volumeKeyframes.forEach(p => gain.gain.linearRampToValueAtTime(p.v * masterGain, p.t * activeFile.buffer.duration));
-        source.connect(gain);
-        let lastNode: AudioNode = gain;
-        eqBands.forEach(b => { if (b.on) { const f = offline.createBiquadFilter(); f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = b.gain; lastNode.connect(f); lastNode = f; } });
-        lastNode.connect(offline.destination);
-        source.start(0);
-        return await offline.startRendering();
-    };
+    const stopPlayback = useCallback(() => {
+        if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
+        setIsPlaying(false);
+        if(animationRef.current) cancelAnimationFrame(animationRef.current);
+    }, []);
 
-    const togglePlay = async () => {
-        if (isPlaying) {
-            if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} }
-            setIsPlaying(false);
-            if (animRef.current) cancelAnimationFrame(animRef.current);
-            setPlayheadPos(0);
+    const handleStop = useCallback(() => {
+        stopPlayback();
+        setIsPaused(false); setPlayheadPos(0); pauseOffsetRef.current = 0;
+    }, [stopPlayback]);
+
+    const updatePlayhead = useCallback(() => {
+        if (!isPlaying || !activeBuffer) return;
+        const elapsed = audioContext.currentTime - startTimeRef.current;
+        let currentPos = 0;
+        if (playMode === 'all') {
+            currentPos = ((elapsed / activeBuffer.duration) * 100);
         } else {
-            const buf = await renderProcessed();
-            if (!buf) return;
-            const source = audioContext.createBufferSource();
-            source.buffer = buf;
-            source.connect(audioContext.destination);
-            source.start(0);
-            sourceRef.current = source;
-            setIsPlaying(true);
-            startTimeRef.current = audioContext.currentTime;
-            const animate = () => {
-                const elapsed = audioContext.currentTime - startTimeRef.current;
-                const progress = elapsed / buf.duration;
-                if (progress < 1) { 
-                    setPlayheadPos(progress); 
-                    if (scrollContainerRef.current) {
-                        const container = scrollContainerRef.current;
-                        const scrollLeft = progress * container.scrollWidth - container.clientWidth / 2;
-                        container.scrollLeft = scrollLeft;
-                    }
-                    animRef.current = requestAnimationFrame(animate); 
-                } 
-                else { setIsPlaying(false); setPlayheadPos(0); }
-            };
-            animRef.current = requestAnimationFrame(animate);
-            source.onended = () => setIsPlaying(false);
+            const selDur = activeBuffer.duration * (editTrim.end - editTrim.start);
+            const relPct = selDur > 0 ? elapsed / selDur : 0;
+            currentPos = (editTrim.start + relPct * (editTrim.end - editTrim.start)) * 100;
         }
-    };
+        
+        if (currentPos >= 100 && playMode === 'all') currentPos = 100;
+        setPlayheadPos(currentPos); 
+        animationRef.current = requestAnimationFrame(updatePlayhead);
+    }, [isPlaying, activeBuffer, audioContext, playMode, editTrim]);
+
+    useEffect(() => { 
+        if (isPlaying) animationRef.current = requestAnimationFrame(updatePlayhead); 
+        else if (animationRef.current) cancelAnimationFrame(animationRef.current); 
+        return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); }; 
+    }, [isPlaying, updatePlayhead]);
+
+    const renderStudioAudio = useCallback(async (buf: AudioBuffer) => {
+        if(!buf || !audioContext) return null;
+        const t2Buf = files.find(f => f.id === track2Id)?.buffer;
+        const t1Dur = buf.duration;
+        const offSec = mergeOffset / 1000;
+        const totalDur = t2Buf ? Math.max(t1Dur, offSec + t2Buf.duration) : t1Dur;
+        const renderDur = totalDur + (delayTime > 0 ? 2 : 0);
+        const offline = new OfflineAudioContext(buf.numberOfChannels, Math.ceil(renderDur * buf.sampleRate), buf.sampleRate);
+        const finalOutput = offline.createGain(); finalOutput.gain.value = masterGain;
+
+        let currentNode: AudioNode = offline.createGain(); 
+        const inputNode = currentNode;
+        
+        eqBands.forEach(b => {
+            if(b.on) {
+                const f = offline.createBiquadFilter();
+                f.type = b.type;
+                f.frequency.value = b.freq;
+                f.Q.value = b.q;
+                f.gain.value = b.gain;
+                currentNode.connect(f);
+                currentNode = f;
+            }
+        });
+
+        const fShift = offline.createBiquadFilter(); fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
+        const fNodes = [formant.f1, formant.f2, formant.f3, formant.f4].map((freq, idx) => {
+            const f = offline.createBiquadFilter(); f.type = 'peaking'; f.frequency.value = freq; f.Q.value = formant.resonance; f.gain.value = 12 - (idx * 2);
+            return f;
+        });
+        
+        const singerF = offline.createBiquadFilter(); singerF.type = 'peaking'; singerF.frequency.value = 3000; singerF.Q.value = 1.5; singerF.gain.value = singerFormantGain;
+        const compressor = offline.createDynamicsCompressor(); compressor.threshold.value = compThresh;
+
+        currentNode.connect(fShift);
+        let lastFNode = fShift;
+        fNodes.forEach(fn => { lastFNode.connect(fn); lastFNode = fn; });
+        lastFNode.connect(singerF); singerF.connect(compressor);
+        
+        let effectOut: AudioNode = compressor;
+        if (delayTime > 0) {
+            const delay = offline.createDelay(); delay.delayTime.value = delayTime;
+            const fb = offline.createGain(); fb.gain.value = delayFeedback;
+            effectOut.connect(delay); delay.connect(fb); fb.connect(delay);
+            delay.connect(finalOutput); effectOut.connect(finalOutput); 
+        } else {
+            effectOut.connect(finalOutput);
+        }
+
+        const s1 = offline.createBufferSource(); s1.buffer = buf;
+        if (pitchCents !== 0) s1.playbackRate.value = Math.pow(2, pitchCents/1200);
+
+        const autoGain = offline.createGain();
+        if (volumeKeyframes.length > 0) {
+            autoGain.gain.setValueAtTime(volumeKeyframes[0].v, 0);
+            volumeKeyframes.forEach(p => autoGain.gain.linearRampToValueAtTime(p.v, p.t * buf.duration));
+        }
+        
+        s1.connect(autoGain); autoGain.connect(inputNode); s1.start(0);
+
+        if (t2Buf) {
+            const s2 = offline.createBufferSource(); s2.buffer = t2Buf;
+            const g2 = offline.createGain(); g2.gain.value = 0.5;
+            s2.connect(g2); g2.connect(compressor); 
+            s2.start(Math.max(0, offSec));
+        }
+
+        finalOutput.connect(offline.destination);
+        return await offline.startRendering();
+    }, [audioContext, track2Id, mergeOffset, pitchCents, genderShift, masterGain, formant, eqBands, singerFormantGain, compThresh, delayTime, delayFeedback, volumeKeyframes, files]);
+
+    const togglePlay = useCallback(async (mode: 'all' | 'selection') => {
+        if (isPlaying) { handleStop(); return; }
+        if (!activeBuffer) return;
+        const rendered = await renderStudioAudio(activeBuffer);
+        if (!rendered) return;
+
+        const s = audioContext.createBufferSource();
+        s.buffer = rendered;
+        s.connect(audioContext.destination);
+
+        let startOffset = 0;
+        let dur = rendered.duration;
+
+        if (mode === 'selection') {
+            startOffset = editTrim.start * activeBuffer.duration;
+            dur = (editTrim.end - editTrim.start) * activeBuffer.duration;
+            if (isPaused) pauseOffsetRef.current = 0;
+        } else if (isPaused) {
+            startOffset = pauseOffsetRef.current;
+        }
+
+        s.start(0, startOffset, mode === 'selection' ? dur : undefined);
+        sourceRef.current = s;
+        startTimeRef.current = audioContext.currentTime - startOffset;
+        setIsPlaying(true);
+        setPlayheadMode(mode);
+        s.onended = () => { setIsPlaying(false); if(mode === 'all') setPlayheadPos(0); };
+    }, [isPlaying, activeBuffer, renderStudioAudio, audioContext, editTrim, isPaused, handleStop]);
 
     useEffect(() => {
-        if (!canvasRef.current || !activeFile) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
+        if (!isActive) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'Space') { e.preventDefault(); togglePlay('all'); }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isActive, togglePlay]);
+
+    useEffect(() => {
+        if (!canvasRef.current || !activeBuffer) return;
+        const ctx = canvasRef.current.getContext('2d', { alpha: false });
         if (!ctx) return;
-        const { width: w, height: h } = canvas;
-        const buffer = activeFile.buffer;
-        const data = buffer.getChannelData(0);
+        const { width: w, height: h } = canvasRef.current;
+
+        ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0, 0, w, RULER_HEIGHT);
+
+        const dur = activeBuffer.duration;
+        ctx.beginPath(); ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1; ctx.font = '10px Inter'; ctx.fillStyle = '#64748b';
+        let tickInterval = dur > 60 ? 10 : (dur > 30 ? 5 : 1);
+        for (let t = 0; t <= dur; t += tickInterval) {
+            const x = (t / dur) * w;
+            ctx.moveTo(x, 0); ctx.lineTo(x, RULER_HEIGHT); ctx.fillText(t + 's', x + 2, RULER_HEIGHT - 6);
+        }
+        ctx.stroke();
+
+        const data = activeBuffer.getChannelData(0);
         const step = Math.ceil(data.length / w);
+        const waveH = h - RULER_HEIGHT;
+        const amp = waveH / 2;
+        const yOffset = RULER_HEIGHT;
 
-        ctx.clearRect(0,0,w,h); 
-        ctx.fillStyle = '#0f172a'; 
-        ctx.fillRect(0,0,w,h);
-        
-        ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1; ctx.beginPath();
-        for(let i=1; i<20 * zoomLevel; i++){ ctx.moveTo(i * w / (20 * zoomLevel), 0); ctx.lineTo(i * w / (20 * zoomLevel), h); }
-        ctx.stroke();
-
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
-        ctx.fillRect(editTrim.start * w, 0, (editTrim.end - editTrim.start) * w, h);
-
-        ctx.beginPath(); ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1;
-        for(let i=0; i<w; i++){
-            let minVal=1, maxVal=-1;
-            for(let j=0; j<step; j++){
-                const d = data[i*step + j] || 0;
-                if(d < minVal) minVal = d; if(d > maxVal) maxVal = d;
+        ctx.beginPath(); ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1;
+        for (let i = 0; i < w; i++) {
+            let min = 1.0, max = -1.0;
+            const start = i * step;
+            const end = Math.min(start + step, data.length);
+            for (let j = start; j < end; j++) {
+                const datum = data[j]; if (datum < min) min = datum; if (datum > max) max = datum;
             }
-            ctx.moveTo(i, h/2 + minVal * h/2.2); ctx.lineTo(i, h/2 + maxVal * h/2.2);
+            ctx.moveTo(i, yOffset + (amp + min * amp)); ctx.lineTo(i, yOffset + (amp + max * amp));
         }
         ctx.stroke();
 
-        if(showAutomation) {
-            ctx.beginPath(); ctx.strokeStyle = '#f43f5e'; ctx.setLineDash([5, 5]); ctx.lineWidth = 2;
-            volumeKeyframes.forEach((p, i) => {
-                const x = p.t * w; const y = h - (p.v * h * 0.8) - (h * 0.1);
-                if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-            });
-            ctx.stroke(); ctx.setLineDash([]);
-            volumeKeyframes.forEach(p => {
-                ctx.fillStyle = '#f43f5e'; ctx.beginPath(); ctx.arc(p.t * w, h - (p.v * h * 0.8) - (h * 0.1), 4, 0, Math.PI*2); ctx.fill();
-            });
+        const sX = editTrim.start * w, eX = editTrim.end * w;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fillRect(sX, RULER_HEIGHT, eX - sX, waveH);
+        ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
+        ctx.strokeRect(sX, RULER_HEIGHT, eX - sX, waveH);
+
+        if (playheadPos >= 0) {
+            const px = (playheadPos / 100) * w;
+            ctx.beginPath(); ctx.fillStyle = '#ef4444'; ctx.moveTo(px - 6, 0); ctx.lineTo(px + 6, 0); ctx.lineTo(px, RULER_HEIGHT - 5); ctx.fill();
+            ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
         }
-
-        ctx.fillStyle = '#60a5fa'; [editTrim.start, editTrim.end].forEach(pos => { ctx.fillRect(pos * w - 2, 0, 4, h); });
-
-        if(isPlaying || playheadPos > 0) {
-            ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.moveTo(playheadPos * w, 0); ctx.lineTo(playheadPos * w, h); ctx.stroke();
-        }
-    }, [activeFile, editTrim, isPlaying, playheadPos, volumeKeyframes, showAutomation, zoomLevel]);
-
-    const handleCanvasInteraction = (e: React.MouseEvent) => {
-        if(!canvasRef.current || !activeFile) return;
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width;
-        const y = 1 - (e.clientY - rect.top) / rect.height;
 
         if (showAutomation) {
-            const hitIdx = volumeKeyframes.findIndex(p => Math.abs(p.t - x) < (0.02 / zoomLevel) && Math.abs(p.v - y) < 0.1);
-            if (hitIdx !== -1) { setDragging({ type: 'automation', index: hitIdx }); return; } 
-            else if (e.shiftKey) { setVolumeKeyframes([...volumeKeyframes, { t: x, v: Math.max(0, Math.min(1, y)) }].sort((a,b) => a.t - b.t)); return; }
+            ctx.beginPath(); ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 2;
+            volumeKeyframes.forEach((p, i) => { const x = p.t * w, y = yOffset + (1 - p.v) * waveH; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+            ctx.stroke();
+            volumeKeyframes.forEach(p => { const x = p.t * w, y = yOffset + (1 - p.v) * waveH; ctx.beginPath(); ctx.fillStyle = '#fbbf24'; ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); });
         }
-        const nearStart = Math.abs(editTrim.start - x) < (0.01 / zoomLevel);
-        const nearEnd = Math.abs(editTrim.end - x) < (0.01 / zoomLevel);
-        if (nearStart) setDragging({ type: 'selection', index: 0 });
-        else if (nearEnd) setDragging({ type: 'selection', index: 1 });
-        else { setEditTrim({ start: x, end: x }); setDragging({ type: 'selection', index: 1 }); }
+    }, [activeBuffer, editTrim, playheadPos, showAutomation, volumeKeyframes]);
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (!canvasRef.current || !activeBuffer) return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        if (e.clientY - rect.top < RULER_HEIGHT) {
+            if (isPlaying) stopPlayback(); setIsPaused(true);
+            setPlayheadPos(xPct * 100); pauseOffsetRef.current = xPct * activeBuffer.duration; setDragTarget('playhead');
+        } else if (!showAutomation) {
+            setEditTrim({ start: xPct, end: xPct }); setDragTarget('selection');
+        }
+    };
+    
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!dragTarget || !canvasRef.current || !activeBuffer) return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        if (dragTarget === 'playhead') { setPlayheadPos(xPct * 100); pauseOffsetRef.current = xPct * activeBuffer.duration; }
+        else if (dragTarget === 'selection') setEditTrim(prev => ({ ...prev, end: xPct }));
     };
 
-    const handleMouseMove = (e: React.MouseEvent) => {
-        if (!dragging || !canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect();
-        const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
-        if (dragging.type === 'selection') {
-            if (dragging.index === 0) setEditTrim(prev => ({ ...prev, start: Math.min(x, prev.end - 0.001) }));
-            else setEditTrim(prev => ({ ...prev, end: Math.max(x, prev.start + 0.001) }));
-        } else if (dragging.type === 'automation' && dragging.index !== undefined) {
-            setVolumeKeyframes(prev => prev.map((p, i) => i === dragging.index ? { t: x, v: y } : p).sort((a,b)=>a.t-b.t));
-        }
+    const formatTime = (sec: number) => {
+        const m = Math.floor(sec / 60), s = Math.floor(sec % 60), ms = Math.floor((sec % 1) * 1000);
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
     };
+
+    const sideTabs = [
+        { id: 'effects' as const, label: t.studio.tabEffects },
+        { id: 'formant' as const, label: t.studio.tabFormant },
+        { id: 'formantFilter' as const, label: t.studio.tabFilter }
+    ];
 
     return (
-        <div className="flex-1 flex flex-col p-6 gap-6 font-sans font-bold overflow-hidden" style={{ display: isActive ? 'flex' : 'none' }}>
-            <div className="flex-1 flex gap-6 min-h-0">
-                <div className="flex-1 bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-4 shrink-0">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-blue-500 rounded-xl text-white font-black"><Activity size={24}/></div>
-                            <h2 className="text-xl text-slate-800 tracking-tight font-black truncate max-w-[300px]">{activeFile ? activeFile.name : 'Studio Editor'}</h2>
+        <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold" onMouseUp={() => setDragTarget(null)}>
+            <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
+                    <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+                        <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 shadow-sm">
+                            <button onClick={handleUndo} disabled={undoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30" title={t.studio.undo}><Undo2 size={16}/></button>
+                            <button onClick={handleRedo} disabled={redoStack.length===0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30" title={t.studio.redo}><Redo2 size={16}/></button>
+                            <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                            <button onClick={()=>setEditTrim({start:0, end:1})} className="p-1.5 hover:bg-white rounded text-slate-600" title={t.studio.selectAll}><ScanLine size={16}/></button>
+                            <button 
+                                onClick={handleCutSelection} 
+                                className="p-1.5 hover:bg-red-500 hover:text-white rounded text-red-500 transition-colors" 
+                                title={t.studio.cut}
+                            >
+                                <Scissors size={18}/>
+                            </button>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={handleLocalUndo} disabled={undoStack.length === 0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 disabled:opacity-30"><Undo2 size={18}/></button>
-                            <button onClick={handleLocalRedo} disabled={redoStack.length === 0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 disabled:opacity-30"><Redo2 size={18}/></button>
+                        <div className="w-px h-6 bg-slate-300 mx-2"></div>
+                        <button onClick={()=>setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border transition-all ${showAutomation ? 'bg-amber-100 text-amber-700 border-amber-300 shadow-inner' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}><Zap size={14}/> {t.studio.automation}</button>
+                        <div className="w-px h-6 bg-slate-300 mx-2"></div>
+                        <div className="flex bg-slate-100 border border-slate-200 p-1 rounded-lg gap-1 shadow-sm">
+                            <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${isPlaying && playMode==='all' ? 'bg-white shadow text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playMode==='all' ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} {t.studio.playAll}</button>
+                            <button onClick={() => togglePlay('selection')} className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${isPlaying && playMode==='selection' ? 'bg-white shadow text-indigo-600' : 'hover:bg-white text-slate-600'}`}>{isPlaying && playMode==='selection' ? <Pause size={14} fill="currentColor"/> : <ScanLine size={14}/>} {t.studio.playSel}</button>
+                            <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 hover:bg-white text-red-500 transition-colors"><Square size={14} fill="currentColor"/> {t.common.stop}</button>
+                            <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                            <button 
+                                onClick={handleSaveSelection} 
+                                className="px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 hover:bg-white text-blue-600 transition-all"
+                                title={t.studio.saveSelTooltip}
+                            >
+                                <FilePlus size={14}/> {t.studio.saveSel}
+                            </button>
+                        </div>
+                        <div className="w-px h-6 bg-slate-300 mx-2"></div>
+                        <div className="bg-slate-800 text-green-400 font-mono text-sm px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner min-w-[100px] flex justify-center tracking-widest font-black">
+                            {formatTime((playheadPos / 100) * (activeBuffer?.duration || 0))}
                         </div>
                     </div>
-                    {!activeFile ? (
-                        <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-4">
-                            <AudioLines size={64} className="opacity-20"/>
-                            <p className="font-black">파일을 선택하여 편집을 시작하세요</p>
-                        </div>
-                    ) : (
-                        <div className="flex-1 flex flex-col gap-6 min-h-0">
-                            <div ref={scrollContainerRef} className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative overflow-x-auto overflow-y-hidden shadow-inner group custom-scrollbar">
-                                <canvas 
-                                    ref={canvasRef} 
-                                    width={1200 * zoomLevel} height={400} 
-                                    className="h-full cursor-crosshair" 
-                                    onMouseDown={handleCanvasInteraction} 
-                                    onMouseMove={handleMouseMove} 
-                                    onMouseUp={() => setDragging(null)}
-                                />
-                                <div className="absolute top-4 left-4 flex gap-2">
-                                    <button onClick={() => setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-2 ${showAutomation ? 'bg-rose-500 text-white shadow-lg' : 'bg-black/50 text-slate-400 hover:bg-black/70'}`}><Volume2 size={14}/> {t.automation}</button>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-7 gap-4 shrink-0">
-                                <button onClick={handleCrop} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-blue-50 transition-all"><Scissors size={18} className="text-blue-500"/><span className="text-[9px] uppercase font-black">{t.crop}</span></button>
-                                <button onClick={handleDeleteRange} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-red-50 transition-all"><Trash2 size={18} className="text-red-500"/><span className="text-[9px] uppercase font-black">{t.delete}</span></button>
-                                <button onClick={() => handleFade('in')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><TrendingUp size={18} className="text-cyan-500"/><span className="text-[9px] uppercase font-black">{t.fadeIn}</span></button>
-                                <button onClick={() => handleFade('out')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><TrendingDown size={18} className="text-cyan-600"/><span className="text-[9px] uppercase font-black">{t.fadeOut}</span></button>
-                                <button onClick={handleReverse} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-indigo-50 transition-all"><ArrowLeftRight size={18} className="text-indigo-500"/><span className="text-[9px] uppercase font-black">Reverse</span></button>
-                                <button onClick={handleNormalize} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-amber-50 transition-all"><Layers size={18} className="text-amber-500"/><span className="text-[9px] uppercase font-black">Normalize</span></button>
-                                <button onClick={handleSpeed} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-purple-50 transition-all"><Gauge size={18} className="text-purple-500"/><span className="text-[9px] uppercase font-black">Speed</span></button>
-                            </div>
-                            <div className="flex justify-between items-center bg-slate-100 p-4 rounded-2xl border border-slate-200 gap-6">
-                                <div className="flex items-center gap-6">
-                                    <div className="flex flex-col"><span className="text-[10px] text-slate-400 uppercase">Master Gain</span><div className="flex items-center gap-3"><input type="range" min="0" max="2" step="0.05" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-24 h-1.5 bg-slate-300 rounded-full appearance-none accent-slate-600"/><span className="text-xs font-black w-8">{Math.round(masterGain*100)}%</span></div></div>
-                                    <div className="flex flex-col"><span className="text-[10px] text-slate-400 uppercase">Zoom</span><div className="flex items-center gap-3"><input type="range" min="1" max="10" step="1" value={zoomLevel} onChange={e=>setZoomLevel(Number(e.target.value))} className="w-24 h-1.5 bg-slate-300 rounded-full appearance-none accent-blue-600"/><ZoomIn size={14} className="text-blue-600"/></div></div>
-                                </div>
-                                <div className="flex gap-3">
-                                    <button onClick={togglePlay} className="px-10 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all active:scale-95">{isPlaying ? <Square size={20} fill="currentColor"/> : <Play size={20} fill="currentColor"/>}{isPlaying ? t.stop : t.preview}</button>
-                                    <button onClick={async () => { const b = await renderProcessed(); if(b) onUpdateFile(b); }} className="px-6 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all active:scale-95"><Save size={20}/> {t.save}</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                         <button 
+                             onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Result_Mix"); } }} 
+                             className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-blue-100 active:scale-95 transition-all"
+                         >
+                             <Save size={16}/> {t.studio.saveResult}
+                         </button>
+                    </div>
                 </div>
-                <div className="w-80 flex flex-col gap-6 shrink-0 overflow-y-auto custom-scrollbar">
-                    <div className="bg-white/60 rounded-3xl border border-slate-300 p-6 flex flex-col gap-6 shadow-sm flex-1">
-                        <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
-                            <button onClick={() => setSideTab('effects')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${sideTab==='effects' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t.effects}</button>
-                            <button onClick={() => setSideTab('formant')} className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${sideTab==='formant' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t.formants}</button>
+
+                <div className="flex flex-col gap-6">
+                    <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-inner overflow-hidden select-none h-[500px] relative">
+                         <canvas ref={canvasRef} width={1200} height={500} className={`w-full h-full object-cover transition-opacity duration-300 ${showAutomation ? 'cursor-crosshair opacity-90' : 'cursor-text'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onContextMenu={e=>e.preventDefault()} />
+                         {!activeBuffer && (
+                            <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-black uppercase tracking-widest bg-slate-900/50 backdrop-blur-sm">
+                                {t.studio.empty}
+                            </div>
+                         )}
+                    </div>
+
+                    <div className="flex gap-6 flex-col lg:flex-row">
+                        <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative flex flex-col shadow-inner h-[320px] overflow-hidden">
+                            <div className="flex-1 min-h-0 relative z-0">
+                                <ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current} />
+                            </div>
                         </div>
-                        {sideTab === 'effects' ? ( <div className="flex-1 flex flex-col gap-4"><ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={sourceRef.current} /></div> ) 
-                        : ( <div className="flex-1"><FormantPad formant={formant} onChange={setFormant} /></div> )}
+
+                        <div className="w-full lg:w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm h-[320px]">
+                            <div className="flex border-b border-slate-200 bg-slate-50/50">
+                                {sideTabs.map(({id, label}) => (
+                                    <button key={id} onClick={()=>setSideTab(id)} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-tight transition-all ${sideTab===id?'bg-white text-indigo-600 border-b-2 border-indigo-500 shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>{label}</button>
+                                ))}
+                            </div>
+                            <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
+                                {sideTab === 'effects' && (
+                                    <div className="space-y-6 animate-in fade-in">
+                                        <div className="space-y-3">
+                                            <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><MoveHorizontal size={14}/> {t.studio.fades}</h3>
+                                            <div className="flex gap-2">
+                                                 <button onClick={()=>handleFade('in')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingUp size={14}/> {t.studio.fadeIn}</button>
+                                                 <button onClick={()=>handleFade('out')} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold text-slate-600 flex items-center justify-center gap-2 transition-all shadow-sm"><TrendingDown size={14}/> {t.studio.fadeOut}</button>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between items-center">
+                                                <h3 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Sparkles size={14}/> {t.studio.delay}</h3>
+                                                <span className="text-[10px] font-mono text-indigo-600">{delayTime.toFixed(2)}s</span>
+                                            </div>
+                                            <input type="range" min="0" max="1" step="0.05" value={delayTime} onChange={e=>setDelayTime(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                        </div>
+                                    </div>
+                                )}
+                                {sideTab === 'formant' && (
+                                    <div className="space-y-5 animate-in fade-in">
+                                        {[formant.f1, formant.f2, formant.f3, formant.f4].map((f, i) => (
+                                            <div key={i} className="flex flex-col gap-1.5">
+                                                <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase">
+                                                    <span>{t.studio.formant} {i+1}</span>
+                                                    <span className="text-cyan-600 font-mono">{Math.round(f)}Hz</span>
+                                                </div>
+                                                <input type="range" min="200" max="5000" value={f} onChange={e => {
+                                                    const n = [formant.f1, formant.f2, formant.f3, formant.f4];
+                                                    n[i] = Number(e.target.value);
+                                                    setFormant({ ...formant, f1: n[0], f2: n[1], f3: n[2], f4: n[3] });
+                                                }} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-cyan-500" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {sideTab === 'formantFilter' && (
+                                    <div className="space-y-4 animate-in fade-in">
+                                        <FormantPad formant={formant} onChange={setFormant}/>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

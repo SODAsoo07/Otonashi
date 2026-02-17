@@ -1,5 +1,4 @@
 {
-  "name": "OTONASHI",
-  "description": "A unique vocal synthesizer that articulates non-human sound sources (synths, noise) into speech-like audio.", 
-  "requestFramePermissions": []
+  "name": "Otonashi",
+  "description": "A multimodal AI assistant powered by Gemini, featuring real-time chat, vision analysis, and audio interaction with bilingual support (English/Korean)."
 }
