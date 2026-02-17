@@ -1,10 +1,6 @@
 import { app, BrowserWindow, shell, globalShortcut } from 'electron';
 import path from 'path';
 import { platform } from 'os';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Prevent multiple instances
 if (!app.requestSingleInstanceLock()) {
@@ -23,28 +19,25 @@ async function createWindow() {
     title: 'OTONASHI',
     backgroundColor: '#f8f8f6',
     webPreferences: {
+      // CommonJS 환경이므로 __dirname을 직접 사용할 수 있습니다.
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false, // Temporarily disabled to allow Tailwind CDN loading from local file context
+      webSecurity: false,
     },
-    show: false, // Wait until ready-to-show to prevent flickering
+    show: false,
   });
 
-  win.setMenuBarVisibility(false); // Hide default menu bar
+  win.setMenuBarVisibility(false);
 
-  // Check if we are running in development mode
   const isDev = process.env.NODE_ENV === 'development';
 
   if (isDev) {
-    // In dev, load from the Vite dev server
     await win.loadURL('http://localhost:5173');
     win.webContents.openDevTools();
   } else {
-    // In production, load the built html file
+    // 빌드된 파일 구조에 맞춰 경로를 지정합니다.
     await win.loadFile(path.join(__dirname, '../dist/index.html'));
-    
-    // DEBUG: Force open DevTools in detached mode
     win.webContents.openDevTools({ mode: 'detach' }); 
   }
 
@@ -52,7 +45,6 @@ async function createWindow() {
     win?.show();
   });
 
-  // Open external links in default browser, not Electron
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https:')) shell.openExternal(url);
     return { action: 'deny' };
@@ -62,7 +54,6 @@ async function createWindow() {
 app.whenReady().then(() => {
   createWindow();
   
-  // Register F12 global shortcut as a backup
   globalShortcut.register('F12', () => {
     if (win) {
       if (win.webContents.isDevToolsOpened()) {
@@ -81,7 +72,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
-  // Unregister all shortcuts.
   globalShortcut.unregisterAll();
 });
 
