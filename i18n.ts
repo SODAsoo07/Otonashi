@@ -19,12 +19,6 @@ export const i18n = {
         openProject: "프로젝트 불러오기"
       }
     },
-    auth: {
-      title: "OTONASHI BETA",
-      desc: "이 애플리케이션은 현재 비공개 테스트 중입니다. 액세스 코드를 입력해주세요.",
-      disclaimer: "※ 영어 UI는 기계 번역으로 인해 어색할 수 있습니다.",
-      error: "올바르지 않은 코드입니다. 다시 시도해주세요."
-    },
     fileRack: {
       title: "파일 보관함",
       upload: "파일 업로드",
@@ -51,7 +45,7 @@ export const i18n = {
         desc: "화이트/핑크 노이즈와 필터를 조합하여 'S', 'T', 'K' 같은 자음을 합성합니다. ADSR 엔벨로프로 어택과 지속 시간을 조절하세요."
       },
       mixer: {
-        title: "C-V 믹서 (자음-모음)",
+        title: "C-V mixer (자음-모음)",
         desc: "두 개의 오디오 파일을 정밀하게 결합합니다. 자음의 Stretch를 조절하여 명료도를 바꾸고, 볼륨 모드에서 크로스페이드를 그려 자연스러운 연결을 만드세요."
       },
       sim: {
@@ -74,7 +68,14 @@ export const i18n = {
       apply: "적용",
       cancel: "취소",
       confirm: "확인",
-      wav: "WAV 저장"
+      wav: "WAV 저장",
+      crop: "자르기",
+      delete: "삭제",
+      fadeIn: "페이드 인",
+      fadeOut: "페이드 아웃",
+      automation: "오토메이션",
+      effects: "이펙트",
+      formants: "포먼트"
     }
   },
   en: {
@@ -93,12 +94,6 @@ export const i18n = {
         saveProject: "Save Project",
         openProject: "Open Project"
       }
-    },
-    auth: {
-      title: "OTONASHI BETA",
-      desc: "This application is currently in private testing. Please enter the access code.",
-      disclaimer: "※ English translation is machine-generated and may be inaccurate.",
-      error: "Incorrect code. Please try again."
     },
     fileRack: {
       title: "File Rack",
@@ -149,7 +144,14 @@ export const i18n = {
       apply: "Apply",
       cancel: "Cancel",
       confirm: "Confirm",
-      wav: "Save WAV"
+      wav: "Save WAV",
+      crop: "Crop",
+      delete: "Delete",
+      fadeIn: "Fade In",
+      fadeOut: "Fade Out",
+      automation: "Automation",
+      effects: "Effects",
+      formants: "Formants"
     }
   }
 };
