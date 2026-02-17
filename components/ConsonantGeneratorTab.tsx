@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines, Wind, Music } from 'lucide-react';
+import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines } from 'lucide-react';
 import { AudioFile, EQBand } from '../types';
 import ParametricEQ from './ParametricEQ';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface ConsonantGeneratorTabProps {
   audioContext: AudioContext;
@@ -18,6 +19,7 @@ interface FilterState {
 }
 
 const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
+    const { t } = useLanguage();
     // Envelope Params
     const [duration, setDuration] = useState(200); 
     const [attack, setAttack] = useState(10); 
@@ -25,7 +27,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [sustain, setSustain] = useState(0.2); 
     const [release, setRelease] = useState(100); 
     
-    // Filter Params
+    // Filter Params - Refactored for multiple simultaneous filters
     const [hpFilter, setHpFilter] = useState<FilterState>({ on: false, freq: 2000, q: 1.0 });
     const [lpFilter, setLpFilter] = useState<FilterState>({ on: false, freq: 8000, q: 1.0 });
     const [bpFilter, setBpFilter] = useState<FilterState>({ on: false, freq: 4000, q: 1.0 });
@@ -46,6 +48,8 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         { id: 3, type: 'highshelf', freq: 10000, gain: 0, q: 0.7, on: true }
     ]);
     const [showEQ, setShowEQ] = useState(false);
+    
+    // File Source Params
     const [selectedFileId, setSelectedFileId] = useState("");
 
     const [isPlaying, setIsPlaying] = useState(false);
@@ -58,34 +62,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     // History
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
-
-    const applyGeneratorPreset = (type: 'unvoiced' | 'voiced') => {
-        if (type === 'unvoiced') {
-            setDuration(150);
-            setAttack(5);
-            setDecay(80);
-            setSustain(0.05);
-            setRelease(50);
-            setSourceMix(0.0); // 100% Noise
-            setNoiseType('white');
-            setHpFilter({ on: true, freq: 4000, q: 1.2 });
-            setBpFilter({ on: false, freq: 4000, q: 1.0 });
-            setLpFilter({ on: false, freq: 8000, q: 1.0 });
-        } else {
-            setDuration(300);
-            setAttack(40);
-            setDecay(100);
-            setSustain(0.4);
-            setRelease(100);
-            setSourceMix(0.4); // 40% Voice, 60% Noise
-            setVoiceWave('sawtooth');
-            setVoiceFreq(140);
-            setHpFilter({ on: false, freq: 2000, q: 1.0 });
-            setBpFilter({ on: true, freq: 3500, q: 1.5 });
-            setLpFilter({ on: true, freq: 12000, q: 0.7 });
-        }
-        commitChange(`${type} 자음 프리셋 적용`);
-    };
+    const [showHistory, setShowHistory] = useState(false);
 
     const getCurrentState = useCallback(() => ({
         duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands
@@ -101,7 +78,9 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         setHistoryIndex(prev => Math.min(prev + 1, 9));
     }, [getCurrentState, historyIndex]);
 
-    useEffect(() => { if (history.length === 0) saveHistory("초기 상태"); }, []);
+    useEffect(() => {
+        if (history.length === 0) saveHistory("Initial");
+    }, []);
 
     const restoreState = (state: any) => {
         setDuration(state.duration); setAttack(state.attack); setDecay(state.decay); setSustain(state.sustain); setRelease(state.release);
@@ -113,7 +92,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
     const handleUndo = () => { if (historyIndex > 0) { const p = historyIndex - 1; restoreState(history[p].state); setHistoryIndex(p); } };
     const handleRedo = () => { if (historyIndex < history.length - 1) { const n = historyIndex + 1; restoreState(history[n].state); setHistoryIndex(n); } };
-    const commitChange = (label: string = "파라미터 변경") => saveHistory(label);
+    const commitChange = (label: string = "Param Change") => saveHistory(label);
 
     const generateAudio = async () => {
         if (!audioContext) return null;
@@ -171,6 +150,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
         // Filter Chain
         let currentNode: AudioNode = sourceMixNode;
+        
         if (hpFilter.on) {
             const f = offline.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hpFilter.freq; f.Q.value = hpFilter.q;
             currentNode.connect(f); currentNode = f;
@@ -184,8 +164,12 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             currentNode.connect(f); currentNode = f;
         }
 
+        // Envelope (ADSR)
         const amp = offline.createGain();
-        const t0 = 0, tAtt = attack / 1000, tDec = decay / 1000, tRel = release / 1000;
+        const t0 = 0;
+        const tAtt = attack / 1000;
+        const tDec = decay / 1000;
+        const tRel = release / 1000;
         const decayEndTime = t0 + tAtt + tDec;
         const releaseStartTime = Math.max(decayEndTime, totalDurationSec - tRel);
 
@@ -197,23 +181,33 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
         currentNode.connect(amp);
         
+        // Master EQ Chain
         let eqNode: AudioNode = amp;
         eqBands.forEach(b => {
             if(b.on) {
-                const f = offline.createBiquadFilter(); f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = b.gain;
-                eqNode.connect(f); eqNode = f;
+                const f = offline.createBiquadFilter();
+                f.type = b.type;
+                f.frequency.value = b.freq;
+                f.Q.value = b.q;
+                f.gain.value = b.gain;
+                eqNode.connect(f);
+                eqNode = f;
             }
         });
         
         eqNode.connect(offline.destination);
+
         return await offline.startRendering();
     };
 
     const handleGenerateAndPlay = useCallback(async () => {
         if(isPlaying) {
              if(sourceRef.current) { try{sourceRef.current.stop()}catch(e){} sourceRef.current = null; }
-             setIsPlaying(false); setPlayheadTime(0); return;
+             setIsPlaying(false);
+             setPlayheadTime(0);
+             return;
         }
+
         const buf = await generateAudio();
         if (buf) {
             setGeneratedBuffer(buf);
@@ -228,6 +222,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         }
     }, [isPlaying, generateAudio, audioContext]);
 
+    // Spacebar
     useEffect(() => { 
         if (!isActive) return;
         const handleKey = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); handleGenerateAndPlay(); } }; 
@@ -240,13 +235,15 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         if (buf) { onAddToRack(buf, `Gen_Sound`); }
     };
 
+    // Visualization
     useEffect(() => {
         const draw = async () => {
             const buf = generatedBuffer || await generateAudio();
             if(!buf || !canvasRef.current) return;
             const ctx = canvasRef.current.getContext('2d'); if(!ctx) return;
-            const w = canvasRef.current.width, h = canvasRef.current.height;
+            const w = canvasRef.current.width; const h = canvasRef.current.height;
             const data = buf.getChannelData(0); const step = Math.ceil(data.length / w);
+            
             ctx.clearRect(0,0,w,h); ctx.fillStyle = '#1e293b'; ctx.fillRect(0,0,w,h);
             ctx.beginPath(); ctx.strokeStyle = '#22d3ee'; ctx.lineWidth = 2;
             for(let i=0; i<w; i++){
@@ -257,6 +254,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                 ctx.moveTo(i, h/2 + min * h/2.5); ctx.lineTo(i, h/2 + max * h/2.5);
             }
             ctx.stroke();
+
             if (playheadTime > 0) {
                 const durationSec = duration / 1000; const px = (playheadTime / durationSec) * w;
                 if(px >= 0 && px <= w) { ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke(); }
@@ -274,14 +272,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <input type="checkbox" checked={state.on} onChange={e => onChange({...state, on: e.target.checked})} className="rounded accent-indigo-500"/> 
                     {label}
                 </label>
-                {state.on && (
-                    <input 
-                        type="number" 
-                        value={state.freq} 
-                        onChange={e => onChange({...state, freq: Number(e.target.value)})} 
-                        className="w-16 text-[10px] text-slate-900 font-mono font-black bg-white border border-slate-300 rounded px-1 text-right focus:outline-none focus:border-indigo-500"
-                    />
-                )}
+                {state.on && <span className="text-[10px] text-indigo-600 font-mono">{state.freq}Hz</span>}
             </div>
             {state.on && (
                 <div className="space-y-1">
@@ -289,13 +280,6 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-400">Q</span>
                         <input type="range" min="0.1" max="20" step="0.1" value={state.q} onChange={e=>onChange({...state, q: Number(e.target.value)})} className="flex-1 h-1.5 bg-slate-200 rounded-full appearance-none accent-slate-400"/>
-                        <input 
-                            type="number" 
-                            step="0.1"
-                            value={state.q} 
-                            onChange={e => onChange({...state, q: Number(e.target.value)})} 
-                            className="w-10 text-[9px] text-slate-500 font-mono bg-transparent text-right outline-none"
-                        />
                     </div>
                 </div>
             )}
@@ -308,13 +292,15 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                  <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-cyan-500 rounded-xl text-white shadow-lg shadow-cyan-200"><Wand2 size={24}/></div>
-                        <h2 className="text-xl text-slate-800 tracking-tight font-black">자음 생성기</h2>
+                        <h2 className="text-xl text-slate-800 tracking-tight font-black">{t.generator.title}</h2>
                     </div>
-                    <div className="flex items-center gap-2 font-black">
-                         <button onClick={()=>applyGeneratorPreset('unvoiced')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-black text-slate-900 transition-all flex items-center gap-2 shadow-sm"><Wind size={14}/> 무성 자음</button>
-                         <button onClick={()=>applyGeneratorPreset('voiced')} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-black text-slate-900 transition-all flex items-center gap-2 shadow-sm"><Music size={14}/> 유성 자음</button>
+                    <div className="flex items-center gap-2">
+                         <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> {t.generator.masterEq}</button>
                          <div className="w-px h-6 bg-slate-300 mx-2"></div>
-                         <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
+                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
+                            <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Undo2 size={16}/></button>
+                            <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Redo2 size={16}/></button>
+                         </div>
                     </div>
                  </div>
 
@@ -330,21 +316,21 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <div className="lg:col-span-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2" onMouseUp={()=>commitChange()}>
                         {/* Source Selection */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                            <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={16}/> 소스 (Source)</h3>
+                            <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={16}/> {t.generator.source}</h3>
                             <div className="space-y-3">
                                 <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
-                                    <button onClick={()=>setBaseSource('synth')} className={`flex-1 py-1.5 rounded text-xs font-black transition-all ${baseSource==='synth'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>신디사이저</button>
-                                    <button onClick={()=>setBaseSource('file')} className={`flex-1 py-1.5 rounded text-xs font-black transition-all ${baseSource==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일</button>
+                                    <button onClick={()=>setBaseSource('synth')} className={`flex-1 py-1.5 rounded text-xs font-bold transition-all ${baseSource==='synth'?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>{t.generator.synth}</button>
+                                    <button onClick={()=>setBaseSource('file')} className={`flex-1 py-1.5 rounded text-xs font-bold transition-all ${baseSource==='file'?'bg-white text-indigo-600 shadow-sm':'text-slate-500'}`}>{t.generator.file}</button>
                                 </div>
                                 {baseSource==='file' ? (
-                                    <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 border rounded text-xs font-black text-slate-900"><option value="">파일 선택</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                                    <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 border rounded text-xs"><option value="">{t.generator.fileSelect}</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                                 ) : (
                                     <div className="space-y-3">
-                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Noise Mix</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
-                                        <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button></div>
+                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>{t.generator.noiseMix}</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                        <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>{t.generator.whiteNoise}</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>{t.generator.pinkNoise}</button></div>
                                         <div className="h-px bg-slate-100"></div>
-                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Voice Mix</span><span>{Math.round(sourceMix*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={sourceMix} onChange={e=>setSourceMix(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
-                                        <div className="flex gap-1 overflow-x-auto pb-1">{['sawtooth', 'square', 'sine', 'triangle'].map(t=>(<button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`px-2 py-1 text-[10px] font-black rounded border uppercase flex-shrink-0 ${voiceWave===t?'bg-indigo-500 text-slate-900':'bg-white text-slate-500'}`}>{t}</button>))}</div>
+                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>{t.generator.voiceMix}</span><span>{Math.round(sourceMix*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={sourceMix} onChange={e=>setSourceMix(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                        <div className="flex gap-1 overflow-x-auto pb-1">{['sawtooth', 'square', 'sine', 'triangle'].map(t=>(<button key={t} onClick={()=>setVoiceWave(t as OscillatorType)} className={`px-2 py-1 text-[10px] rounded border uppercase flex-shrink-0 ${voiceWave===t?'bg-indigo-500 text-white':'bg-white text-slate-500'}`}>{t}</button>))}</div>
                                         <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Freq</span><span>{voiceFreq} Hz</span></div><input type="range" min="50" max="1000" value={voiceFreq} onChange={e=>setVoiceFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                     </div>
                                 )}
@@ -353,7 +339,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         
                         {/* Multi-Filter Section */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                            <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Sliders size={16}/> 멀티 필터</h3>
+                            <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Sliders size={16}/> {t.generator.multiFilter}</h3>
                             <div className="space-y-3">
                                 <FilterControl label="Highpass (>2k)" state={hpFilter} onChange={setHpFilter} minFreq={2000} />
                                 <FilterControl label="Bandpass (All)" state={bpFilter} onChange={setBpFilter} minFreq={100} />
@@ -363,7 +349,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
                         {/* Envelope Section */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-5">
-                            <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Activity size={16}/> 엔벨로프 (ADSR)</h3>
+                            <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Activity size={16}/> {t.generator.envelope}</h3>
                             <div className="space-y-4">
                                 <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Duration</span><span>{duration} ms</span></div><input type="range" min="20" max="1000" value={duration} onChange={e=>setDuration(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -380,7 +366,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     <div className="lg:col-span-2 flex flex-col gap-4">
                         <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative overflow-hidden shadow-inner group">
                              <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-cover opacity-80"/>
-                             <div className="absolute top-4 right-4 flex flex-col items-end gap-1 font-black">
+                             <div className="absolute top-4 right-4 flex flex-col items-end gap-1">
                                 {hpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">HP {hpFilter.freq}Hz</span>}
                                 {bpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">BP {bpFilter.freq}Hz</span>}
                                 {lpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">LP {lpFilter.freq}Hz</span>}
@@ -389,20 +375,20 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         <div className="h-24 bg-white rounded-2xl border border-slate-300 p-6 flex items-center justify-between shadow-sm">
                              <div className="flex items-center gap-6">
                                 <div className="flex flex-col gap-1">
-                                    <span className="text-xs font-black text-slate-400 uppercase tracking-tighter">Output Gain</span>
+                                    <span className="text-xs font-black text-slate-400 uppercase">{t.generator.outputGain}</span>
                                     <div className="flex items-center gap-3">
                                         <Volume2 size={20} className="text-slate-500"/>
                                         <input type="range" min="0" max="2" step="0.1" value={gain} onChange={e=>setGain(Number(e.target.value))} className="w-32 h-2 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
-                                        <span className="text-sm font-black text-slate-900 w-10">{Math.round(gain*100)}%</span>
+                                        <span className="text-sm font-bold text-slate-600 w-10">{Math.round(gain*100)}%</span>
                                     </div>
                                 </div>
                              </div>
                              <div className="flex gap-4">
-                                 <button onClick={handleGenerateAndPlay} className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all active:scale-95 text-base">
-                                    <Play size={20} fill="currentColor"/> {isPlaying ? '재생 중...' : '생성 및 재생'}
+                                 <button onClick={handleGenerateAndPlay} className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 transition-all active:scale-95 text-base">
+                                    <Play size={20} fill="currentColor"/> {isPlaying ? t.generator.playing : t.generator.genAndPlay}
                                  </button>
-                                 <button onClick={handleSave} className="px-8 py-4 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all active:scale-95 text-base">
-                                    <Save size={20}/> 보관함에 저장
+                                 <button onClick={handleSave} className="px-8 py-4 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl font-bold flex items-center gap-2 transition-all active:scale-95 text-base">
+                                    <Save size={20}/> {t.generator.saveToRack}
                                  </button>
                              </div>
                         </div>
