@@ -40,8 +40,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [hoveredKeyframe, setHoveredKeyframe] = useState<{trackId: string, index: number} | null>(null);
     const [draggingKeyframe, setDraggingKeyframe] = useState<{trackId?: string, index?: number, isPlayhead?: boolean} | null>(null);
     
-    // Layout State
-    const [sidebarWidth, setSidebarWidth] = useState(420);
+    // Layout State - Reduced default sidebar width to give more room to simulator
+    const [sidebarWidth, setSidebarWidth] = useState(320);
     const [timelineHeight, setTimelineHeight] = useState(220);
     const [isResizingSidebar, setIsResizingSidebar] = useState(false);
     const [isResizingTimeline, setIsResizingTimeline] = useState(false);
@@ -459,7 +459,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             <div className="flex-1 flex gap-0 shrink-0 min-h-0">
                 <div className="flex-1 bg-white/60 rounded-2xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
                     <div className="flex-1 relative flex items-center justify-center px-2 py-2 overflow-hidden select-none">
-                        <svg viewBox="100 50 280 340" preserveAspectRatio="xMidYMid meet" className="w-full h-full drop-shadow-xl overflow-visible max-w-full max-h-full">
+                        <svg viewBox="90 40 340 360" preserveAspectRatio="xMidYMid meet" className="w-[68%] h-[68%] drop-shadow-xl overflow-visible max-w-full max-h-full">
                             {/* 성도 가이드 라인 (외형) */}
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#e2e8f0" strokeWidth="4" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#e2e8f0" strokeWidth="4" />
