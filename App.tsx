@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2, Languages } from 'lucide-react';
 import FileRack from './components/FileRack';
