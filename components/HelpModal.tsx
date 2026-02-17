@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Info, X, Activity, Combine, Grid, Wand2, MousePointer2, Zap, AudioLines, Download, Layers, Sparkles, Mic2, Play, Save, Undo2, PencilLine, Spline } from 'lucide-react';
 
@@ -19,8 +18,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => (
       <div className="p-6 overflow-y-auto custom-scrollbar text-slate-600 text-sm space-y-8">
         <div className="flex flex-col gap-1 border-b border-slate-100 pb-4">
             <p className="text-[10px] text-slate-400 italic">※ 이 앱의 소스코드는 AI를 통해 작성되었습니다.</p>
-            <p className="text-xs text-slate-500 font-medium">OTONASHI는 웹 기반의 성도(Vocal Tract) 시뮬레이터이자 오디오 보코더 도구입니다.</p>
-            <p className="text-[11px] text-slate-400 mt-1">인간의 목소리를 똑같이 흉내 내는 것이 목표가 아닙니다. 신디사이저, 노이즈, 악기 소리 등 <b>비인간적인 소스(Non-human Source)에 인간의 발음 특성(Articulation)을 부여</b>하여, 마치 기계나 악기가 말하는 듯한 독특한 사운드를 만드는 것이 목적입니다.</p>
+            <p className="text-xs text-slate-500 font-medium">OTONASHI는 웹 기반의 **보컬 신디사이저(Vocal Synthesizer)**이자 성도 시뮬레이터입니다.</p>
+            <p className="text-[11px] text-slate-400 mt-1">인간의 목소리뿐만 아니라 신디사이저, 노이즈 등 다양한 소스(Source)에 **발음(Articulation)을 부여**하여 독창적인 사운드를 합성할 수 있는 도구입니다.</p>
         </div>
 
         <section className="space-y-3">

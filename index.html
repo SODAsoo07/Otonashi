@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OTONASHI - Vocal Tract Simulator</title>
+    <title>OTONASHI - Vocal Synthesizer</title>
+    <!-- Tailwind CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-      body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background-color: #f8f8f6; }
+      body { font-family: 'Inter', sans-serif; }
     </style>
   <script type="importmap">
 {
@@ -22,13 +23,14 @@
     "os": "https://esm.sh/os@^0.1.2",
     "vite": "https://esm.sh/vite@^7.3.1",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.4",
-    "url": "https://esm.sh/url@^0.11.4"
+    "url": "https://esm.sh/url@^0.11.4",
+    "onnxruntime-web": "https://esm.sh/onnxruntime-web@^1.24.1"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>

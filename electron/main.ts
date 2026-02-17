@@ -38,7 +38,8 @@ async function createWindow() {
   } else {
     // 빌드된 파일 구조에 맞춰 경로를 지정합니다.
     await win.loadFile(path.join(__dirname, '../dist/index.html'));
-    win.webContents.openDevTools({ mode: 'detach' }); 
+    // 프로덕션 모드에서는 개발자 도구 자동 오픈을 비활성화합니다.
+    // win.webContents.openDevTools({ mode: 'detach' }); 
   }
 
   win.once('ready-to-show', () => {
