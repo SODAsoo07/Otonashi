@@ -2,9 +2,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines, Wind, Music } from 'lucide-react';
 import { AudioFile, EQBand } from '../types';
+import { Language, i18n } from '../utils/i18n';
 import ParametricEQ from './ParametricEQ';
 
 interface ConsonantGeneratorTabProps {
+  lang: Language;
   audioContext: AudioContext;
   files: AudioFile[];
   onAddToRack: (buffer: AudioBuffer, name: string) => void;
@@ -17,7 +19,7 @@ interface FilterState {
     q: number;
 }
 
-const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
+const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ lang, audioContext, files, onAddToRack, isActive }) => {
     // Envelope Params
     const [duration, setDuration] = useState(200); 
     const [attack, setAttack] = useState(10); 
@@ -302,6 +304,8 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         </div>
     );
 
+    const t = i18n[lang].common;
+
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold">
             <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm h-full overflow-y-auto custom-scrollbar">
@@ -402,7 +406,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                                     <Play size={20} fill="currentColor"/> {isPlaying ? '재생 중...' : '생성 및 재생'}
                                  </button>
                                  <button onClick={handleSave} className="px-8 py-4 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all active:scale-95 text-base">
-                                    <Save size={20}/> 보관함에 저장
+                                    <Save size={20}/> {t.save}
                                  </button>
                              </div>
                         </div>

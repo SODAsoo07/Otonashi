@@ -1,14 +1,16 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2 } from 'lucide-react';
+import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2, Languages } from 'lucide-react';
 import FileRack from './components/FileRack';
 import HelpModal from './components/HelpModal';
 import StudioTab from './components/StudioTab';
 import ConsonantTab from './components/ConsonantTab';
 import AdvancedTractTab from './components/AdvancedTractTab';
 import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
+import AuthOverlay from './components/AuthOverlay';
 import { AudioFile, UIConfig } from './types';
 import { AudioUtils } from './utils/audioUtils';
+import { i18n, Language } from './utils/i18n';
 
 const App: React.FC = () => {
     const [audioContext] = useState(() => new (window.AudioContext || (window as any).webkitAudioContext)());
@@ -20,7 +22,18 @@ const App: React.FC = () => {
     const [isRackOpen, setIsRackOpen] = useState(true);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // --- 글로벌 히스토리 시스템 ---
+    // Language state
+    const [lang, setLang] = useState<Language>(() => {
+        const saved = localStorage.getItem('otonashi_lang');
+        return (saved === 'en' || saved === 'kr') ? saved : 'kr';
+    });
+
+    const t = useMemo(() => i18n[lang], [lang]);
+
+    useEffect(() => {
+        localStorage.setItem('otonashi_lang', lang);
+    }, [lang]);
+
     const [historyStack, setHistoryStack] = useState<AudioFile[][]>([]);
     const [redoStack, setRedoStack] = useState<AudioFile[][]>([]);
 
@@ -111,6 +124,7 @@ const App: React.FC = () => {
         const selFiles = Array.from(filesToUpload);
         const newFilesList = [...files];
         for(const file of selFiles) {
+            if (file.size === 0) continue;
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -157,7 +171,7 @@ const App: React.FC = () => {
                 if(newFiles.length > 0) setActiveFileId(newFiles[0].id);
             }
         } catch (err) {
-            alert("프로젝트 로드 중 오류가 발생했습니다.");
+            alert("Failed to load project file.");
         }
     };
 
@@ -188,27 +202,37 @@ const App: React.FC = () => {
 
     return (
         <div className="h-screen w-full dynamic-bg text-[#1f1e1d] flex flex-col font-sans overflow-hidden select-none">
+            <AuthOverlay lang={lang} />
             <header style={{ height: 'var(--header-h)' }} className="border-b border-slate-300 bg-white flex items-center justify-between px-6 shrink-0 z-20 shadow-sm">
                 <div className="flex items-center gap-3">
                     <div className="dynamic-primary p-1.5 rounded-lg text-white shadow-lg"><Activity size={20}/></div>
                     <div className="flex flex-col">
-                        <h1 className="font-black text-xl tracking-tighter leading-none dynamic-primary-text">OTONASHI</h1>
-                        <span className="text-[10px] text-slate-400 font-black uppercase tracking-tight">Vocal Tract Simulator</span>
+                        <h1 className="font-black text-xl tracking-tighter leading-none dynamic-primary-text">{t.app.title}</h1>
+                        <span className="text-[10px] text-slate-400 font-black uppercase tracking-tight">{t.app.subTitle}</span>
                     </div>
                 </div>
                 <nav className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                    {([['editor', '스튜디오'], ['generator', '자음 생성'], ['consonant', '자음 합성'], ['sim', '성도 시뮬레이터']] as const).map(([id, label]) => (
+                    {([['editor', t.app.tabs.editor], ['generator', t.app.tabs.generator], ['consonant', t.app.tabs.consonant], ['sim', t.app.tabs.sim]] as const).map(([id, label]) => (
                         <button key={id} onClick={()=>{ ensureAudioContext(); setActiveTab(id); }} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab===id?'bg-white dynamic-primary-text shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>{label}</button>
                     ))}
                 </nav>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                      <button onClick={handleGlobalUndo} disabled={historyStack.length === 0} title="전체 작업 취소 (Undo)" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
-                      <button onClick={handleGlobalRedo} disabled={redoStack.length === 0} title="전체 작업 다시 실행 (Redo)" className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Redo2 size={16}/></button>
+                    <button 
+                      onClick={() => setLang(lang === 'kr' ? 'en' : 'kr')} 
+                      className="p-1.5 text-slate-500 hover:bg-white hover:text-blue-600 rounded-md transition-all flex items-center gap-1 text-[10px] font-black uppercase"
+                      title="Switch Language"
+                    >
+                      <Languages size={14}/> {lang}
+                    </button>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                      <button onClick={handleProjectExport} title="프로젝트 저장" className="p-1.5 text-slate-500 hover:bg-white hover:dynamic-primary-text rounded-md transition-all"><Download size={16}/></button>
-                      <button onClick={()=>fileInputRef.current?.click()} title="프로젝트 불러오기" className="p-1.5 text-slate-500 hover:bg-white hover:dynamic-primary-text rounded-md transition-all"><Upload size={16}/></button>
+                      <button onClick={handleGlobalUndo} disabled={historyStack.length === 0} title={t.app.tooltips.undo} className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Undo2 size={16}/></button>
+                      <button onClick={handleGlobalRedo} disabled={redoStack.length === 0} title={t.app.tooltips.redo} className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30"><Redo2 size={16}/></button>
+                  </div>
+                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                      <button onClick={handleProjectExport} title={t.app.tooltips.saveProject} className="p-1.5 text-slate-500 hover:bg-white hover:dynamic-primary-text rounded-md transition-all"><Download size={16}/></button>
+                      <button onClick={()=>fileInputRef.current?.click()} title={t.app.tooltips.openProject} className="p-1.5 text-slate-500 hover:bg-white hover:dynamic-primary-text rounded-md transition-all"><Upload size={16}/></button>
                       <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleProjectImport}/>
                   </div>
                   <button onClick={()=>setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors"><HelpCircle size={20}/></button>
@@ -217,6 +241,7 @@ const App: React.FC = () => {
             </header>
             <main className="flex-1 flex overflow-hidden relative">
                 <FileRack 
+                    lang={lang}
                     files={files} 
                     activeFileId={activeFileId} 
                     setActiveFileId={setActiveFileId} 
@@ -239,20 +264,20 @@ const App: React.FC = () => {
 
                 <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'editor' ? 'flex' : 'none' }}>
-                        <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
+                        <StudioTab lang={lang} audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} />
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'generator' ? 'flex' : 'none' }}>
-                        <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'generator'} />
+                        <ConsonantGeneratorTab lang={lang} audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'generator'} />
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'consonant' ? 'flex' : 'none' }}>
-                        <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'consonant'} />
+                        <ConsonantTab lang={lang} audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'consonant'} />
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'sim' ? 'flex' : 'none' }}>
-                        <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'sim'} />
+                        <AdvancedTractTab lang={lang} audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'sim'} />
                     </div>
                 </div>
             </main>
-            {showHelp && <HelpModal onClose={()=>setShowHelp(false)} />}
+            {showHelp && <HelpModal lang={lang} onClose={()=>setShowHelp(false)} />}
         </div>
     );
 };

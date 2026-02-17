@@ -3,16 +3,18 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Combine, MousePointer2, TrendingUp, Play, Save, Undo2, Redo2, History, Volume2, MoveHorizontal, AudioLines, Download } from 'lucide-react';
 import { AudioFile, KeyframePoint, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
+import { Language, i18n } from '../utils/i18n';
 import ParametricEQ from './ParametricEQ';
 
 interface ConsonantTabProps {
+  lang: Language;
   audioContext: AudioContext;
   files: AudioFile[];
   onAddToRack: (buffer: AudioBuffer, name: string) => void;
   isActive: boolean;
 }
 
-const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
+const ConsonantTab: React.FC<ConsonantTabProps> = ({ lang, audioContext, files, onAddToRack, isActive }) => {
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
     
@@ -313,6 +315,8 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         }
     }, [vowelId, consonantId, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, selectedTrack, files, vowelGain, consonantGain, playheadTime]);
 
+    const t = i18n[lang].common;
+
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={handleMouseUp}>
             <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm h-full overflow-y-auto custom-scrollbar">
@@ -365,9 +369,9 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                     <canvas ref={canvasRef} width={1000} height={300} className={`w-full h-full ${editMode==='move'?'cursor-ew-resize':'cursor-crosshair'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}/>
                 </div>
                 <div className="flex justify-end gap-3 flex-shrink-0">
-                    <button onClick={togglePlay} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all text-base"><Play size={20} fill="currentColor"/> {isPlaying ? 'STOP' : 'PREVIEW'}</button>
-                    <button onClick={handleDownload} className="px-6 py-3 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl font-black flex items-center gap-2 transition-all"><Download size={20}/> WAV</button>
-                    <button onClick={async () => { const b = await mixConsonant(); if(b) onAddToRack(b, "Consonant_Mix"); }} className="px-8 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all text-base"><Save size={20}/> 보관함</button>
+                    <button onClick={togglePlay} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all text-base"><Play size={20} fill="currentColor"/> {isPlaying ? t.stop : t.preview}</button>
+                    <button onClick={handleDownload} className="px-6 py-3 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl font-black flex items-center gap-2 transition-all"><Download size={20}/> {t.wav}</button>
+                    <button onClick={async () => { const b = await mixConsonant(); if(b) onAddToRack(b, "Consonant_Mix"); }} className="px-8 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all text-base"><Save size={20}/> {t.save}</button>
                 </div>
             </div>
         </div>
