@@ -1,5 +1,5 @@
 {
   "name": "OTONASHI",
-  "description": "A web-based vocal tract simulator and audio augmentation tool featuring waveform editing, consonant-vowel synthesis, and physical modeling synthesis.",
+  "description": "A unique vocal synthesizer that articulates non-human sound sources (synths, noise) into speech-like audio.", 
   "requestFramePermissions": []
 }
