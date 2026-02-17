@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2 } from 'lucide-react';
 import FileRack from './components/FileRack';
@@ -6,6 +7,7 @@ import StudioTab from './components/StudioTab';
 import ConsonantTab from './components/ConsonantTab';
 import AdvancedTractTab from './components/AdvancedTractTab';
 import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
+import VocoderTab from './components/VocoderTab';
 import { AudioFile, UIConfig } from './types';
 import { AudioUtils } from './utils/audioUtils';
 
@@ -13,7 +15,7 @@ const App: React.FC = () => {
     const [audioContext] = useState(() => new (window.AudioContext || (window as any).webkitAudioContext)());
     const [files, setFiles] = useState<AudioFile[]>([]);
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'editor' | 'generator' | 'consonant' | 'sim'>('editor');
+    const [activeTab, setActiveTab] = useState<'editor' | 'generator' | 'consonant' | 'sim' | 'vocoder'>('editor');
     const [showHelp, setShowHelp] = useState(false);
     const [fileCounter, setFileCounter] = useState(1);
     const [isRackOpen, setIsRackOpen] = useState(true);
@@ -197,7 +199,13 @@ const App: React.FC = () => {
                     </div>
                 </div>
                 <nav className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                    {([['editor', '스튜디오'], ['generator', '자음 생성'], ['consonant', '자음 합성'], ['sim', '성도 시뮬레이터']] as const).map(([id, label]) => (
+                    {([
+                        ['editor', '스튜디오'], 
+                        ['generator', '자음 생성'], 
+                        ['consonant', '자음 합성'], 
+                        ['sim', '성도 시뮬레이터'],
+                        ['vocoder', '보코더']
+                    ] as const).map(([id, label]) => (
                         <button key={id} onClick={()=>{ ensureAudioContext(); setActiveTab(id); }} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab===id?'bg-white dynamic-primary-text shadow-sm border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>{label}</button>
                     ))}
                 </nav>
@@ -249,6 +257,9 @@ const App: React.FC = () => {
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'sim' ? 'flex' : 'none' }}>
                         <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'sim'} />
+                    </div>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'vocoder' ? 'flex' : 'none' }}>
+                        <VocoderTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'vocoder'} />
                     </div>
                 </div>
             </main>
