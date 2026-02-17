@@ -1,11 +1,11 @@
 {
-  "name": "otonashi-vocal-synth",
+  "name": "OTONASHI",
   "private": true,
-  "version": "1.0.0",
+  "version": "3.1.0 beta",
   "description": "Vocal Tract Simulator & Audio Tool",
   "main": "dist-electron/main.js",
   "homepage": "./",
-  "author": "OTONASHI",
+  "author": "SODAsoo",
   "scripts": {
     "dev": "concurrently \"vite\" \"npm run electron:dev\"",
     "electron:dev": "wait-on tcp:5173 && tsc -p electron && electron .",
@@ -47,7 +47,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/icon.ico"
+      "icon": "otonashi.ico"
     },
     "nsis": {
       "oneClick": false,
