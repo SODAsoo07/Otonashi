@@ -1,8 +1,9 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, FileAudio, Undo2, Redo2, History, AudioLines, Wind, Music, Zap } from 'lucide-react';
-import { AudioFile, EQBand } from '../types';
+import { Wand2, Play, Save, Sliders, Activity, Volume2, Mic2, Zap, AudioLines } from 'lucide-react';
+import { AudioFile, EQBand, FilterState } from '../types';
 import ParametricEQ from './ParametricEQ';
-import FilterControl from './common/FilterControl';
+import FilterControl from './ui/FilterControl';
 
 interface ConsonantGeneratorTabProps {
   audioContext: AudioContext;
@@ -11,24 +12,21 @@ interface ConsonantGeneratorTabProps {
   isActive: boolean;
 }
 
-interface FilterState {
-    on: boolean;
-    freq: number;
-    q: number;
-}
-
 const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
+    // Envelope Params
     const [duration, setDuration] = useState(200); 
     const [attack, setAttack] = useState(10); 
     const [decay, setDecay] = useState(50); 
     const [sustain, setSustain] = useState(0.2); 
     const [release, setRelease] = useState(100); 
     
+    // Transient (Burst) Params
     const [transientOn, setTransientOn] = useState(false);
     const [transientGain, setTransientGain] = useState(0.8);
-    const [transientFreq, setTransientFreq] = useState(1000); 
-    const [transientDecay, setTransientDecay] = useState(15); 
+    const [transientFreq, setTransientFreq] = useState(1000); // Center freq for burst
+    const [transientDecay, setTransientDecay] = useState(15); // Very short decay
     
+    // Filter Params
     const [hpFilter, setHpFilter] = useState<FilterState>({ on: false, freq: 2000, q: 1.0 });
     const [lpFilter, setLpFilter] = useState<FilterState>({ on: false, freq: 8000, q: 1.0 });
     const [bpFilter, setBpFilter] = useState<FilterState>({ on: false, freq: 4000, q: 1.0 });
@@ -36,11 +34,13 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [gain, setGain] = useState(1.0); 
     const [noiseType, setNoiseType] = useState<'white' | 'pink'>('white');
 
+    // Voice Source Params
     const [baseSource, setBaseSource] = useState<'synth' | 'file'>('synth');
     const [sourceMix, setSourceMix] = useState(0); 
     const [voiceFreq, setVoiceFreq] = useState(120);
     const [voiceWave, setVoiceWave] = useState<OscillatorType>('sawtooth');
     
+    // EQ Bands
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 100, gain: 0, q: 0.7, on: true },
         { id: 2, type: 'peaking', freq: 2000, gain: 0, q: 1.0, on: true },
@@ -56,10 +56,12 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
+    // History
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
     const applyConsonantPreset = (char: 'S' | 'Sh' | 'T' | 'K' | 'P') => {
+        // Reset base params for clear start
         setBaseSource('synth');
         setSourceMix(0); 
         setNoiseType('white');
@@ -75,7 +77,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             case 'Sh':
                 setDuration(250); setAttack(30); setDecay(100); setSustain(0.8); setRelease(100);
                 setHpFilter({on:true, freq: 1500, q: 0.7});
-                setBpFilter({on:true, freq: 2500, q: 0.8}); 
+                setBpFilter({on:true, freq: 2500, q: 0.8}); // Characteristic resonance
                 setLpFilter({on:true, freq: 6000, q: 1.0});
                 setTransientOn(false);
                 break;
@@ -89,16 +91,16 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             case 'K':
                 setDuration(80); setAttack(5); setDecay(40); setSustain(0); setRelease(30);
                 setHpFilter({on:false, freq: 2000, q: 1});
-                setBpFilter({on:true, freq: 1500, q: 2.5}); 
+                setBpFilter({on:true, freq: 1500, q: 2.5}); // Velar pinch (Mid resonance)
                 setLpFilter({on:false, freq: 8000, q: 1});
                 setTransientOn(true); setTransientGain(0.8); setTransientFreq(1500); setTransientDecay(12);
                 break;
             case 'P':
                 setDuration(60); setAttack(2); setDecay(30); setSustain(0); setRelease(30);
-                setNoiseType('pink'); 
+                setNoiseType('pink'); // Darker noise
                 setHpFilter({on:false, freq: 200, q: 1});
                 setBpFilter({on:false, freq: 500, q: 1});
-                setLpFilter({on:true, freq: 800, q: 1.0}); 
+                setLpFilter({on:true, freq: 800, q: 1.0}); // Low focus
                 setTransientOn(true); setTransientGain(1.0); setTransientFreq(300); setTransientDecay(10);
                 break;
         }
@@ -145,28 +147,38 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         const offline = new OfflineAudioContext(1, Math.ceil(totalDurationSec * sr), sr);
         const finalMix = offline.createGain();
 
+        // 1. Transient (Burst) Generator
         if (transientOn) {
             const tDur = transientDecay / 1000;
             const tBufSize = Math.ceil(tDur * sr);
             const tBuf = offline.createBuffer(1, tBufSize, sr);
             const tData = tBuf.getChannelData(0);
+            
+            // Generate simple noise burst
             for (let i = 0; i < tBufSize; i++) tData[i] = (Math.random() * 2 - 1);
+
             const tSrc = offline.createBufferSource();
             tSrc.buffer = tBuf;
+            
+            // Color the burst
             const tFilter = offline.createBiquadFilter();
             tFilter.type = 'bandpass';
             tFilter.frequency.value = transientFreq;
             tFilter.Q.value = 1.0;
+
             const tAmp = offline.createGain();
             tAmp.gain.setValueAtTime(transientGain, 0);
             tAmp.gain.exponentialRampToValueAtTime(0.01, tDur);
+
             tSrc.connect(tFilter);
             tFilter.connect(tAmp);
             tAmp.connect(finalMix);
             tSrc.start(0);
         }
 
+        // 2. Main Body (Noise + Tone)
         const sourceMixNode = offline.createGain();
+
         if (baseSource === 'file') {
              const file = files.find(f => f.id === selectedFileId);
              if (file?.buffer) {
@@ -176,6 +188,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                  src.start(0);
              }
         } else {
+            // Noise
             if (sourceMix < 1.0) {
                 const bufferSize = sr * totalDurationSec;
                 const buffer = offline.createBuffer(1, bufferSize, sr);
@@ -201,6 +214,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                 noiseSrc.connect(noiseGain); noiseGain.connect(sourceMixNode);
                 noiseSrc.start(0);
             }
+            // Voice
             if (sourceMix > 0.0) {
                 const osc = offline.createOscillator(); osc.type = voiceWave; osc.frequency.value = voiceFreq;
                 const oscGain = offline.createGain(); oscGain.gain.value = sourceMix;
@@ -209,6 +223,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             }
         }
 
+        // Filter Chain
         let currentNode: AudioNode = sourceMixNode;
         if (hpFilter.on) {
             const f = offline.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hpFilter.freq; f.Q.value = hpFilter.q;
@@ -227,14 +242,17 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         const t0 = 0, tAtt = attack / 1000, tDec = decay / 1000, tRel = release / 1000;
         const decayEndTime = t0 + tAtt + tDec;
         const releaseStartTime = Math.max(decayEndTime, totalDurationSec - tRel);
+
         amp.gain.setValueAtTime(0, t0);
         amp.gain.linearRampToValueAtTime(gain, t0 + tAtt); 
         amp.gain.linearRampToValueAtTime(gain * sustain, decayEndTime); 
         amp.gain.setValueAtTime(gain * sustain, releaseStartTime); 
         amp.gain.linearRampToValueAtTime(0, totalDurationSec); 
+
         currentNode.connect(amp);
         amp.connect(finalMix);
         
+        // Master EQ Chain
         let eqNode: AudioNode = finalMix;
         eqBands.forEach(b => {
             if(b.on) {
@@ -242,6 +260,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                 eqNode.connect(f); eqNode = f;
             }
         });
+        
         eqNode.connect(offline.destination);
         return await offline.startRendering();
     };
@@ -335,6 +354,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-0">
                     <div className="lg:col-span-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2" onMouseUp={()=>commitChange()}>
+                        {/* Source Selection */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                             <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={16}/> 소스 (Source)</h3>
                             <div className="space-y-3">
@@ -346,13 +366,14 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                                     <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 border rounded text-xs font-black text-slate-900"><option value="">파일 선택</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                                 ) : (
                                     <div className="space-y-3">
-                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Noise Mix</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/></div>
+                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Noise Mix</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                         <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button></div>
                                     </div>
                                 )}
                             </div>
                         </div>
 
+                        {/* Transient Generator (New) */}
                         <div className={`bg-white p-6 rounded-xl border transition-all shadow-sm space-y-4 ${transientOn ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200'}`}>
                             <div className="flex items-center justify-between">
                                 <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Zap size={16} className={transientOn ? "text-amber-500" : ""}/> Transient (Burst)</h3>
@@ -363,13 +384,14 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                             </div>
                             {transientOn && (
                                 <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
-                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Gain</span><span>{Math.round(transientGain*100)}%</span></div><input type="range" min="0" max="1.5" step="0.1" value={transientGain} onChange={e=>setTransientGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500 cursor-pointer"/></div>
-                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Freq</span><span>{transientFreq} Hz</span></div><input type="range" min="100" max="8000" step="100" value={transientFreq} onChange={e=>setTransientFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500 cursor-pointer"/></div>
-                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Decay</span><span>{transientDecay} ms</span></div><input type="range" min="5" max="50" step="1" value={transientDecay} onChange={e=>setTransientDecay(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500 cursor-pointer"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Gain</span><span>{Math.round(transientGain*100)}%</span></div><input type="range" min="0" max="1.5" step="0.1" value={transientGain} onChange={e=>setTransientGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Freq</span><span>{transientFreq} Hz</span></div><input type="range" min="100" max="8000" step="100" value={transientFreq} onChange={e=>setTransientFreq(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Burst Decay</span><span>{transientDecay} ms</span></div><input type="range" min="5" max="50" step="1" value={transientDecay} onChange={e=>setTransientDecay(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-amber-500"/></div>
                                 </div>
                             )}
                         </div>
                         
+                        {/* Multi-Filter Section */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                             <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Sliders size={16}/> 멀티 필터</h3>
                             <div className="space-y-3">
@@ -379,23 +401,31 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                             </div>
                         </div>
 
+                        {/* Envelope Section */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-5">
                             <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Activity size={16}/> 엔벨로프 (ADSR)</h3>
                             <div className="space-y-4">
-                                <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Duration</span><span>{duration} ms</span></div><input type="range" min="20" max="1000" value={duration} onChange={e=>setDuration(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/></div>
+                                <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Duration</span><span>{duration} ms</span></div><input type="range" min="20" max="1000" value={duration} onChange={e=>setDuration(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Attack</span><span>{attack} ms</span></div><input type="range" min="0" max="200" value={attack} onChange={e=>setAttack(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/></div>
-                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Decay</span><span>{decay} ms</span></div><input type="range" min="0" max="200" value={decay} onChange={e=>setDecay(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/></div>
-                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Sustain</span><span>{Math.round(sustain*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value={sustain} onChange={e=>setSustain(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/></div>
-                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Release</span><span>{release} ms</span></div><input type="range" min="0" max="500" value={release} onChange={e=>setRelease(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Attack</span><span>{attack} ms</span></div><input type="range" min="0" max="200" value={attack} onChange={e=>setAttack(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Decay</span><span>{decay} ms</span></div><input type="range" min="0" max="200" value={decay} onChange={e=>setDecay(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Sustain</span><span>{Math.round(sustain*100)}%</span></div><input type="range" min="0" max="1" step="0.01" value={sustain} onChange={e=>setSustain(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                                    <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Release</span><span>{release} ms</span></div><input type="range" min="0" max="500" value={release} onChange={e=>setRelease(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
+                    {/* Visualizer & Action Column */}
                     <div className="lg:col-span-2 flex flex-col gap-4">
                         <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative overflow-hidden shadow-inner group">
                              <canvas ref={canvasRef} width={800} height={400} className="w-full h-full object-cover opacity-80"/>
+                             <div className="absolute top-4 right-4 flex flex-col items-end gap-1 font-black">
+                                {transientOn && <span className="bg-amber-500/20 text-amber-400 px-2 py-1 rounded text-xs backdrop-blur font-mono border border-amber-500/30">Transient ON</span>}
+                                {hpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">HP {hpFilter.freq}Hz</span>}
+                                {bpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">BP {bpFilter.freq}Hz</span>}
+                                {lpFilter.on && <span className="bg-black/50 text-cyan-400 px-2 py-1 rounded text-xs backdrop-blur font-mono">LP {lpFilter.freq}Hz</span>}
+                             </div>
                         </div>
                         <div className="h-24 bg-white rounded-2xl border border-slate-300 p-6 flex items-center justify-between shadow-sm">
                              <div className="flex items-center gap-6">
@@ -403,7 +433,7 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                                     <span className="text-xs font-black text-slate-400 uppercase tracking-tighter">Output Gain</span>
                                     <div className="flex items-center gap-3">
                                         <Volume2 size={20} className="text-slate-500"/>
-                                        <input type="range" min="0" max="2" step="0.1" value={gain} onChange={e=>setGain(Number(e.target.value))} className="w-32 h-2 bg-slate-200 rounded-full appearance-none accent-slate-600 cursor-pointer"/>
+                                        <input type="range" min="0" max="2" step="0.1" value={gain} onChange={e=>setGain(Number(e.target.value))} className="w-32 h-2 bg-slate-200 rounded-full appearance-none accent-slate-600"/>
                                         <span className="text-sm font-black text-slate-900 w-10">{Math.round(gain*100)}%</span>
                                     </div>
                                 </div>

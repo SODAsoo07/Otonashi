@@ -1,7 +1,7 @@
 {
   "name": "OTONASHI",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0-beta",
   "description": "Vocal Tract Simulator & Audio Tool",
   "main": "dist-electron/main.js",
   "homepage": "./",

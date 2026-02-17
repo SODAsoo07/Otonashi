@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
@@ -6,7 +7,7 @@ import ParametricEQ from './ParametricEQ';
 import FormantAnalyzer from './FormantAnalyzer';
 import TractVisualizer from './TractVisualizer';
 import TimelineEditor from './TimelineEditor';
-import ParamInput from './common/ParamInput';
+import ParamInput from './ui/ParamInput';
 
 interface AdvancedTractTabProps {
   audioContext: AudioContext;
@@ -15,6 +16,7 @@ interface AdvancedTractTabProps {
   isActive: boolean;
 }
 
+// Cubic Interpolation (Catmull-Rom Spline)
 const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number) => {
     const a = 2 * p0 - 5 * p1 + 4 * p2 - p3;
     const b = -p0 + 3 * p1 - 3 * p2 + p3;
@@ -24,6 +26,7 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
 };
 
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
+    // --- State ---
     const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: false, jitterDepth: 10, jitterRate: 5, breathOn: true, breathGain: 0.1, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
     const [tractSourceType, setTractSourceType] = useState('synth'); 
     const [tractSourceFileId, setTractSourceFileId] = useState("");
@@ -474,7 +477,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current);
         previewDebounceRef.current = window.setTimeout(async () => { 
             const buf = await renderAdvancedAudio(); 
-            if (buf) setPreviewBuffer(buf); 
+            if (buf) {
+                setPreviewBuffer(buf); 
+            } 
         }, 500);
         return () => { if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current); };
     }, [renderAdvancedAudio]);
@@ -555,7 +560,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden h-full">
             {showAnalyzer && <FormantAnalyzer files={files} audioContext={audioContext} onClose={()=>setShowAnalyzer(false)} onApply={handleAnalyzerApply} />}
             
+            {/* Top Section (Visualizer + Settings) */}
             <div className="flex-1 flex gap-0 shrink-0 min-h-0 flex-[3]">
+                {/* Responsive Visualizer */}
                 <TractVisualizer 
                     liveTract={liveTract}
                     manualPitch={manualPitch}
@@ -572,8 +579,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     onMouseDown={handleSimulationMouseDown}
                 />
                 
+                {/* Resizer Handle */}
                 <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'dynamic-primary' : ''}`} onMouseDown={(e)=>{setIsResizing(true); e.preventDefault();}} />
                 
+                {/* Sidebar (Settings/EQ) */}
                 <div className="bg-white/40 dynamic-radius border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
                     <div className="flex border-b border-slate-300 bg-white/40">
                         <button onClick={()=>setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='settings'?'bg-white dynamic-primary-text border-b-2 dynamic-primary-border shadow-sm':'text-slate-500'}`}><Settings2 size={14} className="inline mr-1"/> 설정</button>
@@ -599,7 +608,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     </select>
                                     <div className="space-y-1">
                                         <div className="flex justify-between text-[10px] font-black text-slate-500"><span>Sensitivity</span><span className="text-indigo-600">{Math.round(pitchSensitivity * 100)}%</span></div>
-                                        <input type="range" min="0" max="1" step="0.05" value={pitchSensitivity} onChange={e => setPitchSensitivity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/>
+                                        <input type="range" min="0" max="1" step="0.05" value={pitchSensitivity} onChange={e => setPitchSensitivity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
                                     </div>
                                     <button onClick={handlePitchExtraction} disabled={!pitchFileId} className="w-full py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-black text-slate-700 disabled:opacity-50 transition-all shadow-sm">Extract Pitch & Apply</button>
                                 </div>
@@ -617,7 +626,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     {tractSourceType === 'file' && (
                                         <div className="space-y-2">
                                             <select value={tractSourceFileId} onChange={e=>setTractSourceFileId(e.target.value)} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900"><option value="">파일 선택</option>{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
-                                            <div className="space-y-1"><div className="flex justify-between text-[10px] font-black text-slate-500"><span>Simulation Intensity</span><span className="text-indigo-600">{Math.round(simIntensity * 100)}%</span></div><input type="range" min="0" max="1.5" step="0.05" value={simIntensity} onChange={e => setSimIntensity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500 cursor-pointer"/></div>
+                                            <div className="space-y-1"><div className="flex justify-between text-[10px] font-black text-slate-500"><span>Simulation Intensity</span><span className="text-indigo-600">{Math.round(simIntensity * 100)}%</span></div><input type="range" min="0" max="1.5" step="0.05" value={simIntensity} onChange={e => setSimIntensity(parseFloat(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
                                         </div>
                                     )}
                                     <div className="flex items-center justify-between pt-1">
@@ -650,6 +659,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 </div>
             </div>
             
+            {/* Bottom Section (Timeline Editor) - Responsive Flex */}
             <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[2]">
                 <TimelineEditor 
                     advTracks={advTracks}

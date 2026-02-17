@@ -58,6 +58,12 @@ export interface EQBand {
   on: boolean;
 }
 
+export interface FilterState {
+    on: boolean;
+    freq: number;
+    q: number;
+}
+
 export interface UIConfig {
   primaryColor: string;
   accentColor: string;
