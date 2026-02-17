@@ -16,11 +16,8 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
     const [dragBandId, setDragBandId] = useState<number | null>(null);
     const animationFrameRef = useRef<number>(0);
 
-    // Effect 1: Manage AnalyserNode lifecycle
     useEffect(() => {
         if (!audioContext) return;
-        
-        // Ensure analyser belongs to the current audioContext instance
         if (!analyserRef.current || analyserRef.current.context !== audioContext) {
             try {
                 const newAnalyser = audioContext.createAnalyser();
@@ -33,42 +30,24 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
         }
     }, [audioContext]);
 
-    // Effect 2: Manage connection between playingSource and AnalyserNode
     useEffect(() => {
         const analyser = analyserRef.current;
         const source = playingSource;
-
         if (!analyser || !source) return;
-
         let isConnected = false;
-
-        // CRITICAL CHECK: The source and destination nodes MUST share the same BaseAudioContext instance.
-        // This check handles cases where nodes might come from different tabs or offline contexts.
         if (source.context === analyser.context) {
             try {
                 source.connect(analyser);
                 isConnected = true;
             } catch (e) {
-                console.warn("ParametricEQ: Connection attempt failed despite context match:", e);
+                console.warn("ParametricEQ: Connection attempt failed:", e);
             }
-        } else {
-            // Log for debugging if a cross-context connection is attempted
-            console.debug("ParametricEQ: Context mismatch - ignoring connection attempt.", {
-                sourceCtx: source.context,
-                analyserCtx: analyser.context
-            });
         }
-
         return () => {
             if (isConnected && source && analyser) {
                 try {
-                    // Safe cleanup: only disconnect if they are still in the same context
-                    if (source.context === analyser.context) {
-                        source.disconnect(analyser);
-                    }
-                } catch (e) {
-                    // Fail silently during cleanup
-                }
+                    if (source.context === analyser.context) source.disconnect(analyser);
+                } catch (e) {}
             }
         };
     }, [playingSource]);
@@ -97,56 +76,35 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
         if (!ctx) return;
         const { width: w, height: h } = canvas;
 
-        // Clear background
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(0, 0, w, h);
-
-        // Grid lines (Logarithmic)
-        ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
+        ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1; ctx.beginPath();
         [100, 1000, 10000].forEach(f => {
-            const x = getX(f, w);
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, h);
+            const x = getX(f, w); ctx.moveTo(x, 0); ctx.lineTo(x, h);
         });
-        ctx.moveTo(0, h / 2);
-        ctx.lineTo(w, h / 2);
-        ctx.stroke();
+        ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
 
-        // Spectrum visualization
-        // Only attempt to visualize if analyser exists and matches context
         if (analyser && playingSource && playingSource.context === analyser.context) {
             const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
             analyser.getByteFrequencyData(dataArray);
-            
             ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
-            ctx.beginPath(); 
-            ctx.moveTo(0, h);
+            ctx.beginPath(); ctx.moveTo(0, h);
             for(let i = 0; i < bufferLength; i++) {
                 const f = (i * audioContext.sampleRate) / (2 * bufferLength);
-                if (f < 20) continue; 
-                if (f > 20000) break;
+                if (f < 20) continue; if (f > 20000) break;
                 ctx.lineTo(getX(f, w), h - (dataArray[i] / 255) * h);
             }
-            ctx.lineTo(w, h); 
-            ctx.fill();
+            ctx.lineTo(w, h); ctx.fill();
         }
 
-        // EQ Frequency Response Curve
-        ctx.beginPath(); 
-        ctx.strokeStyle = '#60a5fa'; 
-        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 2;
         const sr = audioContext.sampleRate;
         for (let x = 0; x < w; x += 4) {
             const f = getFreqFromX(x, w);
             let totalDB = 0;
             bands.forEach(b => { 
                 if(b.on) {
-                    try {
-                        totalDB += 20 * Math.log10(AudioUtils.getBiquadMagnitude(f, b.type, b.freq, b.gain, b.q, sr)); 
-                    } catch(e) {}
+                    try { totalDB += 20 * Math.log10(AudioUtils.getBiquadMagnitude(f, b.type, b.freq, b.gain, b.q, sr)); } catch(e) {}
                 }
             });
             const y = getY(totalDB, h);
@@ -154,16 +112,13 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
         }
         ctx.stroke();
 
-        // Band Handles (Interaction points)
         bands.forEach((b, i) => {
             const bx = getX(b.freq, w), by = getY(b.gain, h);
             ctx.beginPath(); 
             ctx.fillStyle = b.on ? (dragBandId === b.id ? '#fbbf24' : '#fff') : '#475569';
-            ctx.arc(bx, by, 5, 0, Math.PI * 2); 
-            ctx.fill();
-            ctx.fillStyle = '#64748b'; 
-            ctx.font = '9px Inter'; 
-            ctx.fillText((i + 1).toString(), bx - 3, by - 10);
+            ctx.arc(bx, by, 6, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#cbd5e1'; ctx.font = '10px Inter'; 
+            ctx.fillText((i + 1).toString(), bx - 3, by - 12);
         });
 
         animationFrameRef.current = requestAnimationFrame(draw);
@@ -178,7 +133,7 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
         const rect = canvasRef.current!.getBoundingClientRect();
         const mx = e.clientX - rect.left, my = e.clientY - rect.top;
         const w = rect.width, h = rect.height;
-        const hit = bands.find(b => Math.hypot(getX(b.freq, w) - mx, getY(b.gain, h) - my) < 20);
+        const hit = bands.find(b => Math.hypot(getX(b.freq, w) - mx, getY(b.gain, h) - my) < 25);
         if (hit) setDragBandId(hit.id);
     };
 
@@ -192,22 +147,41 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
         onChange(bands.map(b => b.id === dragBandId ? { ...b, freq, gain: (b.type.includes('pass')) ? 0 : gain } : b));
     };
 
+    // 마우스 휠로 Q값 조절
+    const handleWheel = (e: React.WheelEvent) => {
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const hit = bands.find(b => Math.hypot(getX(b.freq, rect.width) - mx, getY(b.gain, rect.height) - my) < 30);
+        if (hit) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            const nextQ = Math.max(0.1, Math.min(20, hit.q * delta));
+            onChange(bands.map(b => b.id === hit.id ? { ...b, q: nextQ } : b));
+        }
+    };
+
     return (
-        <canvas 
-            ref={canvasRef} 
-            width={600} 
-            height={240} 
-            className="w-full h-full cursor-crosshair rounded-lg bg-[#0f172a] shadow-inner border border-slate-700"
-            onMouseDown={handleMouseDown} 
-            onMouseMove={handleMouseMove} 
-            onMouseUp={() => setDragBandId(null)} 
-            onMouseLeave={() => setDragBandId(null)}
-            onDoubleClick={(e) => {
-                const rect = canvasRef.current!.getBoundingClientRect();
-                const hit = bands.find(b => Math.hypot(getX(b.freq, rect.width) - (e.clientX - rect.left), getY(b.gain, rect.height) - (e.clientY - rect.top)) < 20);
-                if (hit) onChange(bands.map(b => b.id === hit.id ? { ...b, on: !b.on } : b));
-            }}
-        />
+        <div className="w-full h-full relative group">
+            <canvas 
+                ref={canvasRef} 
+                width={600} 
+                height={240} 
+                className="w-full h-full cursor-crosshair rounded-xl bg-[#0f172a] shadow-inner border border-slate-700"
+                onMouseDown={handleMouseDown} 
+                onMouseMove={handleMouseMove} 
+                onMouseUp={() => setDragBandId(null)} 
+                onMouseLeave={() => setDragBandId(null)}
+                onWheel={handleWheel}
+                onDoubleClick={(e) => {
+                    const rect = canvasRef.current!.getBoundingClientRect();
+                    const hit = bands.find(b => Math.hypot(getX(b.freq, rect.width) - (e.clientX - rect.left), getY(b.gain, rect.height) - (e.clientY - rect.top)) < 25);
+                    if (hit) onChange(bands.map(b => b.id === hit.id ? { ...b, on: !b.on } : b));
+                }}
+            />
+            <div className="absolute bottom-2 right-2 text-[8px] text-slate-500 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                Wheel to adjust Q | Dbl-click to toggle
+            </div>
+        </div>
     );
 });
 

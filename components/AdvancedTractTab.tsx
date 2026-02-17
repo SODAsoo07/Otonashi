@@ -24,13 +24,13 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
 };
 
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext, files, onAddToRack, isActive }) => {
-    const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: false, jitterDepth: 0.1, jitterRate: 15, breathOn: true, breathGain: 0.05, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
+    const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: true, jitterDepth: 0.1, jitterRate: 20, breathOn: true, breathGain: 0.05, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
+    const [shimmerAmount, setShimmerAmount] = useState(0.05); // 진폭 변동
     const [tractSourceType, setTractSourceType] = useState<'synth' | 'file'>('synth'); 
     const [tractSourceFileId, setTractSourceFileId] = useState("");
     const [synthWaveform, setSynthWaveform] = useState('sawtooth'); 
     const [advDuration] = useState(2.0);
     const [isAdvPlaying, setIsAdvPlaying] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
     const [playHeadPos, setPlayheadPos] = useState(0); 
     const [liveTract, setLiveTract] = useState<LiveTractState>({ x: 0.5, y: 0.4, lips: 0.7, lipLen: 0.5, throat: 0.5, nasal: 0.2 }); 
     const [manualPitch, setManualPitch] = useState(220);
@@ -63,8 +63,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
     const liveAudioRef = useRef<any>(null); 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const lastRenderedRef = useRef<AudioBuffer | null>(null);
-    const simStartTimeRef = useRef(0);
-    const simPauseOffsetRef = useRef(0);
     const simPlaySourceRef = useRef<AudioBufferSourceNode | null>(null);
     const previewDebounceRef = useRef<number | null>(null);
 
@@ -137,16 +135,25 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
 
     const updateLiveParams = useCallback(() => {
       if(!liveAudioRef.current) return;
-      const { f1, f2, f3, nasF, sNode } = liveAudioRef.current;
+      const { f1, f2, f3, nasF, sNode, g } = liveAudioRef.current;
       const now = audioContext.currentTime;
       const { x, y, lips, nasal } = liveTract;
       const gFactor = manualGender;
+      
+      // Jitter 적용
+      const jitterVal = larynxParams.jitterOn ? (Math.random() - 0.5) * larynxParams.jitterDepth * manualPitch * 0.1 : 0;
+      
       f1.frequency.setTargetAtTime(Math.max(50, (200 + (1-y)*600)) * gFactor, now, 0.02);
       f2.frequency.setTargetAtTime((800 + x * 1400) * gFactor, now, 0.02);
       f3.frequency.setTargetAtTime((2000 + lips * 1500) * gFactor, now, 0.02);
       nasF.frequency.setTargetAtTime(Math.max(400, 10000 - nasal * 9000) * gFactor, now, 0.02);
-      if(sNode instanceof OscillatorNode) sNode.frequency.setTargetAtTime(manualPitch, now, 0.02);
-    }, [liveTract, manualPitch, manualGender, audioContext]);
+      
+      if(sNode instanceof OscillatorNode) sNode.frequency.setTargetAtTime(manualPitch + jitterVal, now, 0.02);
+      
+      // Shimmer 적용
+      const shim = 1.0 + (Math.random() - 0.5) * shimmerAmount;
+      g.gain.setTargetAtTime(0.5 * shim, now, 0.02);
+    }, [liveTract, manualPitch, manualGender, audioContext, larynxParams, shimmerAmount]);
 
     useEffect(() => { updateLiveParams(); }, [liveTract, manualPitch, manualGender, updateLiveParams]);
 
@@ -193,8 +200,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
         return () => { if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current); };
     }, [renderAdvancedAudio]);
 
-    const handleSaveToRack = async () => { const buf = await renderAdvancedAudio(); if (buf) onAddToRack(buf, "Sim_Tract"); };
-
     const handleSimulationMouseDown = (e: React.MouseEvent, part: 'tongue' | 'lips' | 'nasal') => {
         e.preventDefault(); setDraggingSim(part); if (!isAdvPlaying) startLivePreview();
     };
@@ -232,6 +237,22 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
         } else { setPlayheadPos(tV); syncVisualsToTime(tV); setDraggingKeyframe({ isPlayhead: true }); }
     };
 
+    const handleTimelineMouseMove = (e: React.MouseEvent) => {
+        if(!draggingKeyframe || !canvasRef.current) return;
+        const rect = canvasRef.current.getBoundingClientRect(); 
+        const tV = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        if (draggingKeyframe.isPlayhead) { setPlayheadPos(tV); syncVisualsToTime(tV); } 
+        else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
+            const gH = rect.height - RULER_HEIGHT; 
+            const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
+            setAdvTracks(prev => prev.map(tr => {
+                if (tr.id !== draggingKeyframe.trackId) return tr;
+                const valActualClamped = tr.min + nV * (tr.max - tr.min);
+                return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t: tV, v: valActualClamped } : p).sort((a,b)=>a.t-b.t) }; 
+            }));
+        }
+    };
+
     useEffect(() => {
         if(!canvasRef.current) return; const ctx = canvasRef.current.getContext('2d'); if(!ctx) return; 
         const w = canvasRef.current.width, h = canvasRef.current.height;
@@ -240,8 +261,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
             ctx.globalAlpha = 0.3; ctx.beginPath(); ctx.strokeStyle = '#94a3b8';
             const data = previewBuffer.getChannelData(0); const step = Math.ceil(data.length / w);
             for (let i = 0; i < w; i++) {
-                let min = 1, max = -1; for (let j = 0; j < step; j++) { const d = data[i * step + j] || 0; if (d < min) min = d; if (d > max) max = d; }
-                ctx.moveTo(i, RULER_HEIGHT + (h-RULER_HEIGHT)/2 + min * (h-RULER_HEIGHT)/2.5); ctx.lineTo(i, RULER_HEIGHT + (h-RULER_HEIGHT)/2 + max * (h-RULER_HEIGHT)/2.5);
+                let minVal = 1, maxVal = -1; for (let j = 0; j < step; j++) { const d = data[i * step + j] || 0; if (d < minVal) minVal = d; if (d > maxVal) maxVal = d; }
+                ctx.moveTo(i, RULER_HEIGHT + (h-RULER_HEIGHT)/2 + minVal * (h-RULER_HEIGHT)/2.5); ctx.lineTo(i, RULER_HEIGHT + (h-RULER_HEIGHT)/2 + maxVal * (h-RULER_HEIGHT)/2.5);
             }
             ctx.stroke(); ctx.globalAlpha = 1;
         }
@@ -265,7 +286,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
                     <div className="flex items-center gap-3">
                          <button onClick={() => setShowAnalyzer(true)} className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-sm font-black flex items-center gap-2 border border-indigo-200 transition-all"><Wand2 size={16}/> AI 분석</button>
                          <button onClick={async () => { if(isAdvPlaying) { if(simPlaySourceRef.current) simPlaySourceRef.current.stop(); setIsAdvPlaying(false); } else { const b = await renderAdvancedAudio(); if(b) { const s = audioContext.createBufferSource(); s.buffer = b; s.loop = larynxParams.loopOn; s.connect(audioContext.destination); s.start(); simPlaySourceRef.current = s; setIsAdvPlaying(true); s.onended = () => setIsAdvPlaying(false); } } }} className="px-8 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all active:scale-95 text-base">{isAdvPlaying ? <Pause size={20}/> : <Play size={20}/>}{isAdvPlaying ? t.common.stop : t.common.preview}</button>
-                         <button onClick={handleSaveToRack} className="px-6 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all"><Save size={20}/> {t.common.save}</button>
+                         <button onClick={async () => { const b = await renderAdvancedAudio(); if (b) onAddToRack(b, "Sim_Tract"); }} className="px-6 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all"><Save size={20}/> {t.common.save}</button>
                     </div>
                 </div>
                 <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 min-h-0 overflow-hidden">
@@ -287,6 +308,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
                                 </div>
                                 <div className="space-y-4">
                                     <h3 className="text-[11px] font-black text-slate-400 uppercase flex items-center gap-2"><Wind size={14}/> Larynx Params</h3>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-[10px] font-black"><span>Jitter</span><span>{Math.round(larynxParams.jitterDepth * 100)}%</span></div>
+                                        <input type="range" min="0" max="0.5" step="0.01" value={larynxParams.jitterDepth} onChange={e=>setLarynxParams({...larynxParams, jitterDepth: Number(e.target.value)})} className="w-full h-1 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-[10px] font-black"><span>Shimmer</span><span>{Math.round(shimmerAmount * 100)}%</span></div>
+                                        <input type="range" min="0" max="0.3" step="0.01" value={shimmerAmount} onChange={e=>setShimmerAmount(Number(e.target.value))} className="w-full h-1 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                    </div>
                                     <div className="space-y-2">
                                         <div className="flex justify-between text-[10px] font-black"><span>Breath Mix</span><span>{Math.round(larynxParams.breathGain*100)}%</span></div>
                                         <input type="range" min="0" max="0.3" step="0.01" value={larynxParams.breathGain} onChange={e=>setLarynxParams({...larynxParams, breathGain: Number(e.target.value)})} className="w-full h-1 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
@@ -312,7 +341,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ lang, audioContext,
                             </svg>
                         </div>
                         <div className="h-48 shrink-0 bg-slate-900 border border-slate-700 rounded-2xl relative overflow-hidden group">
-                            <canvas ref={canvasRef} width={1200} height={200} className="w-full h-full cursor-crosshair" onMouseDown={handleTimelineMouseDown} onMouseUp={() => setDraggingKeyframe(null)}/>
+                            <canvas ref={canvasRef} width={1200} height={200} className="w-full h-full cursor-crosshair" onMouseDown={handleTimelineMouseDown} onMouseMove={handleTimelineMouseMove} onMouseUp={() => setDraggingKeyframe(null)}/>
                             <div className="absolute top-2 left-2 flex gap-1"><button onClick={() => setIsEditMode(!isEditMode)} className={`p-2 rounded-lg transition-all ${isEditMode ? 'bg-blue-600 text-white' : 'bg-black/50 text-white hover:bg-black/70'}`}><PencilLine size={16}/></button></div>
                         </div>
                     </div>

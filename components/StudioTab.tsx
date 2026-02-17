@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power, Trash2, 
-  ArrowLeftRight, Volume2, MoveHorizontal, Wand2, RefreshCw, Layers
+  ArrowLeftRight, Volume2, MoveHorizontal, Wand2, RefreshCw, Layers, ZoomIn, TrendingUp, TrendingDown
 } from 'lucide-react';
 import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
@@ -32,8 +32,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
     const [playheadPos, setPlayheadPos] = useState(0); 
     const [showAutomation, setShowAutomation] = useState(true);
     const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
+    const [zoomLevel, setZoomLevel] = useState(1); // 확대 레벨 (1~10)
     
-    // UI Tabs
     const [sideTab, setSideTab] = useState<'effects' | 'formant'>('effects');
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
     const [redoStack, setRedoStack] = useState<UndoState[]>([]);
@@ -50,6 +50,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
     ]);
     
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const animRef = useRef<number | null>(null);
     const startTimeRef = useRef(0);
@@ -157,7 +158,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
             const animate = () => {
                 const elapsed = audioContext.currentTime - startTimeRef.current;
                 const progress = elapsed / buf.duration;
-                if (progress < 1) { setPlayheadPos(progress); animRef.current = requestAnimationFrame(animate); } 
+                if (progress < 1) { 
+                    setPlayheadPos(progress); 
+                    // 재생 헤드 위치가 화면 밖으로 나가면 스크롤 이동
+                    if (scrollContainerRef.current) {
+                        const container = scrollContainerRef.current;
+                        const scrollLeft = progress * container.scrollWidth - container.clientWidth / 2;
+                        container.scrollLeft = scrollLeft;
+                    }
+                    animRef.current = requestAnimationFrame(animate); 
+                } 
                 else { setIsPlaying(false); setPlayheadPos(0); }
             };
             animRef.current = requestAnimationFrame(animate);
@@ -174,22 +184,33 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
         const buffer = activeFile.buffer;
         const data = buffer.getChannelData(0);
         const step = Math.ceil(data.length / w);
-        ctx.clearRect(0,0,w,h); ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,w,h);
+
+        ctx.clearRect(0,0,w,h); 
+        ctx.fillStyle = '#0f172a'; 
+        ctx.fillRect(0,0,w,h);
+        
+        // Grid
         ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1; ctx.beginPath();
-        for(let i=1; i<10; i++){ ctx.moveTo(i * w/10, 0); ctx.lineTo(i * w/10, h); }
+        for(let i=1; i<20 * zoomLevel; i++){ ctx.moveTo(i * w / (20 * zoomLevel), 0); ctx.lineTo(i * w / (20 * zoomLevel), h); }
         ctx.stroke();
+
+        // Selection
         ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
         ctx.fillRect(editTrim.start * w, 0, (editTrim.end - editTrim.start) * w, h);
+
+        // Waveform
         ctx.beginPath(); ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1;
         for(let i=0; i<w; i++){
-            let min=1, max=-1;
+            let minVal=1, maxVal=-1;
             for(let j=0; j<step; j++){
                 const d = data[i*step + j] || 0;
-                if(d < min) min = d; if(d > max) max = d;
+                if(d < minVal) minVal = d; if(d > maxVal) maxVal = d;
             }
-            ctx.moveTo(i, h/2 + min * h/2.2); ctx.lineTo(i, h/2 + max * h/2.2);
+            ctx.moveTo(i, h/2 + minVal * h/2.2); ctx.lineTo(i, h/2 + maxVal * h/2.2);
         }
         ctx.stroke();
+
+        // Automation
         if(showAutomation) {
             ctx.beginPath(); ctx.strokeStyle = '#f43f5e'; ctx.setLineDash([5, 5]); ctx.lineWidth = 2;
             volumeKeyframes.forEach((p, i) => {
@@ -201,25 +222,28 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
                 ctx.fillStyle = '#f43f5e'; ctx.beginPath(); ctx.arc(p.t * w, h - (p.v * h * 0.8) - (h * 0.1), 4, 0, Math.PI*2); ctx.fill();
             });
         }
+
         ctx.fillStyle = '#60a5fa'; [editTrim.start, editTrim.end].forEach(pos => { ctx.fillRect(pos * w - 2, 0, 4, h); });
-        if(isPlaying) {
+
+        if(isPlaying || playheadPos > 0) {
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.moveTo(playheadPos * w, 0); ctx.lineTo(playheadPos * w, h); ctx.stroke();
         }
-    }, [activeFile, editTrim, isPlaying, playheadPos, volumeKeyframes, showAutomation]);
+    }, [activeFile, editTrim, isPlaying, playheadPos, volumeKeyframes, showAutomation, zoomLevel]);
 
-    const handleMouseDown = (e: React.MouseEvent) => {
+    const handleCanvasInteraction = (e: React.MouseEvent) => {
         if(!canvasRef.current || !activeFile) return;
         const rect = canvasRef.current.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
         const y = 1 - (e.clientY - rect.top) / rect.height;
+
         if (showAutomation) {
-            const hitIdx = volumeKeyframes.findIndex(p => Math.abs(p.t - x) < 0.02 && Math.abs(p.v - y) < 0.1);
+            const hitIdx = volumeKeyframes.findIndex(p => Math.abs(p.t - x) < (0.02 / zoomLevel) && Math.abs(p.v - y) < 0.1);
             if (hitIdx !== -1) { setDragging({ type: 'automation', index: hitIdx }); return; } 
             else if (e.shiftKey) { setVolumeKeyframes([...volumeKeyframes, { t: x, v: Math.max(0, Math.min(1, y)) }].sort((a,b) => a.t - b.t)); return; }
         }
-        const nearStart = Math.abs(editTrim.start - x) < 0.02;
-        const nearEnd = Math.abs(editTrim.end - x) < 0.02;
+        const nearStart = Math.abs(editTrim.start - x) < (0.01 / zoomLevel);
+        const nearEnd = Math.abs(editTrim.end - x) < (0.01 / zoomLevel);
         if (nearStart) setDragging({ type: 'selection', index: 0 });
         else if (nearEnd) setDragging({ type: 'selection', index: 1 });
         else { setEditTrim({ start: x, end: x }); setDragging({ type: 'selection', index: 1 }); }
@@ -245,7 +269,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
                     <div className="flex items-center justify-between border-b border-slate-200 pb-4 shrink-0">
                         <div className="flex items-center gap-3">
                             <div className="p-2 bg-blue-500 rounded-xl text-white font-black"><Activity size={24}/></div>
-                            <h2 className="text-xl text-slate-800 tracking-tight font-black">{activeFile ? activeFile.name : 'Studio Editor'}</h2>
+                            <h2 className="text-xl text-slate-800 tracking-tight font-black truncate max-w-[300px]">{activeFile ? activeFile.name : 'Studio Editor'}</h2>
                         </div>
                         <div className="flex items-center gap-2">
                             <button onClick={handleLocalUndo} disabled={undoStack.length === 0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 disabled:opacity-30"><Undo2 size={18}/></button>
@@ -259,8 +283,15 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
                         </div>
                     ) : (
                         <div className="flex-1 flex flex-col gap-6 min-h-0">
-                            <div className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative overflow-hidden shadow-inner group">
-                                <canvas ref={canvasRef} width={1200} height={400} className="w-full h-full cursor-crosshair" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setDragging(null)}/>
+                            <div ref={scrollContainerRef} className="flex-1 bg-slate-900 rounded-2xl border border-slate-700 relative overflow-x-auto overflow-y-hidden shadow-inner group custom-scrollbar">
+                                <canvas 
+                                    ref={canvasRef} 
+                                    width={1200 * zoomLevel} height={400} 
+                                    className="h-full cursor-crosshair" 
+                                    onMouseDown={handleCanvasInteraction} 
+                                    onMouseMove={handleMouseMove} 
+                                    onMouseUp={() => setDragging(null)}
+                                />
                                 <div className="absolute top-4 left-4 flex gap-2">
                                     <button onClick={() => setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-2 ${showAutomation ? 'bg-rose-500 text-white shadow-lg' : 'bg-black/50 text-slate-400 hover:bg-black/70'}`}><Volume2 size={14}/> {t.automation}</button>
                                 </div>
@@ -268,14 +299,15 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
                             <div className="grid grid-cols-6 gap-4 shrink-0">
                                 <button onClick={handleCrop} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-blue-50 transition-all"><Scissors size={18} className="text-blue-500"/><span className="text-[9px] uppercase font-black">{t.crop}</span></button>
                                 <button onClick={handleDeleteRange} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-red-50 transition-all"><Trash2 size={18} className="text-red-500"/><span className="text-[9px] uppercase font-black">{t.delete}</span></button>
-                                <button onClick={() => handleFade('in')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><RefreshCw size={18} className="text-cyan-500"/><span className="text-[9px] uppercase font-black">{t.fadeIn}</span></button>
-                                <button onClick={() => handleFade('out')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><RefreshCw size={18} className="text-cyan-600"/><span className="text-[9px] uppercase font-black">{t.fadeOut}</span></button>
+                                <button onClick={() => handleFade('in')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><TrendingUp size={18} className="text-cyan-500"/><span className="text-[9px] uppercase font-black">{t.fadeIn}</span></button>
+                                <button onClick={() => handleFade('out')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><TrendingDown size={18} className="text-cyan-600"/><span className="text-[9px] uppercase font-black">{t.fadeOut}</span></button>
                                 <button onClick={handleReverse} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-indigo-50 transition-all"><ArrowLeftRight size={18} className="text-indigo-500"/><span className="text-[9px] uppercase font-black">Reverse</span></button>
                                 <button onClick={handleNormalize} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-amber-50 transition-all"><Layers size={18} className="text-amber-500"/><span className="text-[9px] uppercase font-black">Normalize</span></button>
                             </div>
-                            <div className="flex justify-between items-center bg-slate-100 p-4 rounded-2xl border border-slate-200">
-                                <div className="flex items-center gap-4">
-                                    <div className="flex flex-col"><span className="text-[10px] text-slate-400 uppercase">Master Gain</span><div className="flex items-center gap-3"><input type="range" min="0" max="2" step="0.05" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-32 h-1.5 bg-slate-300 rounded-full appearance-none accent-slate-600"/><span className="text-xs font-black w-8">{Math.round(masterGain*100)}%</span></div></div>
+                            <div className="flex justify-between items-center bg-slate-100 p-4 rounded-2xl border border-slate-200 gap-6">
+                                <div className="flex items-center gap-6">
+                                    <div className="flex flex-col"><span className="text-[10px] text-slate-400 uppercase">Master Gain</span><div className="flex items-center gap-3"><input type="range" min="0" max="2" step="0.05" value={masterGain} onChange={e=>setMasterGain(Number(e.target.value))} className="w-24 h-1.5 bg-slate-300 rounded-full appearance-none accent-slate-600"/><span className="text-xs font-black w-8">{Math.round(masterGain*100)}%</span></div></div>
+                                    <div className="flex flex-col"><span className="text-[10px] text-slate-400 uppercase">Zoom</span><div className="flex items-center gap-3"><input type="range" min="1" max="10" step="1" value={zoomLevel} onChange={e=>setZoomLevel(Number(e.target.value))} className="w-24 h-1.5 bg-slate-300 rounded-full appearance-none accent-blue-600"/><ZoomIn size={14} className="text-blue-600"/></div></div>
                                 </div>
                                 <div className="flex gap-3">
                                     <button onClick={togglePlay} className="px-10 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all active:scale-95">{isPlaying ? <Square size={20} fill="currentColor"/> : <Play size={20} fill="currentColor"/>}{isPlaying ? t.stop : t.preview}</button>
