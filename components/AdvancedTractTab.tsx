@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine } from 'lucide-react';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, GripHorizontal } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -40,8 +40,13 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [hoveredKeyframe, setHoveredKeyframe] = useState<{trackId: string, index: number} | null>(null);
     const [draggingKeyframe, setDraggingKeyframe] = useState<{trackId?: string, index?: number, isPlayhead?: boolean} | null>(null);
     
+    // Layout State
     const [sidebarWidth, setSidebarWidth] = useState(420);
-    const [isResizing, setIsResizing] = useState(false);
+    const [timelineHeight, setTimelineHeight] = useState(220);
+    const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+    const [isResizingTimeline, setIsResizingTimeline] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
 
@@ -101,6 +106,39 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const previewDebounceRef = useRef<number | null>(null);
 
     useEffect(() => { isAdvPlayingRef.current = isAdvPlaying; }, [isAdvPlaying]);
+
+    // UI Resize Handlers
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!containerRef.current) return;
+            const containerRect = containerRef.current.getBoundingClientRect();
+
+            if (isResizingSidebar) {
+                const newWidth = containerRect.right - e.clientX;
+                setSidebarWidth(Math.max(300, Math.min(containerRect.width - 300, newWidth)));
+            }
+            
+            if (isResizingTimeline) {
+                const newHeight = containerRect.bottom - e.clientY;
+                setTimelineHeight(Math.max(100, Math.min(containerRect.height - 200, newHeight)));
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsResizingSidebar(false);
+            setIsResizingTimeline(false);
+        };
+
+        if (isResizingSidebar || isResizingTimeline) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isResizingSidebar, isResizingTimeline]);
 
     const getCurrentState = useCallback(() => ({
         larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands
@@ -417,11 +455,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const nasalVelumAngle = liveTract.nasal * 40; 
 
     return (
-        <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden" onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
-            <div className="flex-[2] flex gap-0 shrink-0 min-h-0">
+        <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden h-full" ref={containerRef} onMouseUp={() => { if(draggingKeyframe) commitChange(); setDraggingKeyframe(null); }}>
+            <div className="flex-1 flex gap-0 shrink-0 min-h-0">
                 <div className="flex-1 bg-white/60 rounded-2xl border border-slate-300 flex flex-col relative overflow-hidden shadow-sm">
-                    <div className="flex-1 relative flex items-center justify-center px-5 py-2 overflow-hidden select-none">
-                        <svg viewBox="100 50 280 340" className="w-[90%] h-[90%] drop-shadow-xl overflow-visible">
+                    <div className="flex-1 relative flex items-center justify-center px-2 py-2 overflow-hidden select-none">
+                        <svg viewBox="100 50 280 340" preserveAspectRatio="xMidYMid meet" className="w-full h-full drop-shadow-xl overflow-visible max-w-full max-h-full">
                             {/* 성도 가이드 라인 (외형) */}
                             <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#e2e8f0" strokeWidth="4" />
                             <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#e2e8f0" strokeWidth="4" />
@@ -476,7 +514,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         </div>
                     </div>
                 </div>
-                <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'bg-blue-500' : ''}`} onMouseDown={(e)=>{setIsResizing(true); e.preventDefault();}} />
+                <div 
+                    className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors z-10 flex items-center justify-center ${isResizingSidebar ? 'bg-blue-500' : ''}`} 
+                    onMouseDown={(e)=>{setIsResizingSidebar(true); e.preventDefault();}}
+                >
+                    <GripVertical size={12} className="text-slate-300 pointer-events-none"/>
+                </div>
                 <div className="bg-white/40 rounded-2xl border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
                     <div className="flex border-b border-slate-300 bg-white/40">
                         <button onClick={()=>setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab==='settings'?'bg-white text-[#209ad6] border-b-2 border-[#209ad6] shadow-sm':'text-slate-500'}`}><Settings2 size={14} className="inline mr-1"/> {t.common.settings}</button>
@@ -501,8 +544,17 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     </div>
                 </div>
             </div>
-            <div className="min-h-[220px] bg-white/40 rounded-2xl border border-slate-300 p-2 shadow-sm relative shrink-0">
-                 <div className="flex items-center justify-between gap-1.5 pb-1 px-1">
+            
+            {/* Vertical Resizer */}
+            <div 
+                className={`h-2 hover:bg-blue-400/50 cursor-row-resize transition-colors flex items-center justify-center shrink-0 z-10 -my-1 ${isResizingTimeline ? 'bg-blue-500' : ''}`}
+                onMouseDown={(e)=>{setIsResizingTimeline(true); e.preventDefault();}}
+            >
+                <GripHorizontal size={16} className="text-slate-300 pointer-events-none"/>
+            </div>
+
+            <div className="bg-white/40 rounded-2xl border border-slate-300 p-2 shadow-sm relative shrink-0 flex flex-col" style={{ height: `${timelineHeight}px` }}>
+                 <div className="flex items-center justify-between gap-1.5 pb-1 px-1 shrink-0">
                     <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1">
                         {advTracks.map(t=><button key={t.id} onClick={()=>setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId===t.id?'bg-[#209ad6] text-white border-[#209ad6] shadow-md':'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
                     </div>
@@ -516,11 +568,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         </button>
                     </div>
                 </div>
-                <div className="h-[180px] bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
+                <div className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner min-h-0">
                     <canvas 
                         ref={canvasRef} 
                         width={1000} 
-                        height={180} 
+                        height={Math.max(100, timelineHeight - 40)} 
                         className={`w-full h-full ${isEditMode ? 'cursor-crosshair' : 'cursor-text'}`} 
                         onMouseDown={handleTimelineMouseDown} 
                         onMouseMove={handleTimelineMouseMove} 
