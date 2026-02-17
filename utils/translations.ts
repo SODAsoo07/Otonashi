@@ -1,5 +1,5 @@
 
-export type Language = 'ko' | 'en';
+export type Language = 'ko' | 'en' | 'ja';
 
 export const translations = {
   ko: {
@@ -26,7 +26,8 @@ export const translations = {
     },
     app: {
       title: "OTONASHI",
-      subtitle: "증강 성도 & 비강 시뮬레이터",
+      subtitle: "Augmented Vocal-Tract & Nasal Simulator",
+      machineTranslationWarning: null,
       tabs: {
         editor: "스튜디오",
         generator: "자음 생성",
@@ -156,6 +157,7 @@ export const translations = {
     app: {
       title: "OTONASHI",
       subtitle: "Augmented Vocal-Tract & Nasal Simulator",
+      machineTranslationWarning: "The UI is machine-translated and may contain errors.",
       tabs: {
         editor: "Studio",
         generator: "Consonant Gen",
@@ -258,6 +260,136 @@ export const translations = {
       confirm: "Got it",
       projManage: "Project Management",
       projDesc: "Click the Download button in the header to export the current project as a .json file. You can restore it later using the Upload button."
+    }
+  },
+  ja: {
+    common: {
+      save: "保存",
+      open: "開く",
+      help: "ヘルプ",
+      play: "再生",
+      stop: "停止",
+      record: "録音",
+      delete: "削除",
+      cancel: "キャンセル",
+      confirm: "確認",
+      download: "ダウンロード",
+      upload: "アップロード",
+      settings: "設定",
+      loading: "読み込み中...",
+      pitch: "ピッチ",
+      gender: "性別",
+      gain: "ゲイン",
+      volume: "音量",
+      mute: "ミュート",
+      eq: "EQ"
+    },
+    app: {
+      title: "OTONASHI",
+      subtitle: "Augmented Vocal-Tract & Nasal Simulator",
+      machineTranslationWarning: "UIは機械翻訳されており、誤りが含まれている可能性があります。",
+      tabs: {
+        editor: "スタジオ",
+        generator: "子音生成",
+        consonant: "C-V合成",
+        sim: "声道シミュ"
+      }
+    },
+    fileRack: {
+      title: "ファイルラック",
+      dropHint: "ファイルをここにドラッグするか\n+ボタンを押して追加",
+      uploadTip: "ファイルアップロード",
+      collapse: "ラックを折りたたむ",
+      expand: "ラックを展開",
+      empty: "ラックは空です"
+    },
+    studio: {
+      undo: "元に戻す",
+      redo: "やり直し",
+      selectAll: "すべて選択",
+      cut: "選択範囲をカット",
+      automation: "オートメーション",
+      playAll: "全再生",
+      playSel: "選択再生",
+      saveSel: "選択保存",
+      saveSelTooltip: "選択範囲をラックに保存",
+      saveResult: "結果を保存",
+      empty: "ラックからファイルを選択してください",
+      tabEffects: "エフェクト",
+      tabFormant: "フォルマント",
+      tabFilter: "フィルター",
+      fades: "フェード",
+      fadeIn: "フェードイン",
+      fadeOut: "フェードアウト",
+      delay: "ディレイ",
+      formant: "フォルマント"
+    },
+    generator: {
+      title: "子音ジェネレーター",
+      masterEq: "マスターEQ",
+      source: "ソース (Source)",
+      synth: "シンセサイザー",
+      file: "ファイル",
+      fileSelect: "ファイル選択",
+      noiseMix: "ノイズミックス",
+      voiceMix: "ボイスミックス",
+      multiFilter: "マルチフィルター",
+      envelope: "エンベロープ (ADSR)",
+      outputGain: "出力ゲイン",
+      genAndPlay: "生成して再生",
+      playing: "再生中...",
+      saveToRack: "ラックに保存",
+      whiteNoise: "ホワイトノイズ",
+      pinkNoise: "ピンクノイズ"
+    },
+    consonant: {
+      title: "C-V ミキサー",
+      placementMode: "配置モード",
+      volumeMode: "音量モード",
+      vowel: "母音 (Vowel)",
+      consonant: "子音 (Consonant)",
+      offset: "オフセット",
+      stretch: "伸縮 (Stretch)",
+      preview: "プレビュー",
+      moveDrag: "ドラッグしてタイミング調整",
+      volDrag: "クリック: 点追加 | 右クリック: 削除",
+      selectFile: "選択なし",
+      save: "保存"
+    },
+    simulator: {
+      record: "記録",
+      saveToRack: "ラックに保存",
+      tip: "ヒント：声道のピンク色（舌）、黄色（軟口蓋）、先端（唇）を直接ドラッグしてリアルタイムで音を操作できます。",
+      tracks: {
+        tongueX: "舌の位置(X)",
+        tongueY: "舌の高さ(Y)",
+        lips: "唇の開き",
+        lipLen: "唇の長さ",
+        throat: "喉の開き",
+        nasal: "軟口蓋",
+        pitch: "ピッチ(Hz)",
+        gender: "性別",
+        gain: "ゲイン",
+        breath: "ブレス"
+      },
+      editMode: "キーフレーム編集モード",
+      playheadMode: "再生ヘッド移動モード"
+    },
+    help: {
+      title: "OTONASHI ユーザーガイド",
+      source: "※ ソースコードはAIによって生成されました。",
+      intro: "OTONASHIは、Webベースの声道シミュレーターおよびオーディオ拡張ツールです。以下の説明で各タブの機能を確認してください。",
+      sectionStudio: "スタジオ (Studio)",
+      descStudio: "波形編集、EQ、オートメーションをサポートします。",
+      sectionGen: "子音ジェネレーター (Consonant Gen)",
+      descGen: "ノイズとフィルターを使用して子音を合成します。",
+      sectionMix: "C-V ミキサー (C-V Mixer)",
+      descMix: "2つのオーディオを結合し、タイミングを調整します。",
+      sectionSim: "声道シミュレーター (Simulator)",
+      descSim: "物理モデルに基づいて声道をシミュレートし、音声を合成します。",
+      confirm: "確認しました",
+      projManage: "プロジェクト管理",
+      projDesc: "ヘッダーのダウンロードボタンをクリックして、現在のプロジェクトを.jsonファイルとしてエクスポートできます。後でアップロードボタンを使用して復元できます。"
     }
   }
 };
