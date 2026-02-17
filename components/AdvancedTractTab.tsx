@@ -1,4 +1,5 @@
 
+<<<<<<< HEAD
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
@@ -8,6 +9,15 @@ import FormantAnalyzer from './FormantAnalyzer';
 import TractVisualizer from './TractVisualizer';
 import TimelineEditor from './TimelineEditor';
 import ParamInput from './ui/ParamInput';
+=======
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { MoveHorizontal, CircleDot, Pause, Play, Sliders, RotateCcw, RefreshCw, MousePointer2, Undo2, Redo2, History, AudioLines, GripVertical, Settings2, PencilLine, Download, Save, Mic2, Wind, Activity, Wand2, GitCommit, Spline, Repeat, Music } from 'lucide-react';
+import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand, KeyframePoint } from '../types';
+import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
+import { Language, i18n } from '../utils/i18n';
+import ParametricEQ from './ParametricEQ';
+import FormantAnalyzer from './FormantAnalyzer';
+>>>>>>> parent of 31e05c6 (Update AdvancedTractTab.tsx)
 
 interface AdvancedTractTabProps {
   audioContext: AudioContext;
