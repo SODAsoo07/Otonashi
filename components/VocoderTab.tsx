@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mic2, Activity, Play, Save, Settings2, AudioLines, Music2, Cpu, Zap, Snowflake, Pencil, RotateCcw, Camera, MoveVertical } from 'lucide-react';
+import { Mic2, Activity, Play, Save, Settings2, AudioLines, Music2, Cpu, Zap, Snowflake, Pencil, RotateCcw, Camera, MoveVertical, Lightbulb } from 'lucide-react';
 import { AudioFile, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -58,6 +58,9 @@ const VocoderTab: React.FC<VocoderTabProps> = ({ audioContext, files, onAddToRac
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const [isDrawing, setIsDrawing] = useState(false);
+    
+    // Smooth Drawing State
+    const lastDrawPos = useRef<{ bandIdx: number, gain: number } | null>(null);
 
     // Update bandGains array when band count changes
     useEffect(() => {
@@ -316,7 +319,7 @@ const VocoderTab: React.FC<VocoderTabProps> = ({ audioContext, files, onAddToRac
         setBandGains(newGains);
     };
 
-    // Canvas Interaction
+    // Canvas Interaction (Smoothed)
     const handleCanvasDraw = (e: React.MouseEvent) => {
         if (!canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect();
@@ -328,16 +331,42 @@ const VocoderTab: React.FC<VocoderTabProps> = ({ audioContext, files, onAddToRac
         // Map X to Band Index
         const bandWidth = w / bands;
         const bandIdx = Math.floor(x / bandWidth);
+        const gain = Math.max(0, Math.min(2, 2 - (y / h) * 2));
+
         if (bandIdx >= 0 && bandIdx < bands) {
-            // Map Y to Gain (0 to 2.0)
-            const gain = Math.max(0, Math.min(2, 2 - (y / h) * 2));
             setBandGains(prev => {
                 const n = [...prev];
-                n[bandIdx] = gain;
+                
+                // Interpolation logic
+                if (lastDrawPos.current) {
+                    const startIdx = lastDrawPos.current.bandIdx;
+                    const endIdx = bandIdx;
+                    const startGain = lastDrawPos.current.gain;
+                    const endGain = gain;
+                    
+                    const dist = Math.abs(endIdx - startIdx);
+                    const step = startIdx < endIdx ? 1 : -1;
+                    
+                    // Fill gaps between previous mouse pos and current
+                    for(let i=0; i<=dist; i++) {
+                         const currIdx = startIdx + (i * step);
+                         const progress = i / dist; 
+                         const interpGain = dist === 0 ? endGain : (startGain + (endGain - startGain) * progress);
+                         if (currIdx >= 0 && currIdx < bands) {
+                             n[currIdx] = interpGain;
+                         }
+                    }
+                } else {
+                    // Single point click
+                    n[bandIdx] = gain;
+                }
                 return n;
             });
+            lastDrawPos.current = { bandIdx, gain };
         }
     };
+
+    const resetDrawing = () => { lastDrawPos.current = null; };
 
     useEffect(() => {
         const draw = () => {
@@ -512,24 +541,54 @@ const VocoderTab: React.FC<VocoderTabProps> = ({ audioContext, files, onAddToRac
                             </div>
                         </div>
                         
-                        {/* 3. Spectral Freeze */}
-                        <div className={`p-5 rounded-xl border shadow-sm space-y-3 transition-colors ${freeze ? 'bg-cyan-50 border-cyan-200' : 'bg-white border-slate-200'}`}>
-                             <div className="flex items-center justify-between">
-                                <h3 className="text-xs font-black text-slate-500 uppercase flex items-center gap-2"><Snowflake size={14} className={freeze ? "text-cyan-500" : ""}/> Spectral Freeze</h3>
-                                <button onClick={()=>setFreeze(!freeze)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${freeze ? 'bg-cyan-500' : 'bg-slate-300'}`}>
-                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${freeze ? 'translate-x-4.5' : 'translate-x-1'}`}/>
-                                </button>
-                             </div>
-                             <p className="text-[10px] text-slate-400 font-bold leading-tight">
-                                {freeze 
-                                    ? "Modulator 엔벨로프를 무시하고, 현재 그려진 Band Gain을 고정 필터로 사용합니다. UTAU 보이스뱅크 제작에 유용합니다."
-                                    : "Modulator의 엔벨로프를 실시간으로 추적합니다."
-                                }
-                             </p>
-                             <div className="pt-2 flex gap-2">
-                                <button onClick={()=>{setBandGains(new Array(bands).fill(1.0))}} className="flex-1 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-[10px] font-black text-slate-600 flex items-center justify-center gap-1 shadow-sm"><RotateCcw size={12}/> Reset Draw</button>
-                                <button onClick={handleCapture} disabled={!generatedBuffer && !modulatorId} className="flex-1 py-1.5 bg-white border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-[10px] font-black text-slate-600 flex items-center justify-center gap-1 shadow-sm" title="현재 재생 위치의 Modulator 스펙트럼을 캡처하여 Drawing에 적용합니다."><Camera size={12}/> Capture at Cursor</button>
-                             </div>
+                        {/* 3. Spectral Freeze & Recipes */}
+                        <div className="space-y-4">
+                            <div className={`p-5 rounded-xl border shadow-sm space-y-3 transition-colors ${freeze ? 'bg-cyan-50 border-cyan-200' : 'bg-white border-slate-200'}`}>
+                                 <div className="flex items-center justify-between">
+                                    <h3 className="text-xs font-black text-slate-500 uppercase flex items-center gap-2"><Snowflake size={14} className={freeze ? "text-cyan-500" : ""}/> Spectral Freeze</h3>
+                                    <button onClick={()=>setFreeze(!freeze)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${freeze ? 'bg-cyan-500' : 'bg-slate-300'}`}>
+                                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${freeze ? 'translate-x-4.5' : 'translate-x-1'}`}/>
+                                    </button>
+                                 </div>
+                                 <p className="text-[10px] text-slate-400 font-bold leading-tight">
+                                    {freeze 
+                                        ? "Modulator 엔벨로프를 무시하고, 현재 그려진 Band Gain을 고정 필터로 사용합니다. UTAU 보이스뱅크 제작에 유용합니다."
+                                        : "Modulator의 엔벨로프를 실시간으로 추적합니다."
+                                    }
+                                 </p>
+                                 <div className="pt-2 flex gap-2">
+                                    <button onClick={()=>{setBandGains(new Array(bands).fill(1.0))}} className="flex-1 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-[10px] font-black text-slate-600 flex items-center justify-center gap-1 shadow-sm"><RotateCcw size={12}/> Reset Draw</button>
+                                    <button onClick={handleCapture} disabled={!generatedBuffer && !modulatorId} className="flex-1 py-1.5 bg-white border border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-[10px] font-black text-slate-600 flex items-center justify-center gap-1 shadow-sm" title="현재 재생 위치의 Modulator 스펙트럼을 캡처하여 Drawing에 적용합니다."><Camera size={12}/> Capture at Cursor</button>
+                                 </div>
+                            </div>
+
+                            {/* Usage Recipes */}
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                                <h3 className="text-xs font-black text-slate-500 uppercase flex items-center gap-2"><Lightbulb size={14} className="text-amber-500"/> Usage Recipes</h3>
+                                <ul className="text-[10px] text-slate-600 space-y-3 font-medium">
+                                    <li className="flex flex-col gap-1">
+                                        <span className="bg-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-black w-fit text-[9px]">🤖 로봇 보이스 (Classic Robot)</span>
+                                        <div className="pl-1 border-l-2 border-slate-300 leading-tight text-slate-500">
+                                            Modulator: <b>사람 목소리</b><br/>
+                                            Carrier: <b>Synth (Sawtooth)</b>
+                                        </div>
+                                    </li>
+                                    <li className="flex flex-col gap-1">
+                                        <span className="bg-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-black w-fit text-[9px]">🥁 텍스처 합성 (Texture)</span>
+                                        <div className="pl-1 border-l-2 border-slate-300 leading-tight text-slate-500">
+                                            Modulator: <b>드럼 루프</b><br/>
+                                            Carrier: <b>패드 / 스트링 (File)</b>
+                                        </div>
+                                    </li>
+                                    <li className="flex flex-col gap-1">
+                                        <span className="bg-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-black w-fit text-[9px]">👻 속삭임 (Whisper)</span>
+                                        <div className="pl-1 border-l-2 border-slate-300 leading-tight text-slate-500">
+                                            Modulator: <b>사람 목소리</b><br/>
+                                            Carrier: <b>Synth (Noise Mix 100%)</b>
+                                        </div>
+                                    </li>
+                                </ul>
+                            </div>
                         </div>
 
                     </div>
@@ -542,10 +601,10 @@ const VocoderTab: React.FC<VocoderTabProps> = ({ audioContext, files, onAddToRac
                                 width={800} 
                                 height={400} 
                                 className="w-full h-full object-cover cursor-crosshair"
-                                onMouseDown={(e)=>{ setIsDrawing(true); handleCanvasDraw(e); }}
+                                onMouseDown={(e)=>{ setIsDrawing(true); resetDrawing(); handleCanvasDraw(e); }}
                                 onMouseMove={(e)=>{ if(isDrawing) handleCanvasDraw(e); }}
-                                onMouseUp={()=>setIsDrawing(false)}
-                                onMouseLeave={()=>setIsDrawing(false)}
+                                onMouseUp={()=>{ setIsDrawing(false); resetDrawing(); }}
+                                onMouseLeave={()=>{ setIsDrawing(false); resetDrawing(); }}
                             />
                             
                             {/* Overlay Info */}

@@ -1,7 +1,7 @@
 {
   "name": "OTONASHI",
   "private": true,
-  "version": "1.1.0-beta",
+  "version": "1.2.0-beta",
   "description": "Web-based Vocal Synthesizer & Tract Simulator",
   "main": "dist-electron/main.js",
   "homepage": "./",
@@ -47,7 +47,10 @@
       "otonashi.ico"
     ],
     "win": {
-      "target": "nsis",
+      "target": [
+        "nsis",
+        "portable"
+      ],
       "icon": "otonashi.ico"
     },
     "nsis": {
