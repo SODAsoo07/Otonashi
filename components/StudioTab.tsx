@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power, Trash2, 
-  ArrowLeftRight, Volume2, MoveHorizontal, Wand2, RefreshCw, Layers, ZoomIn, TrendingUp, TrendingDown
+  ArrowLeftRight, Volume2, MoveHorizontal, Wand2, RefreshCw, Layers, ZoomIn, TrendingUp, TrendingDown, Gauge
 } from 'lucide-react';
 import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
@@ -113,6 +113,20 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
       onUpdateFile(newBuf);
     };
 
+    const handleSpeed = async () => {
+        if(!activeFile) return;
+        const rate = prompt("변경할 속도 비율을 입력하세요 (예: 0.8 = 느리게/저음, 1.5 = 빠르게/고음)", "1.0");
+        if(rate && !isNaN(Number(rate))) {
+             const r = Number(rate);
+             if(r <= 0.1 || r > 4.0) { alert("0.1 ~ 4.0 사이의 값을 입력해주세요."); return; }
+             const newBuf = await AudioUtils.applyStretch(activeFile.buffer, r);
+             if(newBuf) {
+                 pushUndo(activeFile.buffer, "Speed Change");
+                 onUpdateFile(newBuf);
+             }
+        }
+    };
+
     const handleFade = async (type: 'in' | 'out') => {
         if (!activeFile) return;
         const newBuf = await AudioUtils.applyFade(audioContext, activeFile.buffer, type, editTrim.start, editTrim.end);
@@ -160,7 +174,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
                 const progress = elapsed / buf.duration;
                 if (progress < 1) { 
                     setPlayheadPos(progress); 
-                    // 재생 헤드 위치가 화면 밖으로 나가면 스크롤 이동
                     if (scrollContainerRef.current) {
                         const container = scrollContainerRef.current;
                         const scrollLeft = progress * container.scrollWidth - container.clientWidth / 2;
@@ -189,16 +202,13 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
         ctx.fillStyle = '#0f172a'; 
         ctx.fillRect(0,0,w,h);
         
-        // Grid
         ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1; ctx.beginPath();
         for(let i=1; i<20 * zoomLevel; i++){ ctx.moveTo(i * w / (20 * zoomLevel), 0); ctx.lineTo(i * w / (20 * zoomLevel), h); }
         ctx.stroke();
 
-        // Selection
         ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
         ctx.fillRect(editTrim.start * w, 0, (editTrim.end - editTrim.start) * w, h);
 
-        // Waveform
         ctx.beginPath(); ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 1;
         for(let i=0; i<w; i++){
             let minVal=1, maxVal=-1;
@@ -210,7 +220,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
         }
         ctx.stroke();
 
-        // Automation
         if(showAutomation) {
             ctx.beginPath(); ctx.strokeStyle = '#f43f5e'; ctx.setLineDash([5, 5]); ctx.lineWidth = 2;
             volumeKeyframes.forEach((p, i) => {
@@ -296,13 +305,14 @@ const StudioTab: React.FC<StudioTabProps> = ({ lang, audioContext, activeFile, f
                                     <button onClick={() => setShowAutomation(!showAutomation)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-2 ${showAutomation ? 'bg-rose-500 text-white shadow-lg' : 'bg-black/50 text-slate-400 hover:bg-black/70'}`}><Volume2 size={14}/> {t.automation}</button>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-6 gap-4 shrink-0">
+                            <div className="grid grid-cols-7 gap-4 shrink-0">
                                 <button onClick={handleCrop} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-blue-50 transition-all"><Scissors size={18} className="text-blue-500"/><span className="text-[9px] uppercase font-black">{t.crop}</span></button>
                                 <button onClick={handleDeleteRange} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-red-50 transition-all"><Trash2 size={18} className="text-red-500"/><span className="text-[9px] uppercase font-black">{t.delete}</span></button>
                                 <button onClick={() => handleFade('in')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><TrendingUp size={18} className="text-cyan-500"/><span className="text-[9px] uppercase font-black">{t.fadeIn}</span></button>
                                 <button onClick={() => handleFade('out')} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-cyan-50 transition-all"><TrendingDown size={18} className="text-cyan-600"/><span className="text-[9px] uppercase font-black">{t.fadeOut}</span></button>
                                 <button onClick={handleReverse} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-indigo-50 transition-all"><ArrowLeftRight size={18} className="text-indigo-500"/><span className="text-[9px] uppercase font-black">Reverse</span></button>
                                 <button onClick={handleNormalize} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-amber-50 transition-all"><Layers size={18} className="text-amber-500"/><span className="text-[9px] uppercase font-black">Normalize</span></button>
+                                <button onClick={handleSpeed} className="flex flex-col items-center gap-2 p-3 bg-white border border-slate-200 rounded-2xl hover:bg-purple-50 transition-all"><Gauge size={18} className="text-purple-500"/><span className="text-[9px] uppercase font-black">Speed</span></button>
                             </div>
                             <div className="flex justify-between items-center bg-slate-100 p-4 rounded-2xl border border-slate-200 gap-6">
                                 <div className="flex items-center gap-6">
