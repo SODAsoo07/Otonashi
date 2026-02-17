@@ -17,9 +17,9 @@ async function createWindow() {
     minWidth: 1024,
     minHeight: 768,
     title: 'OTONASHI',
+    icon: path.join(__dirname, '../otonashi.ico'),
     backgroundColor: '#f8f8f6',
     webPreferences: {
-      // CommonJS 환경이므로 __dirname을 직접 사용할 수 있습니다.
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
@@ -38,8 +38,7 @@ async function createWindow() {
   } else {
     // 빌드된 파일 구조에 맞춰 경로를 지정합니다.
     await win.loadFile(path.join(__dirname, '../dist/index.html'));
-    // 프로덕션 모드에서는 개발자 도구 자동 오픈을 비활성화합니다.
-    // win.webContents.openDevTools({ mode: 'detach' }); 
+    win.webContents.openDevTools({ mode: 'detach' }); 
   }
 
   win.once('ready-to-show', () => {

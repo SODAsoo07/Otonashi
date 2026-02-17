@@ -43,11 +43,12 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "otonashi.ico"
     ],
     "win": {
       "target": "nsis",
-      "icon": "public/otonashi.ico"
+      "icon": "otonashi.ico"
     },
     "nsis": {
       "oneClick": false,

@@ -302,7 +302,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             nNode = audioContext.createBufferSource(); nNode.buffer = buffer; nNode.loop = true;
         }
         
-        const g = audioContext.createGain(); g.gain.value = 0.5;
+        const g = audioContext.createGain(); 
+        g.gain.value = 0.1; // Reduced from 0.5 to 0.1 for comfortable listening
         const nG = audioContext.createGain(); nG.gain.value = getValueAtTime('breath', playHeadPos);
 
         const f1 = audioContext.createBiquadFilter(); f1.type = 'peaking'; f1.Q.value = 4; f1.gain.value = 12 * simIntensity;
@@ -399,7 +400,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         let nNode: AudioBufferSourceNode;
         if(larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
             const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
-            if(f?.buffer) {
+            if (f?.buffer) {
                 nNode = offline.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn;
             } else {
                 const bufferSize = sr * advDuration;
@@ -424,7 +425,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         for(let i=0; i<=steps; i++) {
              const t = i/steps;
              const time = t * advDuration;
-             mG.gain.linearRampToValueAtTime(getValueAtTime('gain', t), time);
+             // Scale the automation value by 0.25 to prevent clipping from filter resonance
+             mG.gain.linearRampToValueAtTime(getValueAtTime('gain', t) * 0.25, time);
         }
         
         const startFade = Math.max(0, advDuration - fadeOutDuration); 
