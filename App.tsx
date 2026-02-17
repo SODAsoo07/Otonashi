@@ -111,7 +111,7 @@ const AppContent: React.FC = () => {
     };
 
     const toggleLanguage = () => {
-        setLanguage(language === 'ko' ? 'en' : 'ko');
+        setLanguage(language === 'ko' ? 'en' : language === 'en' ? 'ja' : 'ko');
     };
 
     const LoadingFallback = () => (
@@ -136,6 +136,9 @@ const AppContent: React.FC = () => {
                     <div className="flex flex-col">
                         <h1 className="font-black text-xl tracking-tighter leading-none bg-clip-text text-transparent bg-gradient-to-r from-[#b2d4ed] via-[#3c78e8] to-[#e3daf5]">{t.app.title}</h1>
                         <span className="text-[10px] text-slate-400 font-black uppercase tracking-tight">{t.app.subtitle}</span>
+                        {t.app.machineTranslationWarning && (
+                            <span className="text-[9px] text-amber-500 font-bold mt-0.5 tracking-tight">{t.app.machineTranslationWarning}</span>
+                        )}
                     </div>
                 </div>
                 <nav className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
