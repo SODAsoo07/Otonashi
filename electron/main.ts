@@ -1,10 +1,6 @@
 import { app, BrowserWindow, shell, globalShortcut } from 'electron';
 import path from 'path';
 import { platform } from 'os';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Prevent multiple instances
 if (!app.requestSingleInstanceLock()) {
