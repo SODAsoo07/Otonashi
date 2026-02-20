@@ -37,8 +37,10 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     // Voice Source Params
     const [baseSource, setBaseSource] = useState<'synth' | 'file'>('synth');
     const [sourceMix, setSourceMix] = useState(0); 
-    const [voiceFreq, setVoiceFreq] = useState(120);
+    const [voiceFreq, setVoiceFreq] = useState(130);
     const [voiceWave, setVoiceWave] = useState<OscillatorType>('sawtooth');
+    const [voice2Wave, setVoice2Wave] = useState<OscillatorType>('square');
+    const [oscBlend, setOscBlend] = useState(0); // 0 = 100% Wave1, 1 = 100% Wave2
     
     // EQ Bands
     const [eqBands, setEqBands] = useState<EQBand[]>([
@@ -60,57 +62,114 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
     const [history, setHistory] = useState<any[]>([]);
     const [historyIndex, setHistoryIndex] = useState(-1);
 
-    const applyConsonantPreset = (char: 'S' | 'Sh' | 'T' | 'K' | 'P') => {
-        // Reset base params for clear start
+    const applyConsonantPreset = (char: 'S' | 'Sh' | 'T' | 'K' | 'P' | 'M' | 'L' | 'R') => {
         setBaseSource('synth');
-        setSourceMix(0); 
-        setNoiseType('white');
-        
+
         switch(char) {
             case 'S':
-                setDuration(250); setAttack(30); setDecay(100); setSustain(0.7); setRelease(80);
-                setHpFilter({on:true, freq: 3500, q: 0.8});
-                setBpFilter({on:false, freq: 4000, q: 1});
-                setLpFilter({on:false, freq: 8000, q: 1});
+                setSourceMix(0.0); setOscBlend(0); setNoiseType('white');
+                setDuration(250); setAttack(20); setDecay(100); setSustain(0.6); setRelease(100);
+                setHpFilter({on:true, freq: 4000, q: 0.7}); setBpFilter({on:false, freq: 4000, q: 1}); setLpFilter({on:true, freq: 12000, q: 0.5});
                 setTransientOn(false);
+                setEqBands([
+                    { id: 1, type: 'highpass', freq: 3000, gain: 0, q: 0.7, on: true },
+                    { id: 2, type: 'peaking', freq: 7000, gain: 6, q: 1.0, on: true },
+                    { id: 3, type: 'highshelf', freq: 10000, gain: 4, q: 0.7, on: true }
+                ]);
                 break;
             case 'Sh':
-                setDuration(250); setAttack(30); setDecay(100); setSustain(0.8); setRelease(100);
-                setHpFilter({on:true, freq: 1500, q: 0.7});
-                setBpFilter({on:true, freq: 2500, q: 0.8}); // Characteristic resonance
-                setLpFilter({on:true, freq: 6000, q: 1.0});
+                setSourceMix(0.0); setOscBlend(0); setNoiseType('pink');
+                setDuration(300); setAttack(30); setDecay(120); setSustain(0.7); setRelease(120);
+                setHpFilter({on:true, freq: 2000, q: 0.7}); setBpFilter({on:true, freq: 3500, q: 1.0}); setLpFilter({on:true, freq: 8000, q: 0.7});
                 setTransientOn(false);
+                setEqBands([
+                    { id: 1, type: 'highpass', freq: 1000, gain: 0, q: 0.7, on: true },
+                    { id: 2, type: 'peaking', freq: 3500, gain: 8, q: 1.0, on: true },
+                    { id: 3, type: 'highshelf', freq: 8000, gain: -4, q: 0.7, on: true }
+                ]);
                 break;
             case 'T':
-                setDuration(60); setAttack(2); setDecay(25); setSustain(0); setRelease(20);
-                setHpFilter({on:true, freq: 3500, q: 1.0});
-                setBpFilter({on:false, freq: 4000, q: 1});
-                setLpFilter({on:false, freq: 8000, q: 1});
-                setTransientOn(true); setTransientGain(0.9); setTransientFreq(4500); setTransientDecay(8);
+                setSourceMix(0.0); setOscBlend(0); setNoiseType('white');
+                setDuration(80); setAttack(2); setDecay(30); setSustain(0.1); setRelease(30);
+                setHpFilter({on:true, freq: 4000, q: 0.8}); setBpFilter({on:false, freq: 4000, q: 1}); setLpFilter({on:false, freq: 8000, q: 1});
+                setTransientOn(true); setTransientGain(1.0); setTransientFreq(5500); setTransientDecay(10);
+                setEqBands([
+                    { id: 1, type: 'highpass', freq: 2000, gain: 0, q: 0.7, on: true },
+                    { id: 2, type: 'peaking', freq: 6000, gain: 8, q: 1.0, on: true },
+                    { id: 3, type: 'highshelf', freq: 10000, gain: 4, q: 0.7, on: true }
+                ]);
                 break;
             case 'K':
-                setDuration(80); setAttack(5); setDecay(40); setSustain(0); setRelease(30);
-                setHpFilter({on:false, freq: 2000, q: 1});
-                setBpFilter({on:true, freq: 1500, q: 2.5}); // Velar pinch (Mid resonance)
-                setLpFilter({on:false, freq: 8000, q: 1});
-                setTransientOn(true); setTransientGain(0.8); setTransientFreq(1500); setTransientDecay(12);
+                setSourceMix(0.0); setOscBlend(0); setNoiseType('white');
+                setDuration(100); setAttack(3); setDecay(40); setSustain(0.1); setRelease(40);
+                setHpFilter({on:true, freq: 500, q: 0.7}); setBpFilter({on:true, freq: 1800, q: 1.5}); setLpFilter({on:true, freq: 6000, q: 0.7});
+                setTransientOn(true); setTransientGain(0.9); setTransientFreq(1800); setTransientDecay(15);
+                setEqBands([
+                    { id: 1, type: 'highpass', freq: 200, gain: 0, q: 0.7, on: true },
+                    { id: 2, type: 'peaking', freq: 1800, gain: 10, q: 1.5, on: true },
+                    { id: 3, type: 'highshelf', freq: 5000, gain: -2, q: 0.7, on: true }
+                ]);
                 break;
             case 'P':
-                setDuration(60); setAttack(2); setDecay(30); setSustain(0); setRelease(30);
-                setNoiseType('pink'); // Darker noise
-                setHpFilter({on:false, freq: 200, q: 1});
-                setBpFilter({on:false, freq: 500, q: 1});
-                setLpFilter({on:true, freq: 800, q: 1.0}); // Low focus
-                setTransientOn(true); setTransientGain(1.0); setTransientFreq(300); setTransientDecay(10);
+                setSourceMix(0.0); setOscBlend(0); setNoiseType('pink');
+                setDuration(80); setAttack(2); setDecay(30); setSustain(0); setRelease(30);
+                setHpFilter({on:true, freq: 100, q: 0.7}); setBpFilter({on:false, freq: 500, q: 1}); setLpFilter({on:true, freq: 1200, q: 0.7});
+                setTransientOn(true); setTransientGain(1.0); setTransientFreq(600); setTransientDecay(12);
+                setEqBands([
+                    { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },
+                    { id: 2, type: 'peaking', freq: 600, gain: 8, q: 1.5, on: true },
+                    { id: 3, type: 'highshelf', freq: 2000, gain: -6, q: 0.7, on: true }
+                ]);
+                break;
+            case 'M':
+                setSourceMix(0.95); setNoiseType('pink'); // 약간의 숨소리(노이즈) 혼합
+                setVoiceWave('sawtooth'); setVoice2Wave('sine'); setOscBlend(0.4); 
+                setVoiceFreq(130);
+                setDuration(300); setAttack(40); setDecay(100); setSustain(0.85); setRelease(100);
+                setHpFilter({on:false, freq: 100, q: 1}); setBpFilter({on:false, freq: 1200, q: 1}); setLpFilter({on:true, freq: 800, q: 0.5});
+                setTransientOn(false);
+                setEqBands([
+                    { id: 1, type: 'peaking', freq: 250, gain: 8, q: 2.0, on: true },
+                    { id: 2, type: 'peaking', freq: 1200, gain: -10, q: 2.0, on: true },
+                    { id: 3, type: 'peaking', freq: 2500, gain: -15, q: 2.0, on: true } // 비음 특유의 먹먹함을 위해 고음 컷
+                ]);
+                break;
+            case 'L':
+                setSourceMix(0.98); setNoiseType('white');
+                setVoiceWave('triangle'); setVoice2Wave('sine'); setOscBlend(0.5); 
+                setVoiceFreq(150);
+                setDuration(220); setAttack(40); setDecay(60); setSustain(0.7); setRelease(80);
+                setHpFilter({on:false, freq: 100, q: 1}); setBpFilter({on:false, freq: 1500, q: 1}); setLpFilter({on:false, freq: 3000, q: 0.8});
+                setTransientOn(true); setTransientGain(0.1); setTransientFreq(1800); setTransientDecay(10);
+                setEqBands([
+                    { id: 1, type: 'peaking', freq: 400, gain: 4, q: 2.0, on: true },
+                    { id: 2, type: 'peaking', freq: 1500, gain: 8, q: 2.0, on: true }, // F2 강조
+                    { id: 3, type: 'highshelf', freq: 3000, gain: -10, q: 1.0, on: true }
+                ]);
+                break;
+            case 'R':
+                setSourceMix(0.95); setNoiseType('white');
+                setVoiceWave('triangle'); setVoice2Wave('sawtooth'); setOscBlend(0.1); 
+                setVoiceFreq(150);
+                setDuration(220); setAttack(35); setDecay(60); setSustain(0.5); setRelease(100); 
+                setHpFilter({on:false, freq: 100, q: 1}); setBpFilter({on:false, freq: 1400, q: 1}); 
+                // 고음역대 컷으로 부드럽게
+                setLpFilter({on:true, freq: 8500, q: 0.7});
+                setTransientOn(true); setTransientGain(0.1); setTransientFreq(2000); setTransientDecay(10);
+                setEqBands([
+                    { id: 1, type: 'peaking', freq: 500, gain: 4, q: 2.0, on: true },
+                    { id: 2, type: 'peaking', freq: 1400, gain: 10, q: 2.0, on: true },
+                    { id: 3, type: 'highshelf', freq: 2500, gain: -12, q: 1.0, on: true }
+                ]);
                 break;
         }
         commitChange(`${char} 프리셋 적용`);
     };
 
     const getCurrentState = useCallback(() => ({
-        duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands,
+        duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, voice2Wave, oscBlend, selectedFileId, eqBands,
         transientOn, transientGain, transientFreq, transientDecay
-    }), [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, selectedFileId, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
+    }), [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, baseSource, sourceMix, voiceFreq, voiceWave, voice2Wave, oscBlend, selectedFileId, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
 
     const saveHistory = useCallback((label: string) => {
         const state = getCurrentState();
@@ -129,6 +188,8 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
         setHpFilter(state.hpFilter); setLpFilter(state.lpFilter); setBpFilter(state.bpFilter); 
         setGain(state.gain); setNoiseType(state.noiseType);
         setBaseSource(state.baseSource); setSourceMix(state.sourceMix); setVoiceFreq(state.voiceFreq); setVoiceWave(state.voiceWave); setSelectedFileId(state.selectedFileId);
+        if(state.voice2Wave) setVoice2Wave(state.voice2Wave);
+        if(state.oscBlend !== undefined) setOscBlend(state.oscBlend);
         if(state.eqBands) setEqBands(state.eqBands);
         if(state.transientOn !== undefined) {
             setTransientOn(state.transientOn); setTransientGain(state.transientGain); setTransientFreq(state.transientFreq); setTransientDecay(state.transientDecay);
@@ -210,16 +271,39 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                     }
                 }
                 const noiseSrc = offline.createBufferSource(); noiseSrc.buffer = buffer;
-                const noiseGain = offline.createGain(); noiseGain.gain.value = 1.0 - sourceMix;
+                const noiseGain = offline.createGain(); 
+                // 노이즈가 너무 거칠고 귀를 찌르지 않도록 기본 레벨을 0.5(-6dB)로 줄여줌
+                noiseGain.gain.value = (1.0 - sourceMix) * 0.5; 
                 noiseSrc.connect(noiseGain); noiseGain.connect(sourceMixNode);
                 noiseSrc.start(0);
             }
-            // Voice
+            // Voice (Dual Oscillators)
             if (sourceMix > 0.0) {
-                const osc = offline.createOscillator(); osc.type = voiceWave; osc.frequency.value = voiceFreq;
-                const oscGain = offline.createGain(); oscGain.gain.value = sourceMix;
-                osc.connect(oscGain); oscGain.connect(sourceMixNode);
-                osc.start(0);
+                const baseOscGain = sourceMix;
+                
+                // Wave 1
+                if (1 - oscBlend > 0) {
+                    const osc = offline.createOscillator(); 
+                    osc.type = voiceWave; 
+                    osc.frequency.value = voiceFreq;
+                    const oscGain = offline.createGain(); 
+                    oscGain.gain.value = baseOscGain * (1 - oscBlend);
+                    osc.connect(oscGain); 
+                    oscGain.connect(sourceMixNode);
+                    osc.start(0);
+                }
+                
+                // Wave 2
+                if (oscBlend > 0) {
+                    const osc2 = offline.createOscillator(); 
+                    osc2.type = voice2Wave; 
+                    osc2.frequency.value = voiceFreq;
+                    const oscGain2 = offline.createGain(); 
+                    oscGain2.gain.value = baseOscGain * oscBlend;
+                    osc2.connect(oscGain2); 
+                    oscGain2.connect(sourceMixNode);
+                    osc2.start(0);
+                }
             }
         }
 
@@ -261,7 +345,18 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             }
         });
         
-        eqNode.connect(offline.destination);
+        // --- 청력 보호용 하드 리미터 (Safety Limiter) ---
+        // 클리핑을 방지하고 너무 큰 소리가 나지 않도록 -3dB 선에서 강하게 눌러줍니다.
+        const limiter = offline.createDynamicsCompressor();
+        limiter.threshold.value = -3.0;
+        limiter.knee.value = 0.0;
+        limiter.ratio.value = 20.0;
+        limiter.attack.value = 0.002;
+        limiter.release.value = 0.1;
+        
+        eqNode.connect(limiter);
+        limiter.connect(offline.destination);
+        
         return await offline.startRendering();
     };
 
@@ -319,9 +414,9 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
             }
         };
         draw();
-    }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, generatedBuffer, baseSource, selectedFileId, playheadTime, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
+    }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, voice2Wave, oscBlend, generatedBuffer, baseSource, selectedFileId, playheadTime, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
 
-    useEffect(() => { setGeneratedBuffer(null); }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, baseSource, selectedFileId, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
+    useEffect(() => { setGeneratedBuffer(null); }, [duration, attack, decay, sustain, release, hpFilter, lpFilter, bpFilter, gain, noiseType, sourceMix, voiceFreq, voiceWave, voice2Wave, oscBlend, baseSource, selectedFileId, eqBands, transientOn, transientGain, transientFreq, transientDecay]);
 
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold">
@@ -339,6 +434,10 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                          <button onClick={()=>applyConsonantPreset('T')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-pink-50 border border-slate-300 rounded-lg text-xs font-black text-pink-900 transition-all shadow-sm">T</button>
                          <button onClick={()=>applyConsonantPreset('K')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-pink-50 border border-slate-300 rounded-lg text-xs font-black text-pink-900 transition-all shadow-sm">K</button>
                          <button onClick={()=>applyConsonantPreset('P')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-pink-50 border border-slate-300 rounded-lg text-xs font-black text-pink-900 transition-all shadow-sm">P</button>
+                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                         <button onClick={()=>applyConsonantPreset('M')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-emerald-50 border border-slate-300 rounded-lg text-xs font-black text-emerald-900 transition-all shadow-sm" title="Nasal (유성 비음)">M</button>
+                         <button onClick={()=>applyConsonantPreset('L')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-emerald-50 border border-slate-300 rounded-lg text-xs font-black text-emerald-900 transition-all shadow-sm" title="한국어 ㄹ (Alveolar flap)">L</button>
+                         <button onClick={()=>applyConsonantPreset('R')} className="w-8 h-8 flex items-center justify-center bg-white hover:bg-emerald-50 border border-slate-300 rounded-lg text-xs font-black text-emerald-900 transition-all shadow-sm" title="일본어 ら행 (Lateral flap)">R</button>
                          <div className="w-px h-6 bg-slate-300 mx-2"></div>
                          <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
                     </div>
@@ -357,18 +456,67 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
                         {/* Source Selection */}
                         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                             <h3 className="text-sm font-black text-slate-500 uppercase flex items-center gap-2"><Mic2 size={16}/> 소스 (Source)</h3>
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                                 <div className="flex gap-2 p-1 bg-slate-100 rounded-lg">
                                     <button onClick={()=>setBaseSource('synth')} className={`flex-1 py-1.5 rounded text-xs font-black transition-all ${baseSource==='synth'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>신디사이저</button>
                                     <button onClick={()=>setBaseSource('file')} className={`flex-1 py-1.5 rounded text-xs font-black transition-all ${baseSource==='file'?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>파일</button>
                                 </div>
+                                
                                 {baseSource==='file' ? (
                                     <select value={selectedFileId} onChange={e=>setSelectedFileId(e.target.value)} className="w-full p-2 border rounded text-xs font-black text-slate-900"><option value="">파일 선택</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
                                 ) : (
-                                    <div className="space-y-3">
-                                        <div className="space-y-1"><div className="flex justify-between text-xs text-slate-500 font-bold"><span>Noise Mix</span><span>{Math.round((1-sourceMix)*100)}%</span></div><input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
-                                        <div className="flex gap-2"><button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button><button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button></div>
-                                    </div>
+                                    <>
+                                        {/* Noise vs Synth Mix */}
+                                        <div className="space-y-1">
+                                            <div className="flex justify-between text-xs text-slate-500 font-bold">
+                                                <span>Noise Mix</span>
+                                                <span>{Math.round((1-sourceMix)*100)}%</span>
+                                            </div>
+                                            <input type="range" min="0" max="1" step="0.05" value={1-sourceMix} onChange={e=>setSourceMix(1-Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                        </div>
+                                        
+                                        {/* Noise Type */}
+                                        {sourceMix < 1.0 && (
+                                            <div className="flex gap-2">
+                                                <button onClick={()=>setNoiseType('white')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='white'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>White Noise</button>
+                                                <button onClick={()=>setNoiseType('pink')} className={`flex-1 py-1 text-[10px] font-black rounded border ${noiseType==='pink'?'bg-slate-700 text-white':'bg-white text-slate-500'}`}>Pink Noise</button>
+                                            </div>
+                                        )}
+
+                                        {/* Synth Controls */}
+                                        {sourceMix > 0.0 && (
+                                            <div className="space-y-3 bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                                                <div className="flex justify-between text-[10px] font-black text-indigo-400 uppercase">
+                                                    <span>Wave 1</span>
+                                                    <span>Wave 2</span>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <select value={voiceWave} onChange={e=>setVoiceWave(e.target.value as OscillatorType)} className="flex-1 p-1 text-[11px] bg-white border border-slate-200 rounded outline-none font-bold text-slate-700">
+                                                        <option value="sawtooth">Sawtooth</option><option value="square">Square</option><option value="sine">Sine</option><option value="triangle">Triangle</option>
+                                                    </select>
+                                                    <select value={voice2Wave} onChange={e=>setVoice2Wave(e.target.value as OscillatorType)} className="flex-1 p-1 text-[11px] bg-white border border-slate-200 rounded outline-none font-bold text-slate-700">
+                                                        <option value="sawtooth">Sawtooth</option><option value="square">Square</option><option value="sine">Sine</option><option value="triangle">Triangle</option>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <div className="flex justify-between text-[10px] text-indigo-500 font-bold">
+                                                        <span>W1</span>
+                                                        <span>Mix: {Math.round(oscBlend*100)}%</span>
+                                                        <span>W2</span>
+                                                    </div>
+                                                    <input type="range" min="0" max="1" step="0.05" value={oscBlend} onChange={e=>setOscBlend(Number(e.target.value))} className="w-full h-1.5 bg-indigo-200 rounded-full appearance-none accent-indigo-500"/>
+                                                </div>
+                                                <div className="h-px bg-indigo-200/50 my-1"></div>
+                                                <div className="space-y-1">
+                                                    <div className="flex justify-between text-[10px] text-indigo-500 font-bold">
+                                                        <span>Pitch (Freq)</span>
+                                                        <span>{voiceFreq} Hz</span>
+                                                    </div>
+                                                    <input type="range" min="50" max="600" step="1" value={voiceFreq} onChange={e=>setVoiceFreq(Number(e.target.value))} className="w-full h-1.5 bg-indigo-200 rounded-full appearance-none accent-indigo-500"/>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>

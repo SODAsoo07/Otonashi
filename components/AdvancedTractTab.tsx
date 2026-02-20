@@ -92,18 +92,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const simPlaySourceRef = useRef<AudioBufferSourceNode | null>(null);
     const previewDebounceRef = useRef<number | null>(null);
 
-    const applyVowelPreset = (v: 'A' | 'E' | 'I' | 'O' | 'U') => {
+    const applyVowelPreset = (v: 'A' | 'E' | 'I' | 'O' | 'U' | 'W' | 'Y') => {
         const presets = {
-            'A': { x: 0.2, y: 0.1, lips: 0.9, nasal: 0.0, throat: 0.1 },
-            'E': { x: 0.6, y: 0.5, lips: 0.7, nasal: 0.0, throat: 0.3 },
-            'I': { x: 0.9, y: 0.9, lips: 0.2, nasal: 0.0, throat: 0.2 },
-            'O': { x: 0.2, y: 0.4, lips: 0.3, nasal: 0.0, throat: 0.5 },
-            'U': { x: 0.1, y: 0.8, lips: 0.2, nasal: 0.0, throat: 0.4 }
+            'A': { x: 0.2, y: 0.1, lips: 0.9, lipLen: 0.5, nasal: 0.0, throat: 0.1 },
+            'E': { x: 0.6, y: 0.5, lips: 0.7, lipLen: 0.5, nasal: 0.0, throat: 0.3 },
+            'I': { x: 0.9, y: 0.9, lips: 0.2, lipLen: 0.5, nasal: 0.0, throat: 0.2 },
+            'O': { x: 0.2, y: 0.4, lips: 0.3, lipLen: 0.6, nasal: 0.0, throat: 0.5 },
+            'U': { x: 0.1, y: 0.8, lips: 0.2, lipLen: 0.8, nasal: 0.0, throat: 0.4 },
+            'W': { x: 0.0, y: 0.9, lips: 0.0, lipLen: 1.0, nasal: 0.0, throat: 0.4 }, // Labio-velar (extreme U)
+            'Y': { x: 1.0, y: 0.9, lips: 0.8, lipLen: 0.1, nasal: 0.0, throat: 0.2 }  // Palatal (extreme I)
         };
         const p = presets[v];
-        setLiveTract({ ...liveTract, ...p, lipLen: 0.5 });
-        updateLiveAudio(p.x, p.y, p.lips, p.throat, 0.5, p.nasal, manualPitch, manualGender);
-        commitChange(`${v} 모음 프리셋 적용`);
+        setLiveTract({ ...liveTract, ...p });
+        updateLiveAudio(p.x, p.y, p.lips, p.throat, p.lipLen, p.nasal, manualPitch, manualGender);
+        commitChange(`${v} 프리셋 적용`);
     };
 
     const handleAnalyzerApply = (data: { tongueX?: any[], tongueY?: any[], lips?: any[], lipLen?: any[], throat?: any[], nasal?: any[] }) => {
@@ -594,10 +596,19 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         {sidebarTab === 'settings' ? (
                             <div className="space-y-6">
                                 <div className="space-y-2">
-                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Vowel Presets</h3>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Vowel Presets</h3>
+                                    </div>
                                     <div className="flex gap-1 font-black">
                                         {(['A', 'E', 'I', 'O', 'U'] as const).map(v => (
                                             <button key={v} onClick={() => applyVowelPreset(v)} className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs font-black text-slate-700 transition-all shadow-sm">{v}</button>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-1 font-black">
+                                        {(['W', 'Y'] as const).map(v => (
+                                            <button key={v} onClick={() => applyVowelPreset(v)} className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-lg text-xs font-black text-indigo-600 transition-all shadow-sm flex items-center justify-center gap-1">
+                                                {v} <span className="text-[9px] opacity-60 font-bold">(Semi-vowel)</span>
+                                            </button>
                                         ))}
                                     </div>
                                     <button onClick={() => setShowAnalyzer(true)} className="w-full py-2.5 mt-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"><Wand2 size={14}/> AI 발음 분석 (Beta)</button>
