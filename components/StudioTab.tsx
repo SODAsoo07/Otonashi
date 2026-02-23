@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { 
-  Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power, Copy, Layers, Fingerprint
+import {
+    Undo2, Redo2, Scissors, FilePlus, Sparkles, Activity, Square, Play, Pause, Save, AudioLines, Power, Copy, Layers, Fingerprint
 } from 'lucide-react';
 import { AudioFile, KeyframePoint, FormantParams, EQBand } from '../types';
 import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
@@ -10,13 +10,14 @@ import FormantPad from './FormantPad';
 import RangeControl from './ui/RangeControl';
 
 interface StudioTabProps {
-  audioContext: AudioContext;
-  activeFile: AudioFile | undefined;
-  files: AudioFile[];
-  onUpdateFile: (buffer: AudioBuffer) => void;
-  onAddToRack: (buffer: AudioBuffer, name: string) => void;
-  setActiveFileId: (id: string) => void;
-  isActive: boolean;
+    audioContext: AudioContext;
+    activeFile: AudioFile | undefined;
+    files: AudioFile[];
+    onUpdateFile: (buffer: AudioBuffer) => void;
+    onAddToRack: (buffer: AudioBuffer, name: string) => void;
+    setActiveFileId: (id: string) => void;
+    isActive: boolean;
+    monitorGainValue?: number;   // 0~1.0 (재생 시만 적용, 렌더링 무관)
 }
 
 interface UndoState {
@@ -24,15 +25,15 @@ interface UndoState {
     label: string;
 }
 
-const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId, isActive }) => {
+const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, onUpdateFile, onAddToRack, setActiveFileId, isActive, monitorGainValue = 1.0 }) => {
     const [editTrim, setEditTrim] = useState({ start: 0, end: 1 });
     const [isPlaying, setIsPlaying] = useState(false);
     const [playheadMode, setPlayheadMode] = useState<'all' | 'selection'>('all');
     const [isPaused, setIsPaused] = useState(false);
-    const [playheadPos, setPlayheadPos] = useState(0); 
+    const [playheadPos, setPlayheadPos] = useState(0);
     const [showAutomation, setShowAutomation] = useState(false);
-    const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{t:0, v:1}, {t:1, v:1}]);
-    
+    const [volumeKeyframes, setVolumeKeyframes] = useState<KeyframePoint[]>([{ t: 0, v: 1 }, { t: 1, v: 1 }]);
+
     // Clipboard State
     const [clipboard, setClipboard] = useState<AudioBuffer | null>(null);
 
@@ -40,14 +41,23 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const [sideTab, setSideTab] = useState<'effects' | 'formant_filter' | 'formant'>('effects');
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
     const [redoStack, setRedoStack] = useState<UndoState[]>([]);
-    
+
     // Professional Audio States
     const [masterGain, setMasterGain] = useState(1.0);
     const [bypassEffects, setBypassEffects] = useState(false);
     const [pitchCents, setPitchCents] = useState(0);
     const [genderShift, setGenderShift] = useState(1.0);
     const [formant, setFormant] = useState<FormantParams>({ f1: 500, f2: 1500, f3: 2500, f4: 3500, resonance: 4.0 });
-    
+
+    // 노말라이제이션 (렌더링 버퍼에 peak normalization 적용)
+    const [normalizationEnabled, setNormalizationEnabled] = useState(false);
+
+    // Singer's Formant: 2.5~4kHz 대역 부스트 (성악 기법)
+    const [singersFormantEnabled, setSingersFormantEnabled] = useState(false);
+    const [singersFormantFreq, setSingersFormantFreq] = useState(3200);  // Hz (2500~4000)
+    const [singersFormantGain, setSingersFormantGain] = useState(8);     // dB (0~20)
+    const [singersFormantQ, setSingersFormantQ] = useState(3.0);         // Q (0.5~10)
+
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 60, gain: 0, q: 0.7, on: true },
         { id: 2, type: 'lowshelf', freq: 100, gain: 0, q: 0.7, on: true },
@@ -55,12 +65,12 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         { id: 4, type: 'highshelf', freq: 5000, gain: 0, q: 0.7, on: true },
         { id: 5, type: 'lowpass', freq: 18000, gain: 0, q: 0.7, on: true }
     ]);
-    
+
     // Effects Params
     const [enableDelay, setEnableDelay] = useState(false);
     const [delayTime, setDelayTime] = useState(0.2);
     const [delayFeedback, setDelayFeedback] = useState(0.3);
-    
+
     const [enableReverb, setEnableReverb] = useState(false);
     const [reverbMix, setReverbMix] = useState(0.3);
 
@@ -76,27 +86,27 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const animationRef = useRef<number | null>(null);
     const activeBuffer = useMemo(() => activeFile ? activeFile.buffer : null, [activeFile]);
 
-    const pushUndo = useCallback((label: string = "편집") => { 
+    const pushUndo = useCallback((label: string = "편집") => {
         if (activeBuffer) {
-            setUndoStack(prev => [...prev.slice(-19), { buffer: activeBuffer, label }]); 
+            setUndoStack(prev => [...prev.slice(-19), { buffer: activeBuffer, label }]);
             setRedoStack([]);
         }
     }, [activeBuffer]);
 
-    const handleUndo = useCallback(() => { 
-        if (undoStack.length === 0 || !activeBuffer) return; 
-        const prev = undoStack[undoStack.length - 1]; 
+    const handleUndo = useCallback(() => {
+        if (undoStack.length === 0 || !activeBuffer) return;
+        const prev = undoStack[undoStack.length - 1];
         setRedoStack(prevSt => [...prevSt.slice(-19), { buffer: activeBuffer, label: prev.label }]);
-        setUndoStack(prevSt => prevSt.slice(0, -1)); 
-        onUpdateFile(prev.buffer); 
+        setUndoStack(prevSt => prevSt.slice(0, -1));
+        onUpdateFile(prev.buffer);
     }, [undoStack, onUpdateFile, activeBuffer]);
 
-    const handleRedo = useCallback(() => { 
-        if (redoStack.length === 0 || !activeBuffer) return; 
-        const next = redoStack[redoStack.length - 1]; 
+    const handleRedo = useCallback(() => {
+        if (redoStack.length === 0 || !activeBuffer) return;
+        const next = redoStack[redoStack.length - 1];
         setUndoStack(prevSt => [...prevSt.slice(-19), { buffer: activeBuffer, label: next.label }]);
-        setRedoStack(prevSt => prevSt.slice(0, -1)); 
-        onUpdateFile(next.buffer); 
+        setRedoStack(prevSt => prevSt.slice(0, -1));
+        onUpdateFile(next.buffer);
     }, [redoStack, onUpdateFile, activeBuffer]);
 
     // --- Clipboard Operations ---
@@ -112,11 +122,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const handlePasteMix = useCallback(() => {
         if (!activeBuffer || !clipboard) return;
         pushUndo("오디오 겹쳐넣기 (Mix)");
-        
+
         // Calculate insert point from playhead
         const startSample = Math.floor((playheadPos / 100) * activeBuffer.duration * activeBuffer.sampleRate);
         const newBuf = AudioUtils.mixBuffersAtTime(audioContext, activeBuffer, clipboard, startSample);
-        
+
         if (newBuf) {
             onUpdateFile(newBuf);
         }
@@ -128,10 +138,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
         // Convolve the active buffer (carrier) with clipboard (modulator)
         // This applies the clipboard's texture/reverb characteristic to the selection
-        
+
         // 1. Extract selection to apply effect
         const selectionBuf = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
-        
+
         if (selectionBuf) {
             const processedSelection = await AudioUtils.convolveBuffers(audioContext, selectionBuf, clipboard, 0.5);
             if (processedSelection) {
@@ -142,7 +152,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                     // Insert processed
                     const startSample = Math.floor(activeBuffer.duration * editTrim.start * activeBuffer.sampleRate);
                     const finalBuf = AudioUtils.mixBuffersAtTime(audioContext, tempBuf, processedSelection, startSample);
-                     if (finalBuf) onUpdateFile(finalBuf);
+                    if (finalBuf) onUpdateFile(finalBuf);
                 }
             }
         }
@@ -158,6 +168,54 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
     }, [activeBuffer, audioContext, editTrim, onUpdateFile, pushUndo]);
 
+    // --- Fade In / Fade Out ---
+    const [fadeDuration, setFadeDuration] = useState(0.5); // 초
+
+    const handleFadeIn = useCallback(() => {
+        if (!activeBuffer) return;
+        pushUndo("페이드 인");
+        const sr = activeBuffer.sampleRate;
+        const newBuf = audioContext.createBuffer(
+            activeBuffer.numberOfChannels, activeBuffer.length, sr
+        );
+        const fadeSamples = Math.min(Math.floor(fadeDuration * sr), activeBuffer.length);
+        for (let ch = 0; ch < activeBuffer.numberOfChannels; ch++) {
+            const src = activeBuffer.getChannelData(ch);
+            const dst = newBuf.getChannelData(ch);
+            for (let i = 0; i < activeBuffer.length; i++) {
+                if (i < fadeSamples) {
+                    dst[i] = src[i] * (i / fadeSamples);
+                } else {
+                    dst[i] = src[i];
+                }
+            }
+        }
+        onUpdateFile(newBuf);
+    }, [activeBuffer, audioContext, fadeDuration, pushUndo, onUpdateFile]);
+
+    const handleFadeOut = useCallback(() => {
+        if (!activeBuffer) return;
+        pushUndo("페이드 아웃");
+        const sr = activeBuffer.sampleRate;
+        const newBuf = audioContext.createBuffer(
+            activeBuffer.numberOfChannels, activeBuffer.length, sr
+        );
+        const fadeSamples = Math.min(Math.floor(fadeDuration * sr), activeBuffer.length);
+        const fadeStart = activeBuffer.length - fadeSamples;
+        for (let ch = 0; ch < activeBuffer.numberOfChannels; ch++) {
+            const src = activeBuffer.getChannelData(ch);
+            const dst = newBuf.getChannelData(ch);
+            for (let i = 0; i < activeBuffer.length; i++) {
+                if (i >= fadeStart) {
+                    dst[i] = src[i] * (1 - (i - fadeStart) / fadeSamples);
+                } else {
+                    dst[i] = src[i];
+                }
+            }
+        }
+        onUpdateFile(newBuf);
+    }, [activeBuffer, audioContext, fadeDuration, pushUndo, onUpdateFile]);
+
     const handleSaveSelection = useCallback(() => {
         if (!activeBuffer) return;
         const newBuf = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
@@ -167,9 +225,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     }, [activeBuffer, audioContext, editTrim, activeFile, onAddToRack]);
 
     const stopPlayback = useCallback(() => {
-        if (sourceRef.current) { try { sourceRef.current.stop(); } catch(e) {} sourceRef.current = null; }
+        if (sourceRef.current) { try { sourceRef.current.stop(); } catch (e) { } sourceRef.current = null; }
         setIsPlaying(false);
-        if(animationRef.current) cancelAnimationFrame(animationRef.current);
+        if (animationRef.current) cancelAnimationFrame(animationRef.current);
     }, []);
 
     const handleStop = useCallback(() => {
@@ -178,20 +236,22 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     }, [stopPlayback]);
 
     const renderStudioAudio = useCallback(async (buf: AudioBuffer) => {
-        if(!buf || !audioContext) return null;
+        if (!buf || !audioContext) return null;
         const renderDur = buf.duration + (enableDelay ? 2 : 0) + (enableReverb ? 3 : 0);
         const offline = new OfflineAudioContext(buf.numberOfChannels, Math.ceil(renderDur * buf.sampleRate), buf.sampleRate);
-        
-        const finalOutput = offline.createGain(); 
-        finalOutput.gain.value = masterGain;
 
-        let currentNode: AudioNode = offline.createGain(); 
+        // 내부 masterGain만 사용 (모니터 볼륨은 재생 시 별도 GainNode로 적용)
+        const effectiveGain = masterGain;
+        const finalOutput = offline.createGain();
+        finalOutput.gain.value = effectiveGain;
+
+        let currentNode: AudioNode = offline.createGain();
         const inputNode = currentNode;
 
         if (!bypassEffects) {
             // EQ
             eqBands.forEach(b => {
-                if(b.on) {
+                if (b.on) {
                     const f = offline.createBiquadFilter();
                     f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = b.gain;
                     currentNode.connect(f); currentNode = f;
@@ -199,21 +259,21 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             });
 
             // Formant
-            const fShift = offline.createBiquadFilter(); 
+            const fShift = offline.createBiquadFilter();
             fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
-            
+
             const fNodes = [formant.f1, formant.f2, formant.f3, formant.f4].map((freq, idx) => {
-                const f = offline.createBiquadFilter(); 
-                f.type = 'peaking'; f.frequency.value = freq; 
-                f.Q.value = formant.resonance; 
+                const f = offline.createBiquadFilter();
+                f.type = 'peaking'; f.frequency.value = freq;
+                f.Q.value = formant.resonance;
                 f.gain.value = 12 - (idx * 2);
                 return f;
             });
-            
+
             currentNode.connect(fShift);
             let lastFNode = fShift;
             fNodes.forEach(fn => { lastFNode.connect(fn); lastFNode = fn; });
-            
+
             // Compressor
             const compressor = offline.createDynamicsCompressor();
             compressor.threshold.value = compThresh;
@@ -221,19 +281,31 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             compressor.attack.value = compAttack;
             compressor.release.value = compRelease;
             lastFNode.connect(compressor);
-            
+
+            // Singer's Formant (2.5~4kHz peaking boost)
+            let afterCompressor: AudioNode = compressor;
+            if (singersFormantEnabled) {
+                const sfFilter = offline.createBiquadFilter();
+                sfFilter.type = 'peaking';
+                sfFilter.frequency.value = singersFormantFreq;
+                sfFilter.gain.value = singersFormantGain;
+                sfFilter.Q.value = singersFormantQ;
+                compressor.connect(sfFilter);
+                afterCompressor = sfFilter;
+            }
+
             // Time-based (Delay/Reverb)
-            const dryGain = offline.createGain(); 
-            const effectMerge = offline.createGain(); 
-            
-            compressor.connect(dryGain);
+            const dryGain = offline.createGain();
+            const effectMerge = offline.createGain();
+
+            afterCompressor.connect(dryGain);
             dryGain.connect(finalOutput);
 
             if (enableDelay && delayTime > 0) {
                 const delay = offline.createDelay(); delay.delayTime.value = delayTime;
                 const fb = offline.createGain(); fb.gain.value = delayFeedback;
                 const delayOut = offline.createGain(); delayOut.gain.value = 0.5;
-                compressor.connect(delay);
+                afterCompressor.connect(delay);
                 delay.connect(fb); fb.connect(delay);
                 delay.connect(delayOut); delayOut.connect(effectMerge);
             }
@@ -249,29 +321,49 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 }
                 reverbConv.buffer = impulse;
                 const revGain = offline.createGain(); revGain.gain.value = reverbMix;
-                compressor.connect(reverbConv);
+                afterCompressor.connect(reverbConv);
                 reverbConv.connect(revGain);
                 revGain.connect(effectMerge);
             }
-            
+
             effectMerge.connect(finalOutput);
         } else {
             currentNode.connect(finalOutput);
         }
 
         const s1 = offline.createBufferSource(); s1.buffer = buf;
-        if (!bypassEffects && pitchCents !== 0) s1.playbackRate.value = Math.pow(2, pitchCents/1200);
+        if (!bypassEffects && pitchCents !== 0) s1.playbackRate.value = Math.pow(2, pitchCents / 1200);
 
         const autoGain = offline.createGain();
         if (volumeKeyframes.length > 0) {
             autoGain.gain.setValueAtTime(volumeKeyframes[0].v, 0);
             volumeKeyframes.forEach(p => autoGain.gain.linearRampToValueAtTime(p.v, p.t * buf.duration));
         }
-        
+
         s1.connect(autoGain); autoGain.connect(inputNode); s1.start(0);
         finalOutput.connect(offline.destination);
-        return await offline.startRendering();
-    }, [audioContext, pitchCents, genderShift, masterGain, bypassEffects, formant, eqBands, enableDelay, delayTime, delayFeedback, enableReverb, reverbMix, compThresh, compRatio, compAttack, compRelease, volumeKeyframes]);
+        const rendered = await offline.startRendering();
+
+        // Peak Normalization: normalizationEnabled 시 렌더된 버퍼를 -0.5dBFS로 정규화
+        if (normalizationEnabled) {
+            let peak = 0;
+            for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+                const data = rendered.getChannelData(ch);
+                for (let i = 0; i < data.length; i++) {
+                    const abs = Math.abs(data[i]);
+                    if (abs > peak) peak = abs;
+                }
+            }
+            if (peak > 0) {
+                const normGain = 0.944 / peak; // -0.5 dBFS, 렌더링 버퍼에만 적용
+                for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+                    const data = rendered.getChannelData(ch);
+                    for (let i = 0; i < data.length; i++) data[i] *= normGain;
+                }
+            }
+        }
+        return rendered;
+    }, [audioContext, pitchCents, genderShift, masterGain, bypassEffects, formant, eqBands, enableDelay, delayTime, delayFeedback, enableReverb, reverbMix, compThresh, compRatio, compAttack, compRelease, volumeKeyframes, normalizationEnabled, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
 
     const togglePlay = useCallback(async (mode: 'all' | 'selection') => {
         if (isPlaying) {
@@ -289,7 +381,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
         const s = audioContext.createBufferSource();
         s.buffer = rendered;
-        s.connect(audioContext.destination);
+        // 모니터 볼륨 GainNode: 렌더링 데이터는 무변경, 재생 시들리는 볼륨만 조절
+        const monitorNode = audioContext.createGain();
+        monitorNode.gain.value = monitorGainValue;
+        s.connect(monitorNode);
+        monitorNode.connect(audioContext.destination);
 
         let startOffset = 0;
         let dur = rendered.duration;
@@ -298,7 +394,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             const selStart = editTrim.start * activeBuffer.duration;
             const selEnd = editTrim.end * activeBuffer.duration;
             dur = selEnd - selStart;
-            
+
             if (isPaused) {
                 startOffset = selStart + (pauseOffsetRef.current > 0 ? pauseOffsetRef.current : 0);
                 if (startOffset > selEnd) startOffset = selStart;
@@ -317,10 +413,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         setIsPaused(false);
         setPlayheadMode(mode);
 
-        s.onended = () => { 
-            setIsPlaying(false); 
+        s.onended = () => {
+            setIsPlaying(false);
             setIsPaused(false);
-            if(mode === 'all') { setPlayheadPos(0); pauseOffsetRef.current = 0; }
+            if (mode === 'all') { setPlayheadPos(0); pauseOffsetRef.current = 0; }
         };
     }, [isPlaying, isPaused, activeBuffer, renderStudioAudio, audioContext, editTrim]);
 
@@ -328,25 +424,25 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (!isPlaying || !activeBuffer) return;
         const elapsed = audioContext.currentTime - startTimeRef.current;
         let currentPos = 0;
-        
+
         if (playheadMode === 'all') {
-             currentPos = ((elapsed / activeBuffer.duration) * 100);
+            currentPos = ((elapsed / activeBuffer.duration) * 100);
         } else {
-             const selStartPct = editTrim.start;
-             const totalDur = activeBuffer.duration;
-             const currentSec = (selStartPct * totalDur) + elapsed;
-             currentPos = (currentSec / totalDur) * 100;
+            const selStartPct = editTrim.start;
+            const totalDur = activeBuffer.duration;
+            const currentSec = (selStartPct * totalDur) + elapsed;
+            currentPos = (currentSec / totalDur) * 100;
         }
 
         if (currentPos >= 100 && playheadMode === 'all') currentPos = 100;
-        setPlayheadPos(currentPos); 
+        setPlayheadPos(currentPos);
         animationRef.current = requestAnimationFrame(updatePlayhead);
     }, [isPlaying, activeBuffer, audioContext, playheadMode, editTrim]);
 
-    useEffect(() => { 
-        if (isPlaying) animationRef.current = requestAnimationFrame(updatePlayhead); 
-        else if (animationRef.current) cancelAnimationFrame(animationRef.current); 
-        return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); }; 
+    useEffect(() => {
+        if (isPlaying) animationRef.current = requestAnimationFrame(updatePlayhead);
+        else if (animationRef.current) cancelAnimationFrame(animationRef.current);
+        return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current); };
     }, [isPlaying, updatePlayhead]);
 
     useEffect(() => {
@@ -397,23 +493,53 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 shadow-sm">
-                            <button onClick={handleUndo} disabled={undoStack.length===0} title="언두" className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={redoStack.length===0} title="리두" className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Redo2 size={16}/></button>
+                            <button onClick={handleUndo} disabled={undoStack.length === 0} title="언두" className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Undo2 size={16} /></button>
+                            <button onClick={handleRedo} disabled={redoStack.length === 0} title="리두" className="p-1.5 hover:bg-white rounded text-slate-900 disabled:opacity-30"><Redo2 size={16} /></button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                            <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${isPlaying ? 'bg-white shadow text-slate-900' : 'hover:bg-white text-slate-600'}`}>{isPlaying ? <Pause size={14} fill="currentColor"/> : <Play size={14} fill="currentColor"/>} {isPlaying ? '일시정지' : '재생'}</button>
-                            <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 hover:bg-white text-red-500 transition-colors font-black"><Square size={14} fill="currentColor"/> 정지</button>
+                            <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${isPlaying ? 'bg-white shadow text-slate-900' : 'hover:bg-white text-slate-600'}`}>{isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />} {isPlaying ? '일시정지' : '재생'}</button>
+                            <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 hover:bg-white text-red-500 transition-colors font-black"><Square size={14} fill="currentColor" /> 정지</button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                            <button onClick={handleCutSelection} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-red-500 transition-all" title="선택 영역 자르기"><Scissors size={16}/></button>
+                            <button onClick={handleCutSelection} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-red-500 transition-all" title="선택 영역 자르기"><Scissors size={16} /></button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             <button onClick={handleCopy} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white ${clipboard ? 'text-indigo-600' : 'text-slate-500'}`} title="선택 영역 복사">
-                                <Copy size={14}/> 복사
+                                <Copy size={14} /> 복사
                             </button>
                             <button onClick={handlePasteMix} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent" title="현재 위치에 믹스 붙여넣기 (Mix Paste)">
-                                <Layers size={14}/> 겹쳐넣기
+                                <Layers size={14} /> 겹쳐넣기
                             </button>
-                             <button onClick={handlePasteImprint} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-pink-600 disabled:opacity-30 disabled:hover:bg-transparent" title="선택 영역에 클립보드 소스의 질감을 입힙니다 (Convolution)">
-                                <Fingerprint size={14}/> 텍스처 입히기
+                            <button onClick={handlePasteImprint} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-pink-600 disabled:opacity-30 disabled:hover:bg-transparent" title="선택 영역에 클립보드 소스의 질감을 입힙니다 (Convolution)">
+                                <Fingerprint size={14} /> 텍스처 입히기
                             </button>
+                            <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                            {/* Fade In / Out */}
+                            <div className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1">
+                                <button
+                                    onClick={handleFadeIn}
+                                    disabled={!activeBuffer}
+                                    className="px-2 py-1 rounded text-[11px] font-black text-violet-600 hover:bg-violet-100 disabled:opacity-30 transition-all"
+                                    title={`처음 ${fadeDuration}초 페이드 인`}
+                                >
+                                    ▶ 페이드 인
+                                </button>
+                                <div className="w-px h-4 bg-violet-200 mx-0.5"></div>
+                                <button
+                                    onClick={handleFadeOut}
+                                    disabled={!activeBuffer}
+                                    className="px-2 py-1 rounded text-[11px] font-black text-violet-600 hover:bg-violet-100 disabled:opacity-30 transition-all"
+                                    title={`마지막 ${fadeDuration}초 페이드 아웃`}
+                                >
+                                    페이드 아웃 ◀
+                                </button>
+                                <div className="w-px h-4 bg-violet-200 mx-0.5"></div>
+                                <input
+                                    type="number" min={0.05} max={30} step={0.05}
+                                    value={fadeDuration}
+                                    onChange={e => setFadeDuration(Math.max(0.05, Number(e.target.value)))}
+                                    className="w-14 text-[11px] font-black text-center border border-violet-200 rounded bg-white text-slate-700 py-0.5 outline-none focus:border-violet-400"
+                                    title="페이드 시간 (초)"
+                                />
+                                <span className="text-[10px] text-violet-400 font-black">초</span>
+                            </div>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-2"></div>
                         <div className="bg-slate-800 text-green-400 font-mono text-sm px-3 py-1.5 rounded-lg border border-slate-700 shadow-inner min-w-[100px] flex justify-center tracking-widest font-black">
@@ -421,62 +547,62 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                         <button 
-                            onClick={handleSaveSelection} 
+                        <button
+                            onClick={handleSaveSelection}
                             className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-indigo-50 hover:border-indigo-200 text-indigo-600 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-all"
-                         >
-                            <FilePlus size={16}/> 선택 영역 저장
-                         </button>
-                         <button onClick={async ()=>{ if(activeBuffer) { const res = await renderStudioAudio(activeBuffer); if(res) onAddToRack(res, "Studio_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Save size={16}/> 보관함 저장</button>
+                        >
+                            <FilePlus size={16} /> 선택 영역 저장
+                        </button>
+                        <button onClick={async () => { if (activeBuffer) { const res = await renderStudioAudio(activeBuffer); if (res) onAddToRack(res, "Studio_Mix"); } }} className="px-5 py-2.5 bg-[#209ad6] hover:bg-[#1a85b9] text-white rounded-xl text-xs font-black flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Save size={16} /> 보관함 저장</button>
                     </div>
                 </div>
 
                 <div className="flex flex-col gap-6">
                     <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-inner overflow-hidden select-none h-[400px] relative">
-                         <canvas ref={canvasRef} width={1200} height={400} className="w-full h-full object-cover cursor-crosshair" 
-                             onMouseDown={(e) => {
-                                 const rect = canvasRef.current!.getBoundingClientRect();
-                                 const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                        <canvas ref={canvasRef} width={1200} height={400} className="w-full h-full object-cover cursor-crosshair"
+                            onMouseDown={(e) => {
+                                const rect = canvasRef.current!.getBoundingClientRect();
+                                const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
 
-                                 // 1. Playhead Position Update
-                                 setPlayheadPos(xPct * 100);
-                                 pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
+                                // 1. Playhead Position Update
+                                setPlayheadPos(xPct * 100);
+                                pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
 
-                                 // 2. Init Selection Drag (Reset selection to start point)
-                                 const startX = xPct;
-                                 setEditTrim({ start: startX, end: startX });
-                                 
-                                 const move = (me: MouseEvent) => {
-                                     const curRect = canvasRef.current?.getBoundingClientRect();
-                                     if(!curRect) return;
-                                     const curX = Math.max(0, Math.min(1, (me.clientX - curRect.left) / curRect.width));
-                                     // Update selection based on drag
-                                     setEditTrim({ 
-                                        start: Math.min(startX, curX), 
-                                        end: Math.max(startX, curX) 
-                                     });
-                                 };
+                                // 2. Init Selection Drag (Reset selection to start point)
+                                const startX = xPct;
+                                setEditTrim({ start: startX, end: startX });
 
-                                 const up = () => {
-                                     window.removeEventListener('mousemove', move);
-                                     window.removeEventListener('mouseup', up);
-                                 };
+                                const move = (me: MouseEvent) => {
+                                    const curRect = canvasRef.current?.getBoundingClientRect();
+                                    if (!curRect) return;
+                                    const curX = Math.max(0, Math.min(1, (me.clientX - curRect.left) / curRect.width));
+                                    // Update selection based on drag
+                                    setEditTrim({
+                                        start: Math.min(startX, curX),
+                                        end: Math.max(startX, curX)
+                                    });
+                                };
 
-                                 window.addEventListener('mousemove', move);
-                                 window.addEventListener('mouseup', up);
-                             }} 
-                         />
-                         <div className="absolute top-0 bottom-0 bg-white/10 border-x border-white/30 pointer-events-none" style={{ left: `${editTrim.start*100}%`, width: `${(editTrim.end-editTrim.start)*100}%` }} />
-                         <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.start*100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.start; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, start: Math.max(0, Math.min(prev.end, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
-                         <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.end*100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.end; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, end: Math.min(1, Math.max(prev.start, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
-                         {!activeBuffer && (
+                                const up = () => {
+                                    window.removeEventListener('mousemove', move);
+                                    window.removeEventListener('mouseup', up);
+                                };
+
+                                window.addEventListener('mousemove', move);
+                                window.addEventListener('mouseup', up);
+                            }}
+                        />
+                        <div className="absolute top-0 bottom-0 bg-white/10 border-x border-white/30 pointer-events-none" style={{ left: `${editTrim.start * 100}%`, width: `${(editTrim.end - editTrim.start) * 100}%` }} />
+                        <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.start * 100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.start; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, start: Math.max(0, Math.min(prev.end, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
+                        <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.end * 100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.end; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, end: Math.min(1, Math.max(prev.start, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
+                        {!activeBuffer && (
                             <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-black uppercase tracking-widest bg-slate-900/50 backdrop-blur-sm">작업할 파일을 보관함에서 선택하세요</div>
-                         )}
-                         {clipboard && (
-                             <div className="absolute top-4 right-4 bg-indigo-500/90 text-white text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg border border-white/20 backdrop-blur pointer-events-none animate-in fade-in slide-in-from-top-2">
-                                 📋 클립보드에 오디오 있음 ({clipboard.duration.toFixed(2)}s)
-                             </div>
-                         )}
+                        )}
+                        {clipboard && (
+                            <div className="absolute top-4 right-4 bg-indigo-500/90 text-white text-[10px] font-black px-3 py-1.5 rounded-full shadow-lg border border-white/20 backdrop-blur pointer-events-none animate-in fade-in slide-in-from-top-2">
+                                📋 클립보드에 오디오 있음 ({clipboard.duration.toFixed(2)}s)
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex gap-6 flex-col lg:flex-row">
@@ -491,68 +617,102 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                     { id: 'formant_filter', label: 'Formant Filter' },
                                     { id: 'formant', label: 'Formant' }
                                 ].map((tab) => (
-                                    <button key={tab.id} onClick={()=>setSideTab(tab.id as any)} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-tight transition-all ${sideTab===tab.id?'bg-white text-slate-900 border-b-2 border-indigo-500 shadow-sm':'text-slate-500 hover:bg-slate-50'}`}>{tab.label}</button>
+                                    <button key={tab.id} onClick={() => setSideTab(tab.id as any)} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-tight transition-all ${sideTab === tab.id ? 'bg-white text-slate-900 border-b-2 border-indigo-500 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>{tab.label}</button>
                                 ))}
                             </div>
                             <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
                                 {sideTab === 'effects' && (
                                     <div className="space-y-6">
                                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3">
-                                             <div className="flex items-center justify-between">
-                                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Sparkles size={12}/> Reverb & Delay</h3>
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Sparkles size={12} /> Reverb & Delay</h3>
                                                 <div className="flex gap-2">
-                                                    <button onClick={()=>setEnableDelay(!enableDelay)} className={`text-[9px] px-2 py-0.5 rounded border font-black ${enableDelay?'bg-indigo-500 text-white border-indigo-600':'bg-white text-slate-400'}`}>DLY</button>
-                                                    <button onClick={()=>setEnableReverb(!enableReverb)} className={`text-[9px] px-2 py-0.5 rounded border font-black ${enableReverb?'bg-indigo-500 text-white border-indigo-600':'bg-white text-slate-400'}`}>REV</button>
+                                                    <button onClick={() => setEnableDelay(!enableDelay)} className={`text-[9px] px-2 py-0.5 rounded border font-black ${enableDelay ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white text-slate-400'}`}>DLY</button>
+                                                    <button onClick={() => setEnableReverb(!enableReverb)} className={`text-[9px] px-2 py-0.5 rounded border font-black ${enableReverb ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white text-slate-400'}`}>REV</button>
                                                 </div>
-                                             </div>
-                                             {enableDelay && (
+                                            </div>
+                                            {enableDelay && (
                                                 <>
                                                     <RangeControl label="Delay Time" value={delayTime} min={0} max={1} step={0.05} onChange={setDelayTime} unit="s" />
                                                     <RangeControl label="Feedback" value={delayFeedback} min={0} max={0.9} step={0.05} onChange={setDelayFeedback} unit="" />
                                                 </>
-                                             )}
-                                             {enableReverb && (
-                                                 <RangeControl label="Reverb Mix" value={reverbMix} min={0} max={1} step={0.05} onChange={setReverbMix} unit="" />
-                                             )}
+                                            )}
+                                            {enableReverb && (
+                                                <RangeControl label="Reverb Mix" value={reverbMix} min={0} max={1} step={0.05} onChange={setReverbMix} unit="" />
+                                            )}
                                         </div>
                                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3">
-                                             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={12}/> Compressor</h3>
-                                             <RangeControl label="Threshold" value={compThresh} min={-60} max={0} step={1} onChange={setCompThresh} unit="dB" />
-                                             <RangeControl label="Ratio" value={compRatio} min={1} max={20} step={0.5} onChange={setCompRatio} unit=":1" />
+                                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={12} /> Compressor</h3>
+                                            <RangeControl label="Threshold" value={compThresh} min={-60} max={0} step={1} onChange={setCompThresh} unit="dB" />
+                                            <RangeControl label="Ratio" value={compRatio} min={1} max={20} step={0.5} onChange={setCompRatio} unit=":1" />
                                         </div>
                                     </div>
                                 )}
                                 {sideTab === 'formant_filter' && (
-                                    <FormantPad formant={formant} onChange={setFormant}/>
+                                    <FormantPad formant={formant} onChange={setFormant} />
                                 )}
                                 {sideTab === 'formant' && (
                                     <div className="space-y-4">
-                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><AudioLines size={12}/> Formant Detail</h3>
-                                        <RangeControl label="F1 (Throat)" value={formant.f1} min={200} max={1200} step={10} onChange={v=>setFormant({...formant, f1:v})} unit="Hz" />
-                                        <RangeControl label="F2 (Mouth)" value={formant.f2} min={500} max={3000} step={10} onChange={v=>setFormant({...formant, f2:v})} unit="Hz" />
-                                        <RangeControl label="F3 (Front)" value={formant.f3} min={1500} max={4000} step={10} onChange={v=>setFormant({...formant, f3:v})} unit="Hz" />
-                                        <RangeControl label="F4 (Detail)" value={formant.f4} min={2500} max={5000} step={10} onChange={v=>setFormant({...formant, f4:v})} unit="Hz" />
-                                        <RangeControl label="Resonance (Q)" value={formant.resonance} min={0.1} max={10} step={0.1} onChange={v=>setFormant({...formant, resonance:v})} unit="" />
+                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><AudioLines size={12} /> Formant Detail</h3>
+                                        <RangeControl label="F1 (Throat)" value={formant.f1} min={200} max={1200} step={10} onChange={v => setFormant({ ...formant, f1: v })} unit="Hz" />
+                                        <RangeControl label="F2 (Mouth)" value={formant.f2} min={500} max={3000} step={10} onChange={v => setFormant({ ...formant, f2: v })} unit="Hz" />
+                                        <RangeControl label="F3 (Front)" value={formant.f3} min={1500} max={4000} step={10} onChange={v => setFormant({ ...formant, f3: v })} unit="Hz" />
+                                        <RangeControl label="F4 (Detail)" value={formant.f4} min={2500} max={5000} step={10} onChange={v => setFormant({ ...formant, f4: v })} unit="Hz" />
+                                        <RangeControl label="Resonance (Q)" value={formant.resonance} min={0.1} max={10} step={0.1} onChange={v => setFormant({ ...formant, resonance: v })} unit="" />
+
+                                        {/* Singer's Formant */}
+                                        <div className={`p-3 rounded-xl border space-y-3 transition-all ${singersFormantEnabled ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                                            <div className="flex items-center justify-between">
+                                                <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                                                    <Sparkles size={11} className={singersFormantEnabled ? 'text-amber-500' : 'text-slate-400'} />
+                                                    <span className={singersFormantEnabled ? 'text-amber-700' : 'text-slate-400'}>Singer's Formant</span>
+                                                </h3>
+                                                <button
+                                                    onClick={() => setSingersFormantEnabled(!singersFormantEnabled)}
+                                                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${singersFormantEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}
+                                                >
+                                                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${singersFormantEnabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                                                </button>
+                                            </div>
+                                            {singersFormantEnabled && (
+                                                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+                                                    <p className="text-[9px] text-amber-700/70 font-bold leading-tight">2.5~4kHz 대역을 부스트하여 성악적 존재감을 강화합니다.</p>
+                                                    <RangeControl label="Center Freq" value={singersFormantFreq} min={2500} max={4000} step={50} onChange={setSingersFormantFreq} unit="Hz" />
+                                                    <RangeControl label="Boost Gain" value={singersFormantGain} min={0} max={20} step={0.5} onChange={setSingersFormantGain} unit="dB" />
+                                                    <RangeControl label="Q (Bandwidth)" value={singersFormantQ} min={0.5} max={10} step={0.5} onChange={setSingersFormantQ} unit="" />
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
                             <div className="p-5 border-t border-slate-200 bg-slate-50/50 space-y-4">
-                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14}/> Master Output</h3>
+                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14} /> Master Output</h3>
                                 <div className="flex items-center justify-between gap-4">
-                                    <button 
-                                        onClick={() => setBypassEffects(!bypassEffects)}
-                                        className={`flex-1 py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${bypassEffects ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg' : 'bg-white text-slate-400 border-slate-200'}`}
-                                        title="효과 일시 해제 (소리 비교용)"
-                                    >
-                                        <Power size={14} className={bypassEffects ? "animate-pulse" : ""}/>
-                                        <span className="text-xs font-black uppercase tracking-tight">Bypass</span>
-                                    </button>
+                                    <div className="flex flex-col gap-2 flex-1">
+                                        <button
+                                            onClick={() => setNormalizationEnabled(!normalizationEnabled)}
+                                            className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${normalizationEnabled ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm' : 'bg-white text-slate-500 border-slate-200'}`}
+                                            title="피크 노멀라이제이션 (렌더링 시 -0.5dBFS로 통일)"
+                                        >
+                                            <Activity size={12} className={normalizationEnabled ? "text-indigo-200" : ""} />
+                                            <span className="text-[10px] font-black uppercase tracking-tight">Norm</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setBypassEffects(!bypassEffects)}
+                                            className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${bypassEffects ? 'bg-amber-500 text-white border-amber-400 shadow-sm' : 'bg-white text-slate-400 border-slate-200'}`}
+                                            title="효과 일시 해제 (소리 비교용)"
+                                        >
+                                            <Power size={12} className={bypassEffects ? "animate-pulse" : ""} />
+                                            <span className="text-[10px] font-black uppercase tracking-tight">Bypass</span>
+                                        </button>
+                                    </div>
                                     <div className="flex-[1.5] space-y-1">
                                         <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">
                                             <span>Gain</span>
                                             <span className="text-indigo-600">{(masterGain * 100).toFixed(0)}%</span>
                                         </div>
-                                        <input type="range" min="0" max="2" step="0.01" value={masterGain} onChange={e => setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/>
+                                        <input type="range" min="0" max="2" step="0.01" value={masterGain} onChange={e => setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" />
                                     </div>
                                 </div>
                             </div>

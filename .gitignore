@@ -24,3 +24,4 @@ release
 *.njsproj
 *.sln
 *.sw?
+/tsc_errors.txt
