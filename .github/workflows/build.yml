@@ -1,0 +1,53 @@
+name: Build Otonashi App
+
+on:
+  push:
+    branches:
+      - Local_App_Mac_Build
+      - Local_App
+  pull_request:
+    branches:
+      - Local_App_Mac_Build
+      - Local_App
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Electron App (macOS)
+        if: matrix.os == 'macos-latest'
+        run: npm run build:mac
+        env:
+          GH_TOKEN: ${{ secrets.github_token }}
+
+      - name: Build Electron App (Windows)
+        if: matrix.os == 'windows-latest'
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.github_token }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: otonashi-${{ matrix.os }}-build
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.zip
+          retention-days: 7

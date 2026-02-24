@@ -11,6 +11,7 @@
     "electron:dev": "wait-on tcp:5173 && tsc -p electron && electron .",
     "build": "tsc -p electron && vite build",
     "build:win": "npm run build && electron-builder --win --x64",
+    "build:mac": "npm run build && electron-builder --mac",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -48,6 +49,10 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "otonashi.ico"
+    },
+    "mac": {
+      "target": "dmg",
       "icon": "otonashi.ico"
     },
     "nsis": {
