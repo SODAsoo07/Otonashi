@@ -34,6 +34,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files: 
     const [showAutomation, _setShowAutomation] = useState(false);
     const [volumeKeyframes, _setVolumeKeyframes] = useState<KeyframePoint[]>([{ t: 0, v: 1 }, { t: 1, v: 1 }]);
 
+    // F0 Curve (Phase 7)
+    const [f0Curve, setF0Curve] = useState<{ t: number, f0: number }[]>([]);
+    const [detectedF0, setDetectedF0] = useState<number | null>(null);
+
     // Clipboard State
     const [clipboard, setClipboard] = useState<AudioBuffer | null>(null);
 
@@ -473,16 +477,43 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files: 
         ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
         ctx.fillRect(sX, RULER_HEIGHT, eX - sX, waveH);
 
+        // F0 Curve Overlay
+        if (f0Curve.length > 0) {
+            ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5;
+            f0Curve.forEach((pt, idx) => {
+                const x = (pt.t / activeBuffer.duration) * w;
+                const minF0 = 50, maxF0 = 1000;
+                let y = waveH - ((pt.f0 - minF0) / (maxF0 - minF0)) * waveH;
+                y = Math.max(0, Math.min(waveH, y)) + RULER_HEIGHT; // Offset by ruler height
+                if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+        }
+
         if (playheadPos >= 0) {
             const px = (playheadPos / 100) * w;
             ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
         }
-    }, [activeBuffer, editTrim, playheadPos, showAutomation, volumeKeyframes]);
+    }, [activeBuffer, editTrim, playheadPos, showAutomation, volumeKeyframes, f0Curve]);
 
     const formatTime = (sec: number) => {
         const m = Math.floor(sec / 60), s = Math.floor(sec % 60), ms = Math.floor((sec % 1) * 1000);
         return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
     };
+
+    const analyzeF0 = () => {
+        if (!activeBuffer) return;
+        const pitch = AudioUtils.detectFundamentalPitch(activeBuffer);
+        setDetectedF0(Math.round(pitch || 0));
+        const curve = AudioUtils.detectPitchCurve(activeBuffer);
+        setF0Curve(curve);
+    };
+
+    // Auto-clear F0 when buffer changes
+    useEffect(() => {
+        setF0Curve([]);
+        setDetectedF0(null);
+    }, [activeBuffer]);
 
     return (
         <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold h-full overflow-y-auto custom-scrollbar">
@@ -545,8 +576,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files: 
                     </div>
                     <div className="flex items-center gap-2">
                         <button
+                            onClick={analyzeF0}
+                            disabled={!activeBuffer}
+                            className="px-3 py-2 bg-pink-50 hover:bg-pink-100 disabled:bg-slate-50 text-pink-600 disabled:text-slate-400 rounded-xl text-[11px] font-black flex items-center gap-1 border border-pink-200 transition-all shadow-sm"
+                            title="전체 오디오의 기본 주파수(F0) 곡선을 시각화합니다."
+                        >
+                            <Activity size={14} /> {detectedF0 ? `${detectedF0} Hz` : 'F0 분석'}
+                        </button>
+                        <button
                             onClick={handleSaveSelection}
-                            className="px-4 py-2.5 bg-white border border-slate-200 hover:bg-indigo-50 hover:border-indigo-200 text-indigo-600 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-all"
+                            className="px-4 py-2 bg-white border border-slate-200 hover:bg-indigo-50 hover:border-indigo-200 text-indigo-600 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-all"
                         >
                             <FilePlus size={16} /> 선택 영역 저장
                         </button>

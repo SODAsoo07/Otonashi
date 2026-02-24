@@ -12,6 +12,244 @@ export const AudioUtils = {
     return newBuf;
   },
 
+  detectFundamentalPitch: (buffer: AudioBuffer): number | null => {
+    // Simple Auto-Correlation pitch detection
+    const data = buffer.getChannelData(0);
+    const sampleRate = buffer.sampleRate;
+    let maxSamples = Math.floor(buffer.length / 2);
+    if (maxSamples > sampleRate) maxSamples = sampleRate; // Limit to 1 second for perf
+
+    let bestOffset = -1;
+    let bestCorrelation = 0;
+    let foundGoodCorrelation = false;
+    let correlations = new Array(maxSamples);
+
+    let lastCorrelation = 1;
+    for (let offset = 0; offset < maxSamples; offset++) {
+      let correlation = 0;
+      for (let i = 0; i < maxSamples; i++) {
+        correlation += Math.abs((data[i]) - (data[i + offset]));
+      }
+      correlation = 1 - (correlation / maxSamples);
+      correlations[offset] = correlation;
+
+      // Find local peaks
+      if (correlation > 0.9 && correlation > lastCorrelation) {
+        foundGoodCorrelation = true;
+        if (correlation > bestCorrelation) {
+          bestCorrelation = correlation;
+          bestOffset = offset;
+        }
+      } else if (foundGoodCorrelation) {
+        // Once we found one dipping down, we just take the first solid peak
+        // as it's the fundamental. Next peaks are harmonics.
+        let shift = (bestCorrelation - lastCorrelation) > 0 ? bestOffset : offset - 1;
+        return sampleRate / shift;
+      }
+      lastCorrelation = correlation;
+    }
+
+    if (bestCorrelation > 0.01 && bestOffset > 0) return sampleRate / bestOffset;
+    return null;
+  },
+
+  detectPitchCurve: (buffer: AudioBuffer, windowMs: number = 30, stepMs: number = 10): { t: number, f0: number, amp: number }[] => {
+    // Windowed autocorrelation for F0 curve
+    const data = buffer.getChannelData(0);
+    const sr = buffer.sampleRate;
+    const windowSize = Math.floor(sr * (windowMs / 1000));
+    const stepSize = Math.floor(sr * (stepMs / 1000));
+    const results: { t: number, f0: number, amp: number }[] = [];
+
+    const minOffset = Math.floor(sr / 1000); // 1000Hz max
+    const maxOffset = Math.floor(sr / 50);   // 50Hz min
+
+    for (let i = 0; i < data.length - windowSize; i += stepSize) {
+      let maxCorr = 0;
+      let bestOffset = -1;
+
+      // Calculate energy to avoid noise
+      let energy = 0;
+      for (let j = 0; j < windowSize; j++) {
+        energy += data[i + j] * data[i + j];
+      }
+      if (energy / windowSize < 0.0001) {
+        results.push({ t: i / sr, f0: 0, amp: 0 });
+        continue;
+      }
+
+      for (let offset = minOffset; offset < maxOffset; offset++) {
+        let correlation = 0;
+        for (let j = 0; j < windowSize - offset; j++) {
+          correlation += data[i + j] * data[i + j + offset];
+        }
+        if (correlation > maxCorr) {
+          maxCorr = correlation;
+          bestOffset = offset;
+        }
+      }
+
+      let pitch = 0;
+      if (bestOffset !== -1) {
+        // Normalize correlation to check if it's a solid pitch or just noise
+        const expectedAuto = energy; // Auto-correlation at 0 offset
+        if (expectedAuto > 0 && (maxCorr / expectedAuto) > 0.2) {
+          pitch = sr / bestOffset;
+        }
+      }
+
+      const rmsAmp = Math.sqrt(energy / windowSize);
+      // UTAU frq amplitudes correspond roughly to audio levels 
+      results.push({ t: i / sr, f0: pitch, amp: rmsAmp * 1000 }); // Scaled up slightly for FRQ representation
+    }
+
+    return results;
+  },
+
+  getFrqAvg: (curve: { t: number, f0: number, amp: number }[]): number => {
+    // Ported from world4utau / frq0003gen getFrqAvg
+    let value = 0;
+    let r = 0;
+    let q = 0;
+    let freq_avg = 0;
+    let base_value = 0;
+    const p = new Array(6).fill(0);
+    const num_frames = curve.length;
+
+    for (let i = 0; i < num_frames; i++) {
+      value = curve[i].f0;
+      if (value < 1000.0 && value > 55.0) {
+        r = 1.0;
+        for (let j = 0; j <= 5; j++) {
+          if (i > j) {
+            q = curve[i - j - 1].f0 - value;
+            p[j] = value / (value + q * q);
+          } else {
+            p[j] = 1 / (1 + value);
+          }
+          r *= p[j];
+        }
+        freq_avg += value * r;
+        base_value += r;
+      }
+    }
+    if (base_value > 0) freq_avg /= base_value;
+    return freq_avg;
+  },
+
+  generateFrqBuffer: (curve: { t: number, f0: number, amp: number }[], stepSamples: number): ArrayBuffer => {
+    // UTAU .frq file format (FREQ0003) according to frq0003gen spec:
+    // 0-7: "FREQ0003" (ascii)
+    // 8-11: Samples per frq value (hopSize) (int32LE)
+    // 12-19: Average frequency (Weighted average) (doubleLE)
+    // 20-35: 4 * int32 empty space (reserved)
+    // 36-39: Number of frames (int32LE)
+    // 40+: Frames. Each frame is 16 bytes: F0 (doubleLE), Amplitude (doubleLE)
+
+    const headerSize = 40;
+    const numFrames = curve.length;
+    const bufferSize = headerSize + numFrames * 16;
+    const arrayBuffer = new ArrayBuffer(bufferSize);
+    const view = new DataView(arrayBuffer);
+
+    // Write "FREQ0003"
+    const magic = "FREQ0003";
+    for (let i = 0; i < magic.length; i++) {
+      view.setUint8(i, magic.charCodeAt(i));
+    }
+
+    // Write samples_per_frq (Hop Size)
+    view.setInt32(8, stepSamples, true);
+
+    // Calculate and write average frequency
+    const avgFrq = AudioUtils.getFrqAvg(curve);
+    view.setFloat64(12, avgFrq, true);
+
+    // Blank spaces are 0 by default when ArrayBuffer is created
+
+    // Number of frames
+    view.setInt32(36, numFrames, true);
+
+    // Write frames
+    for (let i = 0; i < numFrames; i++) {
+      const offset = headerSize + i * 16;
+      view.setFloat64(offset, curve[i].f0, true);
+      view.setFloat64(offset + 8, curve[i].amp, true);
+    }
+
+    return arrayBuffer;
+  },
+
+  pitchShiftLengthPreserving: async (ctx: OfflineAudioContext, buffer: AudioBuffer, pitchRatio: number): Promise<AudioBuffer> => {
+    // A simplified Overlap-Add (OLA) time-stretching / pitch-shifting
+    // To pitch shift by R without changing length:
+    // 1. Time-stretch by factor 1/R (changes length to L/R, preserves pitch)
+    // 2. Playback at rate R (changes length back to L, changes pitch by R)
+    // Here we implement the time-stretch part (WSOLA-lite or granular)
+
+    if (Math.abs(pitchRatio - 1.0) < 0.01) {
+      return buffer;
+    }
+
+    const stretchFactor = 1 / pitchRatio;
+    const sr = buffer.sampleRate;
+
+    // Output length will be original length (we will stretch it then play it back fast)
+    // Actually, it's easier to just do simple granular synthesis directly scaling the read pointer
+
+    const outFrames = buffer.length;
+    const outBuffer = ctx.createBuffer(buffer.numberOfChannels, outFrames, sr);
+
+    // Grain parameters
+    const grainSize = Math.floor(sr * 0.05); // 50ms grains
+    const overlap = Math.floor(grainSize * 0.5); // 50% overlap
+    const hopSize = grainSize - overlap;
+
+    // Hanning window
+    const win = new Float32Array(grainSize);
+    for (let i = 0; i < grainSize; i++) {
+      win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (grainSize - 1)));
+    }
+
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const input = buffer.getChannelData(c);
+      const output = outBuffer.getChannelData(c);
+
+      // Step 1: Time stretch to intermediate buffer
+      const stretchedFrames = Math.floor(buffer.length * stretchFactor);
+      const stretched = new Float32Array(stretchedFrames);
+
+      const inHop = stretchFactor > 1 ? Math.floor(hopSize / stretchFactor) : hopSize;
+      const outHop = stretchFactor > 1 ? hopSize : Math.floor(hopSize * stretchFactor);
+
+      let inPos = 0;
+      let outPos = 0;
+
+      while (inPos + grainSize < input.length && outPos + grainSize < stretched.length) {
+        for (let i = 0; i < grainSize; i++) {
+          stretched[outPos + i] += input[inPos + i] * win[i];
+        }
+        inPos += inHop;
+        outPos += outHop;
+      }
+
+      // Step 2: Resample (playbackRate simulation) back to original length
+      // Linear interpolation resampling
+      for (let i = 0; i < outFrames; i++) {
+        const srcIdx = i * pitchRatio;
+        const idx1 = Math.floor(srcIdx);
+        const idx2 = Math.min(idx1 + 1, stretchedFrames - 1);
+        const frac = srcIdx - idx1;
+
+        if (idx1 < stretchedFrames) {
+          output[i] = stretched[idx1] * (1 - frac) + stretched[idx2] * frac;
+        }
+      }
+    }
+
+    return outBuffer;
+  },
+
   deleteRange: (ctx: AudioContext, buf: AudioBuffer, startPct: number, endPct: number): AudioBuffer | null => {
     if (!buf || !ctx) return null;
     const start = Math.floor(buf.length * startPct);

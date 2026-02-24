@@ -27,6 +27,7 @@ interface TimelineEditorProps {
     getValueAtTime: (id: string, t: number, tracks?: AdvTrack[]) => number;
     simPauseOffsetRef: React.MutableRefObject<number>;
     advDuration: number;
+    f0Curve?: { t: number, f0: number }[];
 }
 
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
@@ -34,7 +35,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     playHeadPos, setPlayheadPos, syncVisualsToTime, handleSimulationPlay, isAdvPlaying,
     commitChange, isEditMode, setIsEditMode, showGhost, setShowGhost, ghostTracks,
     showSpectrogram, spectrogramCanvas, previewBuffer, getCurrentValue, getValueAtTime,
-    simPauseOffsetRef, advDuration
+    simPauseOffsetRef, advDuration, f0Curve
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -213,6 +214,27 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 ctx.moveTo(i, center + min * amp);
                 ctx.lineTo(i, center + max * amp);
             }
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // F0 Curve Overlay
+        if (f0Curve && f0Curve.length > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.strokeStyle = '#ef4444'; // Red line
+            ctx.lineWidth = 1.5;
+            const waveH = h - RULER_HEIGHT;
+
+            f0Curve.forEach((pt, idx) => {
+                const x = (pt.t / advDuration) * w;
+                const minF0 = 50, maxF0 = 1000;
+                let y = waveH - ((pt.f0 - minF0) / (maxF0 - minF0)) * waveH;
+                y = Math.max(0, Math.min(waveH, y)) + RULER_HEIGHT;
+
+                if (idx === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
             ctx.stroke();
             ctx.restore();
         }

@@ -96,6 +96,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [sidebarWidth] = useState(420);
     const [isResizing, setIsResizing] = useState(false);
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
+    const [f0Curve, setF0Curve] = useState<{ t: number, f0: number }[]>([]);
+    const [detectedF0, setDetectedF0] = useState<number | null>(null);
     const [showAnalyzer, setShowAnalyzer] = useState(false);
     const [savedPresets, setSavedPresets] = useState<{ name: string; state: any; date: string }[]>([]);
     const [presetName, setPresetName] = useState('');
@@ -221,6 +223,19 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }
         }
     }, [showSpectrogram, tractSourceFileId, files]);
+
+    const analyzeF0 = () => {
+        if (!previewBuffer) return;
+        const pitch = AudioUtils.detectFundamentalPitch(previewBuffer);
+        setDetectedF0(Math.round(pitch || 0));
+        const curve = AudioUtils.detectPitchCurve(previewBuffer);
+        setF0Curve(curve);
+    };
+
+    useEffect(() => {
+        setF0Curve([]);
+        setDetectedF0(null);
+    }, [previewBuffer]);
 
     useEffect(() => { isAdvPlayingRef.current = isAdvPlaying; }, [isAdvPlaying]);
 
@@ -912,9 +927,18 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             {/* Bottom Section (Timeline Editor) - Responsive Flex */}
             <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[2]">
                 {/* 스튜디오 / 보코더 전송 버튼 바 */}
-                {(onSendToStudio || onSendToVocoder) && (
+                {(onSendToStudio || onSendToVocoder || true) && (
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0">
-                        <span className="text-xs font-black text-indigo-600 uppercase tracking-widest mr-2 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200 shadow-sm">렌더 후 전송</span>
+                        <span className="text-xs font-black text-indigo-600 uppercase tracking-widest mr-2 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200 shadow-sm">렌더 후 확인/전송</span>
+                        <button
+                            onClick={analyzeF0}
+                            disabled={!previewBuffer}
+                            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black bg-pink-50 text-pink-600 hover:bg-pink-100 disabled:opacity-50 transition-all border border-pink-200 shadow-sm"
+                            title="현재 시뮬레이션 결과의 F0(피치) 곡선을 분석하여 오버레이합니다"
+                        >
+                            <Activity size={12} /> {detectedF0 ? `${detectedF0} Hz` : '결과 F0 시각화'}
+                        </button>
+                        <div className="w-px h-4 bg-slate-300 mx-1"></div>
                         {onSendToStudio && (
                             <button
                                 onClick={handleSendToStudio}
@@ -954,6 +978,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     showSpectrogram={showSpectrogram}
                     spectrogramCanvas={spectrogramCanvasRef.current}
                     previewBuffer={previewBuffer}
+                    f0Curve={f0Curve}
                     getCurrentValue={getCurrentValue}
                     getValueAtTime={getValueAtTime}
                     simPauseOffsetRef={simPauseOffsetRef}

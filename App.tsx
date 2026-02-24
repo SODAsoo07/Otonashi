@@ -8,6 +8,8 @@ import ConsonantTab from './components/ConsonantTab';
 import AdvancedTractTab from './components/AdvancedTractTab';
 import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
 import VocoderTab from './components/VocoderTab';
+import MiscTab from './components/MiscTab';
+import FrqTab from './components/FrqTab';
 import { AudioFile, UIConfig } from './types';
 import { AudioUtils } from './utils/audioUtils';
 
@@ -15,7 +17,7 @@ const App: React.FC = () => {
     const [audioContext] = useState(() => new (window.AudioContext || (window as any).webkitAudioContext)());
     const [files, setFiles] = useState<AudioFile[]>([]);
     const [activeFileId, setActiveFileId] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'editor' | 'generator' | 'consonant' | 'sim' | 'vocoder'>('editor');
+    const [activeTab, setActiveTab] = useState<'editor' | 'generator' | 'consonant' | 'sim' | 'vocoder' | 'misc' | 'frq'>('editor');
     const [showHelp, setShowHelp] = useState(false);
     const [fileCounter, setFileCounter] = useState(1);
     const [isRackOpen, setIsRackOpen] = useState(true);
@@ -221,7 +223,9 @@ const App: React.FC = () => {
                         ['generator', '자음 생성'],
                         ['consonant', '자음 합성'],
                         ['sim', '성도 시뮬레이터'],
-                        ['vocoder', '보코더']
+                        ['vocoder', '보코더'],
+                        ['misc', '후처리'],
+                        ['frq', 'FRQ 추출']
                     ] as const).map(([id, label]) => (
                         <button key={id} onClick={() => { ensureAudioContext(); setActiveTab(id); }} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === id ? 'bg-white dynamic-primary-text shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>{label}</button>
                     ))}
@@ -289,6 +293,12 @@ const App: React.FC = () => {
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'vocoder' ? 'flex' : 'none' }}>
                         <VocoderTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'vocoder'} monitorGainValue={monitorGainValue} />
+                    </div>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'misc' ? 'flex' : 'none' }}>
+                        <MiscTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'misc'} />
+                    </div>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'frq' ? 'flex' : 'none' }}>
+                        <FrqTab audioContext={audioContext} files={files} isActive={activeTab === 'frq'} />
                     </div>
                 </div>
             </main>
