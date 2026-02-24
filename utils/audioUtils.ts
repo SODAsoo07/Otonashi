@@ -53,12 +53,12 @@ export const AudioUtils = {
     return null;
   },
 
-  detectPitchCurve: (buffer: AudioBuffer, windowMs: number = 30, stepMs: number = 10): { t: number, f0: number, amp: number }[] => {
+  detectPitchCurve: (buffer: AudioBuffer, windowMs: number = 30, stepSamples: number = 256, interpolate: boolean = false, forcePitch: number | null = null): { t: number, f0: number, amp: number }[] => {
     // Windowed autocorrelation for F0 curve
     const data = buffer.getChannelData(0);
     const sr = buffer.sampleRate;
     const windowSize = Math.floor(sr * (windowMs / 1000));
-    const stepSize = Math.floor(sr * (stepMs / 1000));
+    const stepSize = stepSamples;
     const results: { t: number, f0: number, amp: number }[] = [];
 
     const minOffset = Math.floor(sr / 1000); // 1000Hz max
@@ -73,34 +73,68 @@ export const AudioUtils = {
       for (let j = 0; j < windowSize; j++) {
         energy += data[i + j] * data[i + j];
       }
-      if (energy / windowSize < 0.0001) {
-        results.push({ t: i / sr, f0: 0, amp: 0 });
-        continue;
-      }
-
-      for (let offset = minOffset; offset < maxOffset; offset++) {
-        let correlation = 0;
-        for (let j = 0; j < windowSize - offset; j++) {
-          correlation += data[i + j] * data[i + j + offset];
-        }
-        if (correlation > maxCorr) {
-          maxCorr = correlation;
-          bestOffset = offset;
-        }
-      }
 
       let pitch = 0;
-      if (bestOffset !== -1) {
-        // Normalize correlation to check if it's a solid pitch or just noise
-        const expectedAuto = energy; // Auto-correlation at 0 offset
-        if (expectedAuto > 0 && (maxCorr / expectedAuto) > 0.2) {
-          pitch = sr / bestOffset;
+      if (forcePitch !== null && forcePitch > 0) {
+        pitch = forcePitch;
+      } else if (energy / windowSize >= 0.0001) {
+        for (let offset = minOffset; offset < maxOffset; offset++) {
+          let correlation = 0;
+          for (let j = 0; j < windowSize - offset; j++) {
+            correlation += data[i + j] * data[i + j + offset];
+          }
+          if (correlation > maxCorr) {
+            maxCorr = correlation;
+            bestOffset = offset;
+          }
+        }
+
+        if (bestOffset !== -1) {
+          // Normalize correlation to check if it's a solid pitch or just noise
+          const expectedAuto = energy; // Auto-correlation at 0 offset
+          if (expectedAuto > 0 && (maxCorr / expectedAuto) > 0.2) {
+            pitch = sr / bestOffset;
+          }
         }
       }
 
       const rmsAmp = Math.sqrt(energy / windowSize);
       // UTAU frq amplitudes correspond roughly to audio levels 
-      results.push({ t: i / sr, f0: pitch, amp: rmsAmp * 1000 }); // Scaled up slightly for FRQ representation
+      // If forcePitch is on, we ensure amp is at least small non-zero so UTAU doesn't consider it a completely dead frame if it wants to render it
+      const finalAmp = (forcePitch !== null && rmsAmp < 0.0001) ? 10 : rmsAmp * 1000;
+      results.push({ t: i / sr, f0: pitch, amp: finalAmp });
+    }
+
+    if (interpolate && results.length > 0) {
+      // Linear interpolation for unvoiced/dropped frames (F0 === 0)
+      let lastValidIdx = -1;
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].f0 > 0) {
+          if (lastValidIdx !== -1 && i - lastValidIdx > 1) {
+            // Found a gap, interpolate from lastValidIdx to i
+            const startF0 = results[lastValidIdx].f0;
+            const endF0 = results[i].f0;
+            const steps = i - lastValidIdx;
+            const f0Step = (endF0 - startF0) / steps;
+
+            for (let j = 1; j < steps; j++) {
+              results[lastValidIdx + j].f0 = startF0 + f0Step * j;
+            }
+          } else if (lastValidIdx === -1 && i > 0) {
+            // Gap at the beginning, just propagate the first found pitch backwards
+            for (let j = 0; j < i; j++) {
+              results[j].f0 = results[i].f0;
+            }
+          }
+          lastValidIdx = i;
+        }
+      }
+      // If there's a gap at the very end, propagate the last valid pitch forwards
+      if (lastValidIdx !== -1 && lastValidIdx < results.length - 1) {
+        for (let j = lastValidIdx + 1; j < results.length; j++) {
+          results[j].f0 = results[lastValidIdx].f0;
+        }
+      }
     }
 
     return results;

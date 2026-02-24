@@ -13,7 +13,45 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
     const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
     const [f0Curve, setF0Curve] = useState<{ t: number, f0: number, amp: number }[]>([]);
     const [detectedF0, setDetectedF0] = useState<number | null>(null);
+    const [isInterpolate, setIsInterpolate] = useState(false);
+    const [isForcePitchOn, setIsForcePitchOn] = useState(false);
+    const [forcePitch, setForcePitch] = useState<number>(261.6);
+    const [isDraggingPitch, setIsDraggingPitch] = useState(false);
+    const dragStartY = useRef<number>(0);
+    const dragStartPitch = useRef<number>(0);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    const handlePitchDragStart = (e: React.MouseEvent<HTMLInputElement>) => {
+        if (!isForcePitchOn) return;
+        setIsDraggingPitch(true);
+        dragStartY.current = e.clientY;
+        dragStartPitch.current = forcePitch;
+        e.preventDefault(); // Prevent text selection
+    };
+
+    useEffect(() => {
+        const handlePitchDrag = (e: MouseEvent) => {
+            if (!isDraggingPitch) return;
+            const deltaY = dragStartY.current - e.clientY;
+            // Adjust sensitivity (e.g., 1 pixel = 0.5 Hz)
+            const newPitch = Math.max(50, Math.min(2000, dragStartPitch.current + deltaY * 0.5));
+            setForcePitch(Number(newPitch.toFixed(1)));
+        };
+
+        const handlePitchDragEnd = () => {
+            setIsDraggingPitch(false);
+        };
+
+        if (isDraggingPitch) {
+            window.addEventListener('mousemove', handlePitchDrag);
+            window.addEventListener('mouseup', handlePitchDragEnd);
+        }
+
+        return () => {
+            window.removeEventListener('mousemove', handlePitchDrag);
+            window.removeEventListener('mouseup', handlePitchDragEnd);
+        };
+    }, [isDraggingPitch]);
 
     const activeFile = files.find(f => f.id === selectedFileId) || null;
 
@@ -23,12 +61,12 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
             setDetectedF0(null);
             return;
         }
-        // Auto-analyze when file is selected
+        // Auto-analyze when file or interpolation option changes
         const pitch = AudioUtils.detectFundamentalPitch(activeFile.buffer);
         setDetectedF0(Math.round(pitch || 0));
-        const curve = AudioUtils.detectPitchCurve(activeFile.buffer);
+        const curve = AudioUtils.detectPitchCurve(activeFile.buffer, 30, 256, isInterpolate, isForcePitchOn ? forcePitch : null);
         setF0Curve(curve);
-    }, [activeFile]);
+    }, [activeFile, isInterpolate, isForcePitchOn, forcePitch]);
 
     useEffect(() => {
         if (!canvasRef.current || !activeFile) return;
@@ -69,7 +107,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
 
     const handleDownloadFrq = () => {
         if (!activeFile || f0Curve.length === 0) return;
-        const stepSamples = Math.floor(activeFile.buffer.sampleRate * 0.01);
+        const stepSamples = 256; // Standard UTAU frq hop size
         const frqBuffer = AudioUtils.generateFrqBuffer(f0Curve, stepSamples);
 
         const blob = new Blob([frqBuffer], { type: 'application/octet-stream' });
@@ -125,6 +163,44 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">평균 기준 F0</span>
                                 {detectedF0 ? `${detectedF0} Hz` : '분석 실패'}
                             </div>
+                            <div className="flex flex-col gap-1 ml-4 justify-center">
+                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={isInterpolate}
+                                        onChange={(e) => setIsInterpolate(e.target.checked)}
+                                        disabled={isForcePitchOn}
+                                        className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500 disabled:opacity-50"
+                                    />
+                                    <span className={isForcePitchOn ? 'opacity-50' : ''}>F0 끊김 보정 (Interpolation)</span>
+                                </label>
+                                <span className={`text-[10px] font-bold ${isForcePitchOn ? 'text-slate-300' : 'text-slate-400'}`}>무음/노이즈 구간의 유실된 피치를 잇습니다.</span>
+                            </div>
+
+                            <div className="flex flex-col gap-1 ml-4 justify-center border-l-2 border-slate-200 pl-4">
+                                <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={isForcePitchOn}
+                                        onChange={(e) => setIsForcePitchOn(e.target.checked)}
+                                        className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500"
+                                    />
+                                    타겟 피치 강제 덮어쓰기
+                                </label>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <input
+                                        type="number"
+                                        value={forcePitch}
+                                        onChange={(e) => setForcePitch(Number(e.target.value))}
+                                        onMouseDown={handlePitchDragStart}
+                                        disabled={!isForcePitchOn}
+                                        className={`w-20 px-2 py-0.5 text-sm border border-slate-300 rounded focus:border-pink-500 focus:ring-pink-500 disabled:bg-slate-100 disabled:text-slate-400 font-bold text-slate-700 text-center ${isForcePitchOn ? 'cursor-ns-resize' : ''}`}
+                                        step="0.1"
+                                    />
+                                    <span className="text-xs font-bold text-slate-400">Hz</span>
+                                </div>
+                            </div>
+
                             <button
                                 onClick={handleDownloadFrq}
                                 disabled={f0Curve.length === 0}

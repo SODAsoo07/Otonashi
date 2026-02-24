@@ -505,7 +505,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files: 
         if (!activeBuffer) return;
         const pitch = AudioUtils.detectFundamentalPitch(activeBuffer);
         setDetectedF0(Math.round(pitch || 0));
-        const curve = AudioUtils.detectPitchCurve(activeBuffer);
+        const curve = AudioUtils.detectPitchCurve(activeBuffer, 30, 256);
         setF0Curve(curve);
     };
 

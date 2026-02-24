@@ -238,6 +238,13 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
             const modulatorSource = offlineCtx.createBufferSource();
             modulatorSource.buffer = activeFile.buffer;
 
+            // Pre-compression for Modulator to stabilize exciter dynamics (Phase 9)
+            const modCompressor = offlineCtx.createDynamicsCompressor();
+            modCompressor.threshold.value = -40; // Heavy compression
+            modCompressor.ratio.value = 20;
+            modCompressor.attack.value = 0.005;
+            modCompressor.release.value = 0.050;
+
             // Rectify the signal (absolute value)
             const rectShaper = offlineCtx.createWaveShaper();
             const curve = new Float32Array(44100);
@@ -248,17 +255,25 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
             rectShaper.curve = curve;
 
             // Lowpass filter to smooth it into an envelope
-            const envFilter = offlineCtx.createBiquadFilter();
-            envFilter.type = 'lowpass';
-            envFilter.frequency.value = 50; // Smooth 50Hz envelope tracker
+            const envFilter1 = offlineCtx.createBiquadFilter();
+            envFilter1.type = 'lowpass';
+            envFilter1.frequency.value = 30; // Slower 30Hz for less zipper noise
+            envFilter1.Q.value = 0.5;
+
+            const envFilter2 = offlineCtx.createBiquadFilter();
+            envFilter2.type = 'lowpass';
+            envFilter2.frequency.value = 30; // Secondary stage for smooth roll-off
+            envFilter2.Q.value = 0.5;
 
             // Boost modulator signal slightly to ensure good modulation depth
             const modBoost = offlineCtx.createGain();
             modBoost.gain.value = 2.0;
 
-            modulatorSource.connect(rectShaper);
-            rectShaper.connect(envFilter);
-            envFilter.connect(modBoost);
+            modulatorSource.connect(modCompressor);
+            modCompressor.connect(rectShaper);
+            rectShaper.connect(envFilter1);
+            envFilter1.connect(envFilter2);
+            envFilter2.connect(modBoost);
             modBoost.connect(amGain.gain);
 
             // Main mix on offline ctx
@@ -350,6 +365,13 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         const modulatorSource = offlineCtx.createBufferSource();
         modulatorSource.buffer = file.buffer;
 
+        // Pre-compression for Modulator to stabilize exciter dynamics (Phase 9)
+        const modCompressor = offlineCtx.createDynamicsCompressor();
+        modCompressor.threshold.value = -40; // Heavy compression
+        modCompressor.ratio.value = 20;
+        modCompressor.attack.value = 0.005;
+        modCompressor.release.value = 0.050;
+
         // Rectify
         const rectShaper = offlineCtx.createWaveShaper();
         const curve = new Float32Array(44100);
@@ -359,17 +381,25 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         }
         rectShaper.curve = curve;
 
-        // Smooth
-        const envFilter = offlineCtx.createBiquadFilter();
-        envFilter.type = 'lowpass';
-        envFilter.frequency.value = 50;
+        // Double lowpass filtering for smoother envelope (prevents pops)
+        const envFilter1 = offlineCtx.createBiquadFilter();
+        envFilter1.type = 'lowpass';
+        envFilter1.frequency.value = 30; // 30Hz first stage
+        envFilter1.Q.value = 0.5;
+
+        const envFilter2 = offlineCtx.createBiquadFilter();
+        envFilter2.type = 'lowpass';
+        envFilter2.frequency.value = 30; // 30Hz second stage
+        envFilter2.Q.value = 0.5;
 
         const modBoost = offlineCtx.createGain();
         modBoost.gain.value = 2.0;
 
-        modulatorSource.connect(rectShaper);
-        rectShaper.connect(envFilter);
-        envFilter.connect(modBoost);
+        modulatorSource.connect(modCompressor);
+        modCompressor.connect(rectShaper);
+        rectShaper.connect(envFilter1);
+        envFilter1.connect(envFilter2);
+        envFilter2.connect(modBoost);
         modBoost.connect(amGain.gain);
 
         const dry = offlineCtx.createGain();
@@ -455,7 +485,7 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         if (!activeFile) return;
         const pitch = AudioUtils.detectFundamentalPitch(activeFile.buffer);
         setDetectedF0(Math.round(pitch || 0));
-        const curve = AudioUtils.detectPitchCurve(activeFile.buffer);
+        const curve = AudioUtils.detectPitchCurve(activeFile.buffer, 30, 256);
         setF0Curve(curve);
     };
 

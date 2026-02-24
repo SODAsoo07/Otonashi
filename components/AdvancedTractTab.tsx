@@ -228,7 +228,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (!previewBuffer) return;
         const pitch = AudioUtils.detectFundamentalPitch(previewBuffer);
         setDetectedF0(Math.round(pitch || 0));
-        const curve = AudioUtils.detectPitchCurve(previewBuffer);
+        const curve = AudioUtils.detectPitchCurve(previewBuffer, 30, 256);
         setF0Curve(curve);
     };
 
