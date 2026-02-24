@@ -25,3 +25,16 @@ release
 *.sln
 *.sw?
 /tsc_errors.txt
+git_log.txt
+ts_errors.txt
+branches.txt
+branches2.txt
+tslog7.txt
+tslog6.txt
+tslog5.txt
+tslog4.txt
+tslog3.txt
+tslog2.txt
+tslog.txt
+parsed_errors.txt
+runs.json

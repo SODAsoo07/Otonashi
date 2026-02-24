@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mic2, Activity, Play, Save, Settings2, AudioLines, Music2, Cpu, Zap, Snowflake, Pencil, RotateCcw, Camera, MoveVertical, Lightbulb } from 'lucide-react';
+import { Mic2, Play, Save, Settings2, AudioLines, Cpu, Zap, Snowflake, Pencil, RotateCcw, Camera, MoveVertical, Lightbulb } from 'lucide-react';
 import { AudioFile, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -23,13 +23,13 @@ const VocoderTab: React.FC<VocoderTabProps> = ({ audioContext, files, onAddToRac
     // Synth Carrier Params
     const [synthWave, setSynthWave] = useState<OscillatorType>('sawtooth');
     const [synthPitch, setSynthPitch] = useState(110);
-    const [synthDetune, setSynthDetune] = useState(0);
-    const [noiseMix, setNoiseMix] = useState(0.1);
+    const [synthDetune] = useState(0);
+    const [noiseMix] = useState(0.1);
 
     // Vocoder Params
     const [bands, setBands] = useState(16);
-    const [qFactor, setQFactor] = useState(5.0);
-    const [makeUpGain, setMakeUpGain] = useState(4.0);
+    const [qFactor] = useState(5.0);
+    const [makeUpGain] = useState(4.0);
 
     // New Features
     const [reactionTime, setReactionTime] = useState(40); // ms (Smoothing)
@@ -285,6 +285,30 @@ const VocoderTab: React.FC<VocoderTabProps> = ({ audioContext, files, onAddToRac
         const buf = generatedBuffer || await renderVocoder();
         if (buf) onAddToRack(buf, "Vocoder_Output");
     };
+
+    // Global Hotkeys
+    useEffect(() => {
+        if (!isActive) return;
+        const handleKey = async (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                handleGenerate();
+            } else if (e.ctrlKey && !e.shiftKey && e.code === 'KeyS') {
+                e.preventDefault();
+                handleSave();
+            } else if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
+                e.preventDefault();
+                const buf = generatedBuffer || await renderVocoder();
+                if (buf) {
+                    AudioUtils.downloadWav(buf, "vocoder_export.wav");
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [isActive, handleGenerate, handleSave, generatedBuffer, renderVocoder]);
 
     const handleCapture = () => {
         if (!modulatorId) return;

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2, Volume2, EarOff } from 'lucide-react';
+import { Activity, HelpCircle, User, Download, Upload, Undo2, Redo2, Volume2 } from 'lucide-react';
 import FileRack from './components/FileRack';
 import HelpModal from './components/HelpModal';
 import StudioTab from './components/StudioTab';
@@ -279,7 +279,7 @@ const App: React.FC = () => {
                         <StudioTab audioContext={audioContext} activeFile={activeFile} files={files} onUpdateFile={updateFile} onAddToRack={addToRack} setActiveFileId={setActiveFileId} isActive={activeTab === 'editor'} monitorGainValue={monitorGainValue} />
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'generator' ? 'flex' : 'none' }}>
-                        <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'generator'} />
+                        <ConsonantGeneratorTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'generator'} onSendToStudio={sendSimToStudio} onSendToVocoder={sendSimToVocoder} />
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'consonant' ? 'flex' : 'none' }}>
                         <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'consonant'} />

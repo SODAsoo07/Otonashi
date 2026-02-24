@@ -14,7 +14,7 @@ interface TimelineEditorProps {
     syncVisualsToTime: (t: number) => void;
     handleSimulationPlay: () => void;
     isAdvPlaying: boolean;
-    commitChange: (label: string) => void;
+    commitChange: () => void;
     isEditMode: boolean;
     setIsEditMode: (v: boolean) => void;
     showGhost: boolean;
@@ -39,20 +39,20 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [draggingKeyframe, setDraggingKeyframe] = useState<{
-        trackId?: string; 
-        index?: number; 
+        trackId?: string;
+        index?: number;
         isPlayhead?: boolean;
         isGlobalShift?: boolean;
     } | null>(null);
-    const [hoveredKeyframe, setHoveredKeyframe] = useState<{trackId: string, index: number} | null>(null);
+    const [hoveredKeyframe] = useState<{ trackId: string, index: number } | null>(null);
     const [canvasSize, setCanvasSize] = useState({ w: 1000, h: 200 });
-    const [globalShiftStart, setGlobalShiftStart] = useState<{ y: number, initialPoints: {t: number, v: number}[] } | null>(null);
+    const [globalShiftStart, setGlobalShiftStart] = useState<{ y: number, initialPoints: { t: number, v: number }[] } | null>(null);
     const [isShiftHeld, setIsShiftHeld] = useState(false);
 
     // Track Shift Key
     useEffect(() => {
-        const down = (e: KeyboardEvent) => { if(e.key === 'Shift') setIsShiftHeld(true); };
-        const up = (e: KeyboardEvent) => { if(e.key === 'Shift') setIsShiftHeld(false); };
+        const down = (e: KeyboardEvent) => { if (e.key === 'Shift') setIsShiftHeld(true); };
+        const up = (e: KeyboardEvent) => { if (e.key === 'Shift') setIsShiftHeld(false); };
         window.addEventListener('keydown', down);
         window.addEventListener('keyup', up);
         return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
@@ -75,12 +75,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     }, []);
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if(!canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); 
+        if (!canvasRef.current) return;
+        const rect = canvasRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         const t = Math.max(0, Math.min(1, x / rect.width));
-        
+
         // 1. Global Shift Mode (Shift + Drag)
         if (isEditMode && e.shiftKey) {
             const track = advTracks.find(tr => tr.id === selectedTrackId);
@@ -93,8 +93,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
         if (y < RULER_HEIGHT + 3 && !isEditMode) {
             setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; 
-            if(isAdvPlaying) handleSimulationPlay();
+            simPauseOffsetRef.current = t * advDuration;
+            if (isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
             return;
         }
@@ -102,47 +102,47 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             const track = advTracks.find(tr => tr.id === selectedTrackId);
             if (track) {
                 const graphH = rect.height - RULER_HEIGHT;
-                const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width)-x, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH)-y) < 15);
-                if (e.button === 2) { 
-                    e.preventDefault(); 
-                    if(hitIdx !== -1 && track.points.length > 2) { 
-                        setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: t.points.filter((_, i) => i !== hitIdx) } : t)); 
-                        commitChange("포인트 삭제"); 
-                    } 
-                    return; 
+                const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width) - x, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH) - y) < 15);
+                if (e.button === 2) {
+                    e.preventDefault();
+                    if (hitIdx !== -1 && track.points.length > 2) {
+                        setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: t.points.filter((_, i) => i !== hitIdx) } : t));
+                        commitChange();
+                    }
+                    return;
                 }
                 if (hitIdx !== -1) { setDraggingKeyframe({ trackId: selectedTrackId, index: hitIdx }); return; }
                 if (y >= RULER_HEIGHT) {
-                    const val = track.min + ((1 - ((y - RULER_HEIGHT) / graphH)) * (track.max - track.min)); 
-                    const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t); 
+                    const val = track.min + ((1 - ((y - RULER_HEIGHT) / graphH)) * (track.max - track.min));
+                    const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t);
                     setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr));
-                    setDraggingKeyframe({ trackId: selectedTrackId, index: nPts.findIndex(p => p.t === t) }); 
-                    commitChange("포인트 추가"); 
+                    setDraggingKeyframe({ trackId: selectedTrackId, index: nPts.findIndex(p => p.t === t) });
+                    commitChange();
                 }
             }
         } else {
             setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; 
-            if(isAdvPlaying) handleSimulationPlay();
+            simPauseOffsetRef.current = t * advDuration;
+            if (isAdvPlaying) handleSimulationPlay();
             setDraggingKeyframe({ isPlayhead: true });
         }
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if(!draggingKeyframe || !canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); 
+        if (!draggingKeyframe || !canvasRef.current) return;
+        const rect = canvasRef.current.getBoundingClientRect();
         const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        
+
         // Handle Global Shift Drag
         if (draggingKeyframe.isGlobalShift && globalShiftStart && draggingKeyframe.trackId) {
             const dy = e.clientY - rect.top - globalShiftStart.y;
             const track = advTracks.find(t => t.id === draggingKeyframe.trackId);
             if (!track) return;
-            
+
             const graphH = rect.height - RULER_HEIGHT;
             const range = track.max - track.min;
-            const deltaV = -(dy / graphH) * range; 
-            
+            const deltaV = -(dy / graphH) * range;
+
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
                 const newPoints = globalShiftStart.initialPoints.map(p => ({
@@ -154,66 +154,66 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             return;
         }
 
-        if (draggingKeyframe.isPlayhead) { 
-            setPlayheadPos(t); 
-            syncVisualsToTime(t); 
-        } 
-        else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
-            const gH = rect.height - RULER_HEIGHT; 
-            const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
+        if (draggingKeyframe.isPlayhead) {
+            setPlayheadPos(t);
+            syncVisualsToTime(t);
+        }
+        else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) {
+            const gH = rect.height - RULER_HEIGHT;
+            const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH)));
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
                 const valActual = tr.min + nV * (tr.max - tr.min);
-                return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: valActual } : p).sort((a,b)=>a.t-b.t) }; 
+                return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: valActual } : p).sort((a, b) => a.t - b.t) };
             }));
         }
     };
 
-    const handleMouseUp = () => { 
-        if(draggingKeyframe) commitChange("편집 완료"); 
-        setDraggingKeyframe(null); 
+    const handleMouseUp = () => {
+        if (draggingKeyframe) commitChange();
+        setDraggingKeyframe(null);
         setGlobalShiftStart(null);
     };
 
     // Canvas Drawing Logic
     useEffect(() => {
-        if(!canvasRef.current) return; 
-        const ctx = canvasRef.current.getContext('2d'); 
-        if(!ctx) return; 
+        if (!canvasRef.current) return;
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
         const { w, h } = canvasSize;
         const track = advTracks.find(t => t.id === selectedTrackId);
-        
-        ctx.clearRect(0, 0, w, h); 
-        ctx.fillStyle = '#f8f8f6'; 
-        ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT); 
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#f8f8f6';
+        ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT);
 
         // Spectrogram
         if (showSpectrogram && spectrogramCanvas) {
             ctx.drawImage(spectrogramCanvas, 0, RULER_HEIGHT, w, h - RULER_HEIGHT);
         }
-        
+
         // Preview Waveform
         if (previewBuffer) {
-            ctx.save(); 
-            ctx.globalAlpha = 0.4; 
-            ctx.beginPath(); 
-            ctx.strokeStyle = '#cbd5e1'; 
+            ctx.save();
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath();
+            ctx.strokeStyle = '#cbd5e1';
             ctx.lineWidth = 1;
-            const data = previewBuffer.getChannelData(0); 
+            const data = previewBuffer.getChannelData(0);
             const step = Math.ceil(data.length / w);
-            const waveH = h - RULER_HEIGHT; 
-            const amp = waveH / 2; 
+            const waveH = h - RULER_HEIGHT;
+            const amp = waveH / 2;
             const center = RULER_HEIGHT + amp;
             for (let i = 0; i < w; i++) {
-                let min = 1.0, max = -1.0; 
-                for (let j = 0; j < step; j++) { 
-                    const d = data[i * step + j] || 0; 
-                    if (d < min) min = d; if (d > max) max = d; 
+                let min = 1.0, max = -1.0;
+                for (let j = 0; j < step; j++) {
+                    const d = data[i * step + j] || 0;
+                    if (d < min) min = d; if (d > max) max = d;
                 }
-                ctx.moveTo(i, center + min * amp); 
+                ctx.moveTo(i, center + min * amp);
                 ctx.lineTo(i, center + max * amp);
             }
-            ctx.stroke(); 
+            ctx.stroke();
             ctx.restore();
         }
 
@@ -227,62 +227,62 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 ctx.lineWidth = 2;
                 ctx.setLineDash([5, 5]);
                 ctx.globalAlpha = 0.4;
-                
+
                 if (ghost.interpolation === 'curve') {
-                     for(let i=0; i<w; i++) {
-                         const t = i / w;
-                         const v = getValueAtTime(ghost.id, t, ghostTracks);
-                         const y = RULER_HEIGHT + (1 - (v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT);
-                         if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
-                     }
+                    for (let i = 0; i < w; i++) {
+                        const t = i / w;
+                        const v = getValueAtTime(ghost.id, t, ghostTracks);
+                        const y = RULER_HEIGHT + (1 - (v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT);
+                        if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
+                    }
                 } else {
-                     ghost.points.forEach((p, i) => { 
-                        const x = p.t * w; 
-                        const y = RULER_HEIGHT + (1 - (p.v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT); 
-                        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
-                    }); 
+                    ghost.points.forEach((p, i) => {
+                        const x = p.t * w;
+                        const y = RULER_HEIGHT + (1 - (p.v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT);
+                        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                    });
                 }
                 ctx.stroke();
                 ctx.restore();
             }
         }
-        
+
         // Main Track
         if (track) {
-            ctx.beginPath(); 
-            ctx.strokeStyle = track.color; 
-            ctx.lineWidth = 2.5; 
+            ctx.beginPath();
+            ctx.strokeStyle = track.color;
+            ctx.lineWidth = 2.5;
 
             if (track.interpolation === 'curve') {
-                 for(let i=0; i<w; i++) {
-                     const t = i / w;
-                     const v = getValueAtTime(track.id, t);
-                     const y = RULER_HEIGHT + (1 - (v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT);
-                     if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
-                 }
+                for (let i = 0; i < w; i++) {
+                    const t = i / w;
+                    const v = getValueAtTime(track.id, t);
+                    const y = RULER_HEIGHT + (1 - (v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT);
+                    if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
+                }
             } else {
-                 track.points.forEach((p, i) => { 
-                    const x = p.t * w; 
-                    const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
-                    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
-                }); 
+                track.points.forEach((p, i) => {
+                    const x = p.t * w;
+                    const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
             }
-            
-            ctx.stroke(); 
-            track.points.forEach((p, i) => { 
-                const x = p.t * w; 
-                const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
-                ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : track.color; 
-                ctx.beginPath(); 
-                ctx.arc(x, y, 6, 0, Math.PI*2); 
-                ctx.fill(); 
-            }); 
+
+            ctx.stroke();
+            track.points.forEach((p, i) => {
+                const x = p.t * w;
+                const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT);
+                ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : track.color;
+                ctx.beginPath();
+                ctx.arc(x, y, 6, 0, Math.PI * 2);
+                ctx.fill();
+            });
         }
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
     }, [canvasSize, selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks, spectrogramCanvas]);
 
     const currentTrack = advTracks.find(t => t.id === selectedTrackId);
-    
+
     // Determine Cursor
     let cursorClass = 'cursor-text';
     if (isEditMode) {
@@ -299,7 +299,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 <div className="flex gap-1 shrink-0">
                     {isEditMode && selectedTrackId === 'gain' && (
                         <div className="hidden lg:flex items-center gap-1 text-[9px] text-slate-400 font-bold bg-slate-50 px-2 rounded-lg border border-slate-200 mr-2">
-                            <MoveVertical size={10}/> 
+                            <MoveVertical size={10} />
                             Shift+Drag to Offset
                         </div>
                     )}
@@ -315,7 +315,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     <button
                         onClick={() => {
                             setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, interpolation: t.interpolation === 'curve' ? 'linear' : 'curve' } : t));
-                            commitChange("보간 모드 변경");
+                            commitChange();
                         }}
                         className={`px-3 py-1 text-[10px] font-black rounded-lg border transition-all flex items-center gap-1 ${currentTrack?.interpolation === 'curve' ? 'bg-indigo-50 border-indigo-200 text-indigo-600' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
                     >
@@ -325,17 +325,17 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     <button onClick={() => setIsEditMode(!isEditMode)} className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode ? 'bg-amber-400 text-white border-amber-500' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`} title={isEditMode ? "키프레임 편집 중" : "플레이헤드 이동 모드"}><PencilLine size={16} /></button>
                 </div>
             </div>
-            
+
             <div ref={containerRef} className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner min-h-0">
-                <canvas 
-                    ref={canvasRef} 
-                    width={canvasSize.w} 
-                    height={canvasSize.h} 
-                    className={`w-full h-full ${cursorClass}`} 
-                    onMouseDown={handleMouseDown} 
-                    onMouseMove={handleMouseMove} 
+                <canvas
+                    ref={canvasRef}
+                    width={canvasSize.w}
+                    height={canvasSize.h}
+                    className={`w-full h-full ${cursorClass}`}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
-                    onContextMenu={e => e.preventDefault()} 
+                    onContextMenu={e => e.preventDefault()}
                 />
                 <div className="absolute top-1.5 left-1.5 bg-white/90 backdrop-blur border border-slate-200 px-2 py-1 rounded text-[10px] font-black text-slate-600 flex gap-2 pointer-events-none shadow-sm">
                     <span>Time: {playHeadPos.toFixed(3)}s</span>

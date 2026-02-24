@@ -1,13 +1,13 @@
 
-import React, { useRef, useEffect, useState, useMemo, memo, useCallback } from 'react';
+import React, { useRef, useEffect, useState, memo, useCallback } from 'react';
 import { EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
 
 interface ParametricEQProps {
-  bands: EQBand[];
-  onChange: (bands: EQBand[]) => void;
-  audioContext: AudioContext;
-  playingSource: AudioNode | null; 
+    bands: EQBand[];
+    onChange: (bands: EQBand[]) => void;
+    audioContext: AudioContext;
+    playingSource: AudioNode | null;
 }
 
 const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audioContext, playingSource }) => {
@@ -19,7 +19,7 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
     // Effect 1: Manage AnalyserNode lifecycle
     useEffect(() => {
         if (!audioContext) return;
-        
+
         // Ensure analyser belongs to the current audioContext instance
         if (!analyserRef.current || analyserRef.current.context !== audioContext) {
             try {
@@ -120,33 +120,53 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
             const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
             analyser.getByteFrequencyData(dataArray);
-            
+
             ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
-            ctx.beginPath(); 
+            ctx.beginPath();
             ctx.moveTo(0, h);
-            for(let i = 0; i < bufferLength; i++) {
+            for (let i = 0; i < bufferLength; i++) {
                 const f = (i * audioContext.sampleRate) / (2 * bufferLength);
-                if (f < 20) continue; 
+                if (f < 20) continue;
                 if (f > 20000) break;
                 ctx.lineTo(getX(f, w), h - (dataArray[i] / 255) * h);
             }
-            ctx.lineTo(w, h); 
+            ctx.lineTo(w, h);
             ctx.fill();
         }
 
-        // EQ Frequency Response Curve
-        ctx.beginPath(); 
-        ctx.strokeStyle = '#60a5fa'; 
-        ctx.lineWidth = 2;
+        // Individual Band Curves (shows they are separate)
+        ctx.lineWidth = 1;
+        bands.forEach(b => {
+            if (!b.on || (b.gain === 0 && !b.type.includes('pass'))) return;
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(96, 165, 250, 0.3)';
+            ctx.setLineDash([4, 4]); // dashed lines for individual bells
+            for (let x = 0; x < w; x += 4) {
+                const f = getFreqFromX(x, w);
+                let db = 0;
+                try {
+                    db = 20 * Math.log10(AudioUtils.getBiquadMagnitude(f, b.type, b.freq, b.gain, b.q, audioContext.sampleRate));
+                } catch (e) { }
+                const y = getY(db, h);
+                if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        });
+        ctx.setLineDash([]);
+
+        // EQ Total Frequency Response Curve
+        ctx.beginPath();
+        ctx.strokeStyle = '#60a5fa';
+        ctx.lineWidth = 2.5;
         const sr = audioContext.sampleRate;
         for (let x = 0; x < w; x += 4) {
             const f = getFreqFromX(x, w);
             let totalDB = 0;
-            bands.forEach(b => { 
-                if(b.on) {
+            bands.forEach(b => {
+                if (b.on) {
                     try {
-                        totalDB += 20 * Math.log10(AudioUtils.getBiquadMagnitude(f, b.type, b.freq, b.gain, b.q, sr)); 
-                    } catch(e) {}
+                        totalDB += 20 * Math.log10(AudioUtils.getBiquadMagnitude(f, b.type, b.freq, b.gain, b.q, sr));
+                    } catch (e) { }
                 }
             });
             const y = getY(totalDB, h);
@@ -157,12 +177,12 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
         // Band Handles (Interaction points)
         bands.forEach((b, i) => {
             const bx = getX(b.freq, w), by = getY(b.gain, h);
-            ctx.beginPath(); 
+            ctx.beginPath();
             ctx.fillStyle = b.on ? (dragBandId === b.id ? '#fbbf24' : '#fff') : '#475569';
-            ctx.arc(bx, by, 5, 0, Math.PI * 2); 
+            ctx.arc(bx, by, 5, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = '#64748b'; 
-            ctx.font = '9px Inter'; 
+            ctx.fillStyle = '#64748b';
+            ctx.font = '9px Inter';
             ctx.fillText((i + 1).toString(), bx - 3, by - 10);
         });
 
@@ -192,16 +212,43 @@ const ParametricEQ: React.FC<ParametricEQProps> = memo(({ bands, onChange, audio
         onChange(bands.map(b => b.id === dragBandId ? { ...b, freq, gain: (b.type.includes('pass')) ? 0 : gain } : b));
     };
 
+    const handleWheel = (e: React.WheelEvent) => {
+        const rect = canvasRef.current!.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const w = rect.width, h = rect.height;
+        let targetId = dragBandId;
+        if (targetId === null) {
+            const hit = bands.find(b => Math.hypot(getX(b.freq, w) - mx, getY(b.gain, h) - my) < 20);
+            if (hit) targetId = hit.id;
+        }
+        if (targetId !== null) {
+            e.preventDefault();
+            // Scroll down = wider Q, Scroll up = narrower Q
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            onChange(bands.map(b => b.id === targetId ? { ...b, q: Math.max(0.1, Math.min(20, b.q + delta)) } : b));
+        }
+    };
+
     return (
-        <canvas 
-            ref={canvasRef} 
-            width={600} 
-            height={240} 
+        <canvas
+            ref={canvasRef}
+            width={600}
+            height={240}
             className="w-full h-full cursor-crosshair rounded-lg bg-[#0f172a] shadow-inner border border-slate-700"
-            onMouseDown={handleMouseDown} 
-            onMouseMove={handleMouseMove} 
-            onMouseUp={() => setDragBandId(null)} 
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={() => setDragBandId(null)}
             onMouseLeave={() => setDragBandId(null)}
+            onWheel={handleWheel}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                const rect = canvasRef.current!.getBoundingClientRect();
+                const hit = bands.find(b => Math.hypot(getX(b.freq, rect.width) - (e.clientX - rect.left), getY(b.gain, rect.height) - (e.clientY - rect.top)) < 20);
+                if (hit) {
+                    const defaultFreqs: Record<number, number> = { 1: 80, 2: 200, 3: 1000, 4: 5000, 5: 15000 };
+                    onChange(bands.map(b => b.id === hit.id ? { ...b, gain: 0, freq: defaultFreqs[hit.id] || 1000 } : b));
+                }
+            }}
             onDoubleClick={(e) => {
                 const rect = canvasRef.current!.getBoundingClientRect();
                 const hit = bands.find(b => Math.hypot(getX(b.freq, rect.width) - (e.clientX - rect.left), getY(b.gain, rect.height) - (e.clientY - rect.top)) < 20);

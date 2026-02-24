@@ -1,37 +1,37 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Combine, MousePointer2, TrendingUp, Play, Save, Undo2, Redo2, History, Volume2, MoveHorizontal, AudioLines, Download } from 'lucide-react';
+import { Combine, MousePointer2, TrendingUp, Play, Save, Undo2, Redo2, AudioLines, Download } from 'lucide-react';
 import { AudioFile, KeyframePoint, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
 
 interface ConsonantTabProps {
-  audioContext: AudioContext;
-  files: AudioFile[];
-  onAddToRack: (buffer: AudioBuffer, name: string) => void;
-  isActive: boolean;
+    audioContext: AudioContext;
+    files: AudioFile[];
+    onAddToRack: (buffer: AudioBuffer, name: string) => void;
+    isActive: boolean;
 }
 
 const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddToRack, isActive }) => {
     const [vowelId, setVowelId] = useState("");
     const [consonantId, setConsonantId] = useState("");
-    
+
     // Timing & Stretch
     const [vOffMs, setVOffMs] = useState(0);
     const [offsetMs, setOffsetMs] = useState(100);
     const [cStretch, setCStretch] = useState(100);
-    const [vStretch, setVStretch] = useState(100); 
+    const [vStretch, setVStretch] = useState(100);
 
-    const [editMode, setEditMode] = useState<'move' | 'volume'>('move'); 
+    const [editMode, setEditMode] = useState<'move' | 'volume'>('move');
     const [selectedTrack, setSelectedTrack] = useState<'vowel' | 'consonant'>('consonant');
-    
+
     // Keyframes
-    const [vVolPts, setVVolPts] = useState<KeyframePoint[]>([{t:0,v:1}, {t:1,v:1}]);
-    const [cVolPts, setCVolPts] = useState<KeyframePoint[]>([{t:0,v:1}, {t:1,v:1}]);
-    
+    const [vVolPts, setVVolPts] = useState<KeyframePoint[]>([{ t: 0, v: 1 }, { t: 1, v: 1 }]);
+    const [cVolPts, setCVolPts] = useState<KeyframePoint[]>([{ t: 0, v: 1 }, { t: 1, v: 1 }]);
+
     const [isPlaying, setIsPlaying] = useState(false);
     const [playheadTime, setPlayheadTime] = useState(0); // in seconds
-    
+
     // Global Gains
     const [vowelGain, setVowelGain] = useState(1.0);
     const [consonantGain, setConsonantGain] = useState(1.0);
@@ -57,13 +57,13 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
 
     const applyConsonantPreset = (type: 'unvoiced' | 'voiced') => {
         if (type === 'unvoiced') {
-            setCVolPts([{t:0,v:0}, {t:0.05,v:1.2}, {t:0.2,v:0.4}, {t:1,v:0}]);
-            setVVolPts([{t:0,v:0}, {t:0.1,v:0}, {t:0.2,v:1}, {t:1,v:1}]);
+            setCVolPts([{ t: 0, v: 0 }, { t: 0.05, v: 1.2 }, { t: 0.2, v: 0.4 }, { t: 1, v: 0 }]);
+            setVVolPts([{ t: 0, v: 0 }, { t: 0.1, v: 0 }, { t: 0.2, v: 1 }, { t: 1, v: 1 }]);
             setOffsetMs(50);
             setVOffMs(150);
         } else {
-            setCVolPts([{t:0,v:0.5}, {t:0.3,v:1}, {t:0.7,v:0.8}, {t:1,v:0}]);
-            setVVolPts([{t:0,v:0}, {t:0.1,v:0.5}, {t:1,v:1}]);
+            setCVolPts([{ t: 0, v: 0.5 }, { t: 0.3, v: 1 }, { t: 0.7, v: 0.8 }, { t: 1, v: 0 }]);
+            setVVolPts([{ t: 0, v: 0 }, { t: 0.1, v: 0.5 }, { t: 1, v: 1 }]);
             setOffsetMs(0);
             setVOffMs(100);
         }
@@ -78,7 +78,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         const state = getCurrentState();
         setHistory(prev => {
             const newHist = prev.slice(0, historyIndex + 1);
-            if (newHist.length > 0 && JSON.stringify(newHist[newHist.length-1].state) === JSON.stringify(state)) return prev;
+            if (newHist.length > 0 && JSON.stringify(newHist[newHist.length - 1].state) === JSON.stringify(state)) return prev;
             return [...newHist.slice(-9), { state, label }];
         });
         setHistoryIndex(prev => Math.min(prev + 1, 9));
@@ -91,12 +91,12 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         setOffsetMs(state.offsetMs); setCStretch(state.cStretch); setVStretch(state.vStretch || 100);
         setVVolPts(state.vVolPts); setCVolPts(state.cVolPts);
         setVowelGain(state.vowelGain || 1.0); setConsonantGain(state.consonantGain || 1.0);
-        if(state.eqBands) setEqBands(state.eqBands);
+        if (state.eqBands) setEqBands(state.eqBands);
     };
 
     const handleUndo = () => { if (historyIndex > 0) { const prev = historyIndex - 1; restoreState(history[prev].state); setHistoryIndex(prev); } };
     const handleRedo = () => { if (historyIndex < history.length - 1) { const next = historyIndex + 1; restoreState(history[next].state); setHistoryIndex(next); } };
-    
+
     const commitChange = (label: string = "변경") => saveHistory(label);
 
     const getBuffer = (id: string) => files.find(f => f.id === id)?.buffer;
@@ -104,24 +104,24 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     const mixConsonant = async () => {
         const v = getBuffer(vowelId); const c = getBuffer(consonantId);
         if (!v || !audioContext) return null;
-        
+
         const vRatio = vStretch / 100;
         const cRatio = cStretch / 100;
-        
+
         const offsetSec = offsetMs / 1000;
         const vOffsetSec = vOffMs / 1000;
-        
+
         const vLen = v.duration / vRatio;
         const cLen = c ? (c.duration / cRatio) : 0;
-        
+
         const totalDur = Math.max(vOffsetSec + vLen, offsetSec + cLen) + 0.5;
         const offline = new OfflineAudioContext(1, Math.ceil(totalDur * v.sampleRate), v.sampleRate);
-        
+
         let eqInput = offline.createGain();
         let currentEQNode = eqInput;
 
         eqBands.forEach(b => {
-            if(b.on) {
+            if (b.on) {
                 const f = offline.createBiquadFilter();
                 f.type = b.type;
                 f.frequency.value = b.freq;
@@ -135,24 +135,24 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
 
         const processedV = await AudioUtils.applyStretch(v, vRatio);
         if (processedV) {
-            const sV = offline.createBufferSource(); 
+            const sV = offline.createBufferSource();
             sV.buffer = processedV;
-            const gV = offline.createGain(); 
-            gV.gain.setValueAtTime(vVolPts[0].v * vowelGain, 0); 
+            const gV = offline.createGain();
+            gV.gain.setValueAtTime(vVolPts[0].v * vowelGain, 0);
             vVolPts.forEach(p => gV.gain.linearRampToValueAtTime(p.v * vowelGain, vOffsetSec + p.t * processedV.duration));
-            sV.connect(gV); gV.connect(eqInput); 
+            sV.connect(gV); gV.connect(eqInput);
             sV.start(vOffsetSec);
         }
 
-        if(c) {
+        if (c) {
             const processedC = await AudioUtils.applyStretch(c, cRatio);
             if (processedC) {
                 const sC = offline.createBufferSource(); sC.buffer = processedC;
-                const gC = offline.createGain(); 
+                const gC = offline.createGain();
                 const startT = Math.max(0, offsetSec);
-                gC.gain.setValueAtTime(cVolPts[0].v * consonantGain, startT); 
+                gC.gain.setValueAtTime(cVolPts[0].v * consonantGain, startT);
                 cVolPts.forEach(p => gC.gain.linearRampToValueAtTime(p.v * consonantGain, startT + p.t * processedC.duration));
-                sC.connect(gC); gC.connect(eqInput); 
+                sC.connect(gC); gC.connect(eqInput);
                 sC.start(startT);
             }
         }
@@ -160,37 +160,37 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     };
 
     const togglePlay = useCallback(async () => {
-         if(isPlaying) { 
-             if(sourceRef.current) sourceRef.current.stop(); 
-             pauseOffsetRef.current += audioContext.currentTime - startTimeRef.current; 
-             if(animRef.current) cancelAnimationFrame(animRef.current); 
-             setIsPlaying(false); 
-         } else {
-             const b = await mixConsonant();
-             if(!b) return;
-             const s = audioContext.createBufferSource(); s.buffer = b; s.connect(audioContext.destination);
-             const offset = pauseOffsetRef.current % b.duration;
-             
-             s.start(0, offset); 
-             sourceRef.current = s; 
-             startTimeRef.current = audioContext.currentTime - offset; 
-             setIsPlaying(true);
-             
-             const animate = () => { 
-                 if(sourceRef.current) {
-                     setPlayheadTime(audioContext.currentTime - startTimeRef.current);
-                     animRef.current = requestAnimationFrame(animate); 
-                 }
-             };
-             animRef.current = requestAnimationFrame(animate);
-             
-             s.onended = () => { 
-                setIsPlaying(false); 
-                pauseOffsetRef.current = 0; 
+        if (isPlaying) {
+            if (sourceRef.current) sourceRef.current.stop();
+            pauseOffsetRef.current += audioContext.currentTime - startTimeRef.current;
+            if (animRef.current) cancelAnimationFrame(animRef.current);
+            setIsPlaying(false);
+        } else {
+            const b = await mixConsonant();
+            if (!b) return;
+            const s = audioContext.createBufferSource(); s.buffer = b; s.connect(audioContext.destination);
+            const offset = pauseOffsetRef.current % b.duration;
+
+            s.start(0, offset);
+            sourceRef.current = s;
+            startTimeRef.current = audioContext.currentTime - offset;
+            setIsPlaying(true);
+
+            const animate = () => {
+                if (sourceRef.current) {
+                    setPlayheadTime(audioContext.currentTime - startTimeRef.current);
+                    animRef.current = requestAnimationFrame(animate);
+                }
+            };
+            animRef.current = requestAnimationFrame(animate);
+
+            s.onended = () => {
+                setIsPlaying(false);
+                pauseOffsetRef.current = 0;
                 setPlayheadTime(0);
-                if(animRef.current) cancelAnimationFrame(animRef.current);
-             };
-         }
+                if (animRef.current) cancelAnimationFrame(animRef.current);
+            };
+        }
     }, [isPlaying, vowelId, consonantId, offsetMs, cStretch, vStretch, vowelGain, consonantGain, eqBands, mixConsonant, audioContext]);
 
     const handleDownload = async () => {
@@ -198,15 +198,32 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         if (b) AudioUtils.downloadWav(b, "consonant_vowel_mix.wav");
     };
 
-    useEffect(() => { 
+    useEffect(() => {
         if (!isActive) return;
-        const handleKey = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); togglePlay(); } }; 
-        window.addEventListener('keydown', handleKey); 
-        return () => window.removeEventListener('keydown', handleKey); 
-    }, [isActive, togglePlay]);
+        const handleKey = async (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                togglePlay();
+            } else if (e.ctrlKey && !e.shiftKey && e.code === 'KeyZ') {
+                e.preventDefault();
+                handleUndo();
+            } else if (e.ctrlKey && !e.shiftKey && e.code === 'KeyS') {
+                e.preventDefault();
+                const b = await mixConsonant();
+                if (b) onAddToRack(b, "Consonant_Mix");
+            } else if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
+                e.preventDefault();
+                handleDownload();
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [isActive, togglePlay, handleUndo, mixConsonant, onAddToRack]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if(!canvasRef.current) return;
+        if (!canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect();
         const x = (e.clientX - rect.left) / rect.width;
         const y = 1 - (e.clientY - rect.top) / rect.height;
@@ -216,7 +233,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             const hitIdx = pts.findIndex(p => Math.abs(p.t - x) < 0.02 && Math.abs(p.v - y) < 0.1);
             if (e.button === 2) { e.preventDefault(); if (hitIdx !== -1 && pts.length > 2) { const n = pts.filter((_, i) => i !== hitIdx); selectedTrack === 'vowel' ? setVVolPts(n) : setCVolPts(n); } return; }
             if (hitIdx !== -1) setDragPoint({ type: 'vol', index: hitIdx });
-            else { const nPts = [...pts, { t: x, v: y }].sort((a,b) => a.t - b.t); selectedTrack === 'vowel' ? setVVolPts(nPts) : setCVolPts(nPts); setDragPoint({ type: 'vol', index: nPts.findIndex(p=>p.t===x) }); }
+            else { const nPts = [...pts, { t: x, v: y }].sort((a, b) => a.t - b.t); selectedTrack === 'vowel' ? setVVolPts(nPts) : setCVolPts(nPts); setDragPoint({ type: 'vol', index: nPts.findIndex(p => p.t === x) }); }
         } else setDragPoint({ type: 'move' });
     };
 
@@ -227,87 +244,87 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
             const y = Math.max(0, Math.min(1, 1 - (e.clientY - rect.top) / rect.height));
             const setter = selectedTrack === 'vowel' ? setVVolPts : setCVolPts;
-            setter(prev => prev.map((p, i) => i === dragPoint.index ? { t: x, v: y } : p).sort((a,b)=>a.t-b.t));
+            setter(prev => prev.map((p, i) => i === dragPoint.index ? { t: x, v: y } : p).sort((a, b) => a.t - b.t));
         } else if (e.buttons === 1) {
             const dx = e.movementX;
-            if(selectedTrack==='consonant') setOffsetMs(prev => prev + dx * 2); 
+            if (selectedTrack === 'consonant') setOffsetMs(prev => prev + dx * 2);
             else setVOffMs(prev => prev + dx * 2);
         }
     };
 
     const handleMouseUp = () => {
-        if(dragPoint) commitChange();
+        if (dragPoint) commitChange();
         setDragPoint(null);
     };
 
     useEffect(() => {
-        if(!canvasRef.current) return;
+        if (!canvasRef.current) return;
         const ctx = canvasRef.current.getContext('2d');
         if (!ctx) return;
         const w = canvasRef.current.width, h = canvasRef.current.height;
-        ctx.clearRect(0,0,w,h); ctx.fillStyle = '#1e293b'; ctx.fillRect(0,0,w,h);
-        
-        const vBuf = getBuffer(vowelId); 
+        ctx.clearRect(0, 0, w, h); ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, w, h);
+
+        const vBuf = getBuffer(vowelId);
         const cBuf = getBuffer(consonantId);
 
-        const vRealDur = vBuf ? vBuf.duration * (vStretch/100) : 0;
-        const cRealDur = cBuf ? cBuf.duration * (cStretch/100) : 0;
-        
-        const vEnd = (vOffMs/1000) + vRealDur;
-        const cEnd = (offsetMs/1000) + cRealDur;
+        const vRealDur = vBuf ? vBuf.duration * (vStretch / 100) : 0;
+        const cRealDur = cBuf ? cBuf.duration * (cStretch / 100) : 0;
+
+        const vEnd = (vOffMs / 1000) + vRealDur;
+        const cEnd = (offsetMs / 1000) + cRealDur;
         const totalDuration = Math.max(vEnd, cEnd, 1.0) * 1.2;
-        
-        const msToPx = (ms: number) => (ms / (totalDuration * 1000)) * w; 
+
+        const msToPx = (ms: number) => (ms / (totalDuration * 1000)) * w;
 
         const drawWave = (buf: AudioBuffer, color: string, offMs: number, stretch: number, active: boolean, gainVal: number) => {
-            if(!buf) return; 
-            ctx.beginPath(); 
-            ctx.strokeStyle = active ? color : '#475569'; 
+            if (!buf) return;
+            ctx.beginPath();
+            ctx.strokeStyle = active ? color : '#475569';
             ctx.lineWidth = active ? 2 : 1;
-            
-            const data = buf.getChannelData(0); 
-            const sX = msToPx(offMs); 
-            const scaledDurMs = buf.duration * 1000 * (stretch/100);
+
+            const data = buf.getChannelData(0);
+            const sX = msToPx(offMs);
+            const scaledDurMs = buf.duration * 1000 * (stretch / 100);
             const wPx = msToPx(scaledDurMs);
-            const step = Math.ceil(data.length / wPx);
-            
-            for(let i=0; i<wPx; i++) { 
-                if(sX+i < 0 || sX+i > w) continue; 
-                let min=1, max=-1; 
+            Math.ceil(data.length / wPx);
+
+            for (let i = 0; i < wPx; i++) {
+                if (sX + i < 0 || sX + i > w) continue;
+                let min = 1, max = -1;
                 const dataIdxStart = Math.floor(i * (data.length / wPx));
-                const dataIdxEnd = Math.floor((i+1) * (data.length / wPx));
-                for(let j=dataIdxStart; j<dataIdxEnd; j++) { 
-                    const d = data[j]||0; if(d<min) min=d; if(d>max) max=d; 
-                } 
-                const visGain = Math.min(gainVal, 1.5); 
-                const cy = active ? h/2 : (color.includes('3b82f6') ? h*0.3 : h*0.7); 
-                ctx.moveTo(sX+i, cy + min*h/4*visGain); 
-                ctx.lineTo(sX+i, cy + max*h/4*visGain); 
-            } 
+                const dataIdxEnd = Math.floor((i + 1) * (data.length / wPx));
+                for (let j = dataIdxStart; j < dataIdxEnd; j++) {
+                    const d = data[j] || 0; if (d < min) min = d; if (d > max) max = d;
+                }
+                const visGain = Math.min(gainVal, 1.5);
+                const cy = active ? h / 2 : (color.includes('3b82f6') ? h * 0.3 : h * 0.7);
+                ctx.moveTo(sX + i, cy + min * h / 4 * visGain);
+                ctx.lineTo(sX + i, cy + max * h / 4 * visGain);
+            }
             ctx.stroke();
         };
 
-        if(vBuf) drawWave(vBuf, '#3b82f6', vOffMs, vStretch, selectedTrack === 'vowel', vowelGain);
-        if(cBuf) drawWave(cBuf, '#fb923c', offsetMs, cStretch, selectedTrack === 'consonant', consonantGain);
+        if (vBuf) drawWave(vBuf, '#3b82f6', vOffMs, vStretch, selectedTrack === 'vowel', vowelGain);
+        if (cBuf) drawWave(cBuf, '#fb923c', offsetMs, cStretch, selectedTrack === 'consonant', consonantGain);
 
         const drawLine = (pts: KeyframePoint[], color: string, active: boolean, offMs: number, realDurSec: number) => {
-             if(!active) return; 
-             ctx.beginPath(); 
-             ctx.strokeStyle = color; 
-             ctx.setLineDash([5,5]);
-             const startPx = msToPx(offMs);
-             const durPx = msToPx(realDurSec * 1000);
-             pts.forEach((p, i) => { const x = startPx + (p.t * durPx); const y = (1 - p.v) * h; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); 
-             ctx.stroke(); ctx.setLineDash([]);
-             pts.forEach(p => { const x = startPx + (p.t * durPx); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, (1-p.v)*h, 4, 0, Math.PI*2); ctx.fill(); });
+            if (!active) return;
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.setLineDash([5, 5]);
+            const startPx = msToPx(offMs);
+            const durPx = msToPx(realDurSec * 1000);
+            pts.forEach((p, i) => { const x = startPx + (p.t * durPx); const y = (1 - p.v) * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+            ctx.stroke(); ctx.setLineDash([]);
+            pts.forEach(p => { const x = startPx + (p.t * durPx); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, (1 - p.v) * h, 4, 0, Math.PI * 2); ctx.fill(); });
         };
-        
-        if(selectedTrack === 'vowel' && vBuf) drawLine(vVolPts, '#60a5fa', true, vOffMs, vRealDur);
-        if(selectedTrack === 'consonant' && cBuf) drawLine(cVolPts, '#fb923c', true, offsetMs, cRealDur);
+
+        if (selectedTrack === 'vowel' && vBuf) drawLine(vVolPts, '#60a5fa', true, vOffMs, vRealDur);
+        if (selectedTrack === 'consonant' && cBuf) drawLine(cVolPts, '#fb923c', true, offsetMs, cRealDur);
 
         if (playheadTime > 0) {
             const px = msToPx(playheadTime * 1000);
-            if(px >= 0 && px <= w) {
+            if (px >= 0 && px <= w) {
                 ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
             }
         }
@@ -317,21 +334,21 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={handleMouseUp}>
             <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm h-full overflow-y-auto custom-scrollbar">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
-                    <div className="flex items-center gap-3"><div className="p-2 bg-indigo-500 rounded-xl text-white font-bold font-black"><Combine size={24}/></div><h2 className="text-xl text-slate-800 tracking-tight font-black">자음-모음 합성기</h2></div>
+                    <div className="flex items-center gap-3"><div className="p-2 bg-indigo-500 rounded-xl text-white font-bold font-black"><Combine size={24} /></div><h2 className="text-xl text-slate-800 tracking-tight font-black">자음-모음 합성기</h2></div>
                     <div className="flex items-center gap-2">
-                        <button onClick={()=>applyConsonantPreset('unvoiced')} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-[10px] font-black text-slate-700 transition-all shadow-sm">무성자음 프리셋</button>
-                        <button onClick={()=>applyConsonantPreset('voiced')} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-[10px] font-black text-slate-700 transition-all shadow-sm">유성자음 프리셋</button>
+                        <button onClick={() => applyConsonantPreset('unvoiced')} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-[10px] font-black text-slate-700 transition-all shadow-sm">무성자음 프리셋</button>
+                        <button onClick={() => applyConsonantPreset('voiced')} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-[10px] font-black text-slate-700 transition-all shadow-sm">유성자음 프리셋</button>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
-                        <button onClick={()=>setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16}/> Master EQ</button>
+                        <button onClick={() => setShowEQ(!showEQ)} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${showEQ ? 'bg-white shadow text-pink-600' : 'text-slate-500'}`}><AudioLines size={16} /> Master EQ</button>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
-                            <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Undo2 size={16}/></button>
-                            <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Redo2 size={16}/></button>
+                            <button onClick={handleUndo} disabled={historyIndex <= 0} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Undo2 size={16} /></button>
+                            <button onClick={handleRedo} disabled={historyIndex >= history.length - 1} className="p-1.5 hover:bg-white rounded text-slate-600 disabled:opacity-30 transition-all"><Redo2 size={16} /></button>
                         </div>
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
-                            <button onClick={()=>setEditMode('move')} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode==='move'?'bg-white shadow text-slate-900':'text-slate-500'}`}><MousePointer2 size={16}/> 배치</button>
-                            <button onClick={()=>setEditMode('volume')} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode==='volume'?'bg-white shadow text-slate-900':'text-slate-500'}`}><TrendingUp size={16}/> 볼륨</button>
+                            <button onClick={() => setEditMode('move')} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode === 'move' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}><MousePointer2 size={16} /> 배치</button>
+                            <button onClick={() => setEditMode('volume')} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode === 'volume' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}><TrendingUp size={16} /> 볼륨</button>
                         </div>
                     </div>
                 </div>
@@ -343,31 +360,31 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-shrink-0">
-                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack==='vowel'?'bg-blue-50 border-blue-300 ring-2 ring-blue-100':'bg-white border-slate-200'}`} onClick={()=>setSelectedTrack('vowel')} onMouseUp={()=>commitChange()}>
+                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack === 'vowel' ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-100' : 'bg-white border-slate-200'}`} onClick={() => setSelectedTrack('vowel')} onMouseUp={() => commitChange()}>
                         <label className="text-sm font-black text-slate-900 uppercase tracking-widest block">모음 (Vowel)</label>
-                        <select value={vowelId} onChange={e=>{setVowelId(e.target.value); commitChange("모음 변경");}} className="w-full p-2.5 border rounded-lg font-black text-base text-slate-900">{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                        <select value={vowelId} onChange={e => { setVowelId(e.target.value); commitChange("모음 변경"); }} className="w-full p-2.5 border rounded-lg font-black text-base text-slate-900">{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
                         <div className="space-y-3">
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Offset</span><span>{Math.round(vOffMs)}ms</span></div><input type="range" min="0" max="1000" value={vOffMs} onChange={e=>setVOffMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-400"/></div>
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Stretch</span><span className="text-indigo-600">{vStretch}%</span></div><input type="range" min="50" max="200" value={vStretch} onChange={e=>setVStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"/></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Offset</span><span>{Math.round(vOffMs)}ms</span></div><input type="range" min="0" max="1000" value={vOffMs} onChange={e => setVOffMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-400" /></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Stretch</span><span className="text-indigo-600">{vStretch}%</span></div><input type="range" min="50" max="200" value={vStretch} onChange={e => setVStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" /></div>
                         </div>
                     </div>
 
-                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack==='consonant'?'bg-orange-50 border-orange-300 ring-2 ring-orange-100':'bg-white border-slate-200'}`} onClick={()=>setSelectedTrack('consonant')} onMouseUp={()=>commitChange()}>
+                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack === 'consonant' ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-100' : 'bg-white border-slate-200'}`} onClick={() => setSelectedTrack('consonant')} onMouseUp={() => commitChange()}>
                         <label className="text-sm font-black text-slate-900 uppercase tracking-widest block">자음 (Consonant)</label>
-                        <select value={consonantId} onChange={e=>{setConsonantId(e.target.value); commitChange("자음 변경");}} className="w-full p-2.5 border rounded-lg font-black text-base text-slate-900"><option value="">선택 안 함</option>{files.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                        <select value={consonantId} onChange={e => { setConsonantId(e.target.value); commitChange("자음 변경"); }} className="w-full p-2.5 border rounded-lg font-black text-base text-slate-900"><option value="">선택 안 함</option>{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
                         <div className="space-y-3">
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Offset</span><span>{Math.round(offsetMs)}ms</span></div><input type="range" min="0" max="1000" value={offsetMs} onChange={e=>setOffsetMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-400"/></div>
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Stretch</span><span className="text-pink-600">{cStretch}%</span></div><input type="range" min="50" max="200" value={cStretch} onChange={e=>setCStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-500"/></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Offset</span><span>{Math.round(offsetMs)}ms</span></div><input type="range" min="0" max="1000" value={offsetMs} onChange={e => setOffsetMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-400" /></div>
+                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>Stretch</span><span className="text-pink-600">{cStretch}%</span></div><input type="range" min="50" max="200" value={cStretch} onChange={e => setCStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-500" /></div>
                         </div>
                     </div>
                 </div>
-                <div className="bg-slate-900 border border-slate-700 p-0 rounded-2xl shadow-inner min-h-[256px] flex-1 relative overflow-hidden select-none" onContextMenu={e=>e.preventDefault()}>
-                    <canvas ref={canvasRef} width={1000} height={300} className={`w-full h-full ${editMode==='move'?'cursor-ew-resize':'cursor-crosshair'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}/>
+                <div className="bg-slate-900 border border-slate-700 p-0 rounded-2xl shadow-inner min-h-[256px] flex-1 relative overflow-hidden select-none" onContextMenu={e => e.preventDefault()}>
+                    <canvas ref={canvasRef} width={1000} height={300} className={`w-full h-full ${editMode === 'move' ? 'cursor-ew-resize' : 'cursor-crosshair'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} />
                 </div>
                 <div className="flex justify-end gap-3 flex-shrink-0">
-                    <button onClick={togglePlay} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all text-base"><Play size={20} fill="currentColor"/> {isPlaying ? 'STOP' : 'PREVIEW'}</button>
-                    <button onClick={handleDownload} className="px-6 py-3 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl font-black flex items-center gap-2 transition-all"><Download size={20}/> WAV</button>
-                    <button onClick={async () => { const b = await mixConsonant(); if(b) onAddToRack(b, "Consonant_Mix"); }} className="px-8 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all text-base"><Save size={20}/> 보관함</button>
+                    <button onClick={togglePlay} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center gap-2 shadow-lg transition-all text-base"><Play size={20} fill="currentColor" /> {isPlaying ? 'STOP' : 'PREVIEW'}</button>
+                    <button onClick={handleDownload} className="px-6 py-3 bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 rounded-xl font-black flex items-center gap-2 transition-all"><Download size={20} /> WAV</button>
+                    <button onClick={async () => { const b = await mixConsonant(); if (b) onAddToRack(b, "Consonant_Mix"); }} className="px-8 py-3 bg-white border border-slate-300 text-slate-900 hover:bg-slate-50 rounded-xl font-black flex items-center gap-2 transition-all text-base"><Save size={20} /> 보관함</button>
                 </div>
             </div>
         </div>

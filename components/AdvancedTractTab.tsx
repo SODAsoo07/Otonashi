@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves } from 'lucide-react';
+import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves, Download, Save, Trash2, Upload } from 'lucide-react';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
@@ -19,13 +19,56 @@ interface AdvancedTractTabProps {
     onSendToVocoder?: (buffer: AudioBuffer, name: string) => void;
 }
 
-// Cubic Interpolation (Catmull-Rom Spline)
-const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number) => {
-    const a = 2 * p0 - 5 * p1 + 4 * p2 - p3;
-    const b = -p0 + 3 * p1 - 3 * p2 + p3;
-    const c = p2 - p0;
-    const d = 2 * p1;
-    return 0.5 * (a * t * t * t + b * t * t + c * t + d);
+// Monotone Cubic Interpolation (Fritsch-Carlson method)
+// Prevents overshooting when connecting points
+const monotoneCubic = (pts: { t: number, v: number }[], t: number) => {
+    const n = pts.length;
+    if (n === 0) return 0;
+    if (n === 1) return pts[0].v;
+    if (t <= pts[0].t) return pts[0].v;
+    if (t >= pts[n - 1].t) return pts[n - 1].v;
+
+    let i = 0;
+    while (i < n - 1 && pts[i + 1].t < t) i++;
+
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+
+    const h = p1.t - p0.t;
+    if (h === 0) return p0.v;
+
+    // Calculate secant slopes
+    const m: number[] = new Array(n - 1);
+    for (let k = 0; k < n - 1; k++) {
+        const hk = pts[k + 1].t - pts[k].t;
+        m[k] = hk === 0 ? 0 : (pts[k + 1].v - pts[k].v) / hk;
+    }
+
+    // Calculate tangents
+    const c: number[] = new Array(n);
+    c[0] = m[0];
+    for (let k = 1; k < n - 1; k++) {
+        if (m[k - 1] * m[k] <= 0) {
+            c[k] = 0;
+        } else {
+            const hk_1 = pts[k].t - pts[k - 1].t;
+            const hk = pts[k + 1].t - pts[k].t;
+            c[k] = (3 * hk_1 + 3 * hk) / ((2 * hk_1 + hk) / m[k - 1] + (hk_1 + 2 * hk) / m[k]);
+        }
+    }
+    c[n - 1] = m[n - 2];
+
+    const dx = t - p0.t;
+    const tLocal = dx / h;
+    const t2 = tLocal * tLocal;
+    const t3 = t2 * tLocal;
+
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + tLocal;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
+
+    return h00 * p0.v + h10 * h * c[i] + h01 * p1.v + h11 * h * c[i + 1];
 };
 
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0, onSendToStudio, onSendToVocoder }) => {
@@ -49,11 +92,14 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [isEditMode, setIsEditMode] = useState(false);
     const [selectedTrackId, setSelectedTrackId] = useState('pitch');
 
-    const [sidebarWidth, setSidebarWidth] = useState(420);
+    const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
+    const [sidebarWidth] = useState(420);
     const [isResizing, setIsResizing] = useState(false);
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
-    const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
     const [showAnalyzer, setShowAnalyzer] = useState(false);
+    const [savedPresets, setSavedPresets] = useState<{ name: string; state: any; date: string }[]>([]);
+    const [presetName, setPresetName] = useState('');
+    const presetFileInputRef = useRef<HTMLInputElement>(null);
 
     const [showSpectrogram, setShowSpectrogram] = useState(false);
     const [pitchFileId, setPitchFileId] = useState("");
@@ -64,9 +110,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },
-        { id: 2, type: 'lowshelf', freq: 200, gain: 0, q: 0.7, on: true },
-        { id: 3, type: 'peaking', freq: 1500, gain: 0, q: 1.0, on: true },
-        { id: 4, type: 'highshelf', freq: 6000, gain: 0, q: 0.7, on: true },
+        { id: 2, type: 'peaking', freq: 200, gain: 0, q: 1.4, on: true },
+        { id: 3, type: 'peaking', freq: 1500, gain: 0, q: 1.4, on: true },
+        { id: 4, type: 'peaking', freq: 6000, gain: 0, q: 1.4, on: true },
         { id: 5, type: 'lowpass', freq: 15000, gain: 0, q: 0.7, on: true }
     ]);
 
@@ -108,7 +154,17 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const p = presets[v];
         setLiveTract({ ...liveTract, ...p });
         updateLiveAudio(p.x, p.y, p.lips, p.throat, p.lipLen, p.nasal, manualPitch, manualGender);
-        commitChange(`${v} 프리셋 적용`);
+
+        // Auto-record to timeline at absolute playhead position
+        const t = playHeadPos;
+        setAdvTracks(prev => prev.map(tr => {
+            if (tr.group !== 'adj') return tr;
+            let val = 0;
+            if (tr.id === 'tongueX') val = p.x; else if (tr.id === 'tongueY') val = p.y; else if (tr.id === 'lips') val = p.lips; else if (tr.id === 'lipLen') val = p.lipLen; else if (tr.id === 'throat') val = p.throat; else if (tr.id === 'nasal') val = p.nasal;
+            return { ...tr, points: [...tr.points.filter(pt => Math.abs(pt.t - t) > 0.005), { t, v: val }].sort((a, b) => a.t - b.t) };
+        }));
+
+        commitChange();
     };
 
     const handleAnalyzerApply = (data: { tongueX?: any[], tongueY?: any[], lips?: any[], lipLen?: any[], throat?: any[], nasal?: any[] }) => {
@@ -125,7 +181,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setAdvTracks(newTracks);
         setGhostTracks(newTracks);
         setShowGhost(true);
-        commitChange("AI 발음 분석 적용");
+        commitChange();
     };
 
     const handlePitchExtraction = () => {
@@ -139,7 +195,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             if (t.id === 'pitch') return { ...t, points: normalizedPts, interpolation: 'curve' };
             return t;
         }));
-        commitChange("피치 추출 적용");
+        commitChange();
     };
 
     useEffect(() => {
@@ -158,7 +214,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 cvs.height = height;
                 const ctx = cvs.getContext('2d');
                 if (ctx) {
-                    const imgData = new ImageData(data, width, height);
+                    const imgData = new ImageData(new Uint8ClampedArray(data), width, height);
                     ctx.putImageData(imgData, 0, 0);
                     spectrogramCanvasRef.current = cvs;
                 }
@@ -182,7 +238,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity
     }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity]);
 
-    const commitChange = useCallback((label: string = "변경") => {
+    const commitChange = useCallback(() => {
         const state = getCurrentState();
         setUndoStack(prev => [...prev.slice(-19), state]);
         setRedoStack([]);
@@ -193,6 +249,73 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setSynthWaveform(state.synthWaveform); setPulseWidth(state.pulseWidth); setLiveTract(state.liveTract); setAdvTracks(state.advTracks);
         setManualPitch(state.manualPitch || 220); setManualGender(state.manualGender || 1.0); if (state.eqBands) setEqBands(state.eqBands);
         setSimIntensity(state.simIntensity !== undefined ? state.simIntensity : 1.0);
+    };
+
+    // Preset system: localStorage persistence
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('otonashi_tract_presets');
+            if (stored) setSavedPresets(JSON.parse(stored));
+        } catch { /* ignore */ }
+    }, []);
+
+    const savePresetsToStorage = (presets: typeof savedPresets) => {
+        setSavedPresets(presets);
+        localStorage.setItem('otonashi_tract_presets', JSON.stringify(presets));
+    };
+
+    const handleSavePreset = () => {
+        const name = presetName.trim() || `Preset ${savedPresets.length + 1}`;
+        const state = getCurrentState();
+        const entry = { name, state, date: new Date().toISOString().slice(0, 16) };
+        savePresetsToStorage([...savedPresets, entry]);
+        setPresetName('');
+    };
+
+    const handleLoadPreset = (index: number) => {
+        const p = savedPresets[index];
+        if (p) { commitChange(); restoreState(p.state); }
+    };
+
+    const handleDeletePreset = (index: number) => {
+        savePresetsToStorage(savedPresets.filter((_, i) => i !== index));
+    };
+
+    const handleDownloadPreset = (index: number) => {
+        const p = savedPresets[index];
+        if (!p) return;
+        const blob = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${p.name.replace(/[^a-zA-Z0-9가-힣_\- ]/g, '_')}.json`; a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadAllPresets = () => {
+        if (savedPresets.length === 0) return;
+        const blob = new Blob([JSON.stringify(savedPresets, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'otonashi_tract_presets.json'; a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleImportPresets = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const data = JSON.parse(reader.result as string);
+                if (Array.isArray(data)) {
+                    savePresetsToStorage([...savedPresets, ...data]);
+                } else if (data.name && data.state) {
+                    savePresetsToStorage([...savedPresets, data]);
+                }
+            } catch { /* ignore invalid JSON */ }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
     };
 
     const handleUndo = useCallback(() => {
@@ -222,16 +345,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (t >= pts[pts.length - 1].t) return pts[pts.length - 1].v;
 
         if (track.interpolation === 'curve') {
-            let i = 0;
-            while (i < pts.length - 1 && pts[i + 1].t < t) i++;
-            const p0 = i > 0 ? pts[i - 1] : pts[i];
-            const p1 = pts[i];
-            const p2 = pts[i + 1];
-            const p3 = i < pts.length - 2 ? pts[i + 2] : pts[i + 1];
-            const range = p2.t - p1.t;
-            if (range === 0) return p1.v;
-            const tLocal = (t - p1.t) / range;
-            return Math.max(track.min, Math.min(track.max, cubicHermite(p0.v, p1.v, p2.v, p3.v, tLocal)));
+            return Math.max(track.min, Math.min(track.max, monotoneCubic(pts, t)));
         }
         else {
             for (let i = 0; i < pts.length - 1; i++) {
@@ -354,7 +468,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         }
     }, []);
 
-    const [controlMode, setControlMode] = useState<'tongue' | 'lips' | 'nasal' | null>(null);
+    const [, setControlMode] = useState<'tongue' | 'lips' | 'nasal' | null>(null);
 
     const handleSimulationMouseDown = useCallback((e: React.MouseEvent, mode: 'tongue' | 'lips' | 'nasal') => {
         setControlMode(mode);
@@ -376,7 +490,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const mv = (me: MouseEvent) => update(me);
         const up = () => {
             window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up);
-            stopLivePreview(); setControlMode(null); commitChange(`${mode} 조작`);
+            stopLivePreview(); setControlMode(null); commitChange();
         };
         window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
     }, [startLivePreview, stopLivePreview, updateLiveAudio, manualPitch, manualGender, commitChange]);
@@ -584,6 +698,33 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         }
     };
 
+    // Global Hotkeys
+    useEffect(() => {
+        if (!isActive) return;
+        const handleKey = async (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                handleSimulationPlay();
+            } else if (e.code === 'Tab') {
+                e.preventDefault();
+                setIsEditMode(m => !m);
+            } else if (e.ctrlKey && !e.shiftKey && e.code === 'KeyZ') {
+                e.preventDefault();
+                handleUndo();
+            } else if (e.ctrlKey && !e.shiftKey && e.code === 'KeyS') {
+                e.preventDefault();
+                handleSaveToRack();
+            } else if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
+                e.preventDefault();
+                handleDownloadResult();
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [isActive, handleSimulationPlay, setIsEditMode, handleUndo, handleSaveToRack, handleDownloadResult]);
+
     const recordSnapshot = () => {
         const t = playHeadPos;
         setAdvTracks(prev => prev.map(tr => {
@@ -592,10 +733,24 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             if (tr.id === 'tongueX') val = liveTract.x; else if (tr.id === 'tongueY') val = liveTract.y; else if (tr.id === 'lips') val = liveTract.lips; else if (tr.id === 'lipLen') val = liveTract.lipLen; else if (tr.id === 'throat') val = liveTract.throat; else if (tr.id === 'nasal') val = liveTract.nasal; else if (tr.id === 'pitch') val = manualPitch; else if (tr.id === 'gender') val = manualGender;
             return { ...tr, points: [...tr.points.filter(p => Math.abs(p.t - t) > 0.005), { t, v: val }].sort((a, b) => a.t - b.t) };
         }));
-        commitChange("기록");
+        commitChange();
     }
 
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
+
+    const handleResetTrack = () => {
+        setAdvTracks(prev => prev.map(t => {
+            if (t.id === selectedTrackId) {
+                const defaultVal = t.points.length > 0 ? t.points[0].v : (t.min + t.max) / 2;
+                return {
+                    ...t,
+                    points: [{ t: 0, v: defaultVal }, { t: 1, v: defaultVal }]
+                };
+            }
+            return t;
+        }));
+        commitChange();
+    };
 
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden h-full">
@@ -635,6 +790,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
                                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">Vowel Presets</h3>
+                                        <button onClick={() => setShowAnalyzer(true)} className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-md text-[10px] font-black transition-all flex items-center gap-1.5 shadow-sm"><Wand2 size={12} /> AI 발음 분석</button>
                                     </div>
                                     <div className="flex gap-1 font-black">
                                         {(['A', 'E', 'I', 'O', 'U'] as const).map(v => (
@@ -648,7 +804,51 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                             </button>
                                         ))}
                                     </div>
-                                    <button onClick={() => setShowAnalyzer(true)} className="w-full py-2.5 mt-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm"><Wand2 size={14} /> AI 발음 분석 (Beta)</button>
+                                </div>
+
+                                {/* User Presets */}
+                                <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Save size={12} /> Presets</h3>
+                                        <div className="flex gap-1">
+                                            <button onClick={() => presetFileInputRef.current?.click()} className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-all" title="프리셋 가져오기"><Upload size={12} /></button>
+                                            {savedPresets.length > 0 && <button onClick={handleDownloadAllPresets} className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-all" title="전체 내보내기"><Download size={12} /></button>}
+                                        </div>
+                                        <input ref={presetFileInputRef} type="file" accept=".json" className="hidden" onChange={handleImportPresets} />
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <input
+                                            type="text" placeholder="프리셋 이름..." value={presetName}
+                                            onChange={e => setPresetName(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleSavePreset()}
+                                            className="flex-1 px-2 py-1.5 border border-slate-200 rounded-md text-[11px] font-bold outline-none focus:border-indigo-400 bg-white"
+                                        />
+                                        <button onClick={handleSavePreset} className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-md text-[10px] font-black transition-all shadow-sm">저장</button>
+                                    </div>
+                                    {savedPresets.length > 0 && (
+                                        <div className="space-y-1 max-h-[120px] overflow-y-auto custom-scrollbar">
+                                            {savedPresets.map((p, i) => (
+                                                <div key={i} className="flex items-center gap-1 group">
+                                                    <button onClick={() => handleLoadPreset(i)} className="flex-1 text-left px-2 py-1.5 bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-md text-[11px] font-bold text-slate-700 transition-all truncate" title={`${p.name} (${p.date})`}>
+                                                        {p.name}
+                                                    </button>
+                                                    <button onClick={() => handleDownloadPreset(i)} className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-indigo-500 transition-all opacity-0 group-hover:opacity-100" title="다운로드"><Download size={11} /></button>
+                                                    <button onClick={() => handleDeletePreset(i)} className="p-1 rounded hover:bg-rose-100 text-slate-400 hover:text-rose-500 transition-all opacity-0 group-hover:opacity-100" title="삭제"><Trash2 size={11} /></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="space-y-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Settings2 size={12} /> Timeline Track</h3>
+                                        <button
+                                            onClick={handleResetTrack}
+                                            className="px-2.5 py-1 bg-rose-50 border border-rose-200 text-rose-500 hover:bg-rose-100 rounded-md text-[10px] font-black transition-all"
+                                        >
+                                            초기화 ({selectedTrackId})
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="space-y-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={12} /> Pitch Analysis</h3>
@@ -714,7 +914,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 {/* 스튜디오 / 보코더 전송 버튼 바 */}
                 {(onSendToStudio || onSendToVocoder) && (
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">렌더 후 전송 →</span>
+                        <span className="text-xs font-black text-indigo-600 uppercase tracking-widest mr-2 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-200 shadow-sm">렌더 후 전송</span>
                         {onSendToStudio && (
                             <button
                                 onClick={handleSendToStudio}
