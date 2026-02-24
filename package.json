@@ -52,7 +52,8 @@
       "icon": "otonashi.ico"
     },
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "otonashi.png"
     },
     "nsis": {
       "oneClick": false,
