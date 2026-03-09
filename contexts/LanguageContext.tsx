@@ -1,23 +1,39 @@
 
-import React, { createContext, useState, useContext, ReactNode } from 'react';
-import { translations, Language } from '../utils/translations';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { LANGUAGE_ORDER, Language } from '../utils/translations';
 
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: typeof translations['ko'];
+  cycleLanguage: () => void;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
+const LANGUAGE_STORAGE_KEY = 'otonashi-language';
 
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguage] = useState<Language>('ko');
+  const [language, setLanguage] = useState<Language>(() => {
+    if (typeof window === 'undefined') return 'ko';
+    const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return LANGUAGE_ORDER.includes(stored as Language) ? (stored as Language) : 'ko';
+  });
 
-  const value = {
-    language,
-    setLanguage,
-    t: translations[language]
-  };
+  useEffect(() => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
+
+  const cycleLanguage = useCallback(() => {
+    setLanguage(prev => LANGUAGE_ORDER[(LANGUAGE_ORDER.indexOf(prev) + 1) % LANGUAGE_ORDER.length]);
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      language,
+      setLanguage,
+      cycleLanguage,
+    }),
+    [language, cycleLanguage]
+  );
 
   return (
     <LanguageContext.Provider value={value}>

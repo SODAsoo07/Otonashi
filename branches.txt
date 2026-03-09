@@ -1,0 +1,30 @@
+﻿baf6424 2026-02-25 Update package.json
+a8ab3b0 2026-02-25 Update MiscTab and FrqExtract
+1157646 2026-02-25 Add Post-Process Tab
+7683125 2026-02-25 1.3.1 Update
+ba62741 2026-02-25 Revert macOS app icon to fix build failure
+072b9a2 2026-02-25 Use otonashi.png as macOS app icon
+3a4197f 2026-02-25 Fix macOS build error by removing unsupported .ico icon
+c5ee488 2026-02-24 Add GitHub Actions workflow for macOS and Windows build
+8001589 2026-02-24 fix: apply monitorGainValue to consonant tabs for global volume control
+cdb5441 2026-02-24 Update
+2366c97 2026-02-24 chore: configure Vercel to only deploy Dev_ing branch
+adc540d 2026-02-24 feat: backport ui features and vocoder to Dev_ing without heavy electron deps
+bb32a7c 2026-02-24 feat: backport ui features and vocoder to Dev_ing without heavy electron deps
+ae8b4f7 2026-02-24 Update .gitignore
+bcbce6b 2026-02-24 Fix Tabs
+6d05ed2 2026-02-21 bulid error fix
+a1fc053 2026-02-21 ・們菩ぎ﨑ｭ ・溢搆
+a67ae95 2026-02-17 Update HelpModal.tsx
+a5b496d 2026-02-17 Update main.ts
+a08ad04 2026-02-17 Add Portable Bulid Option
+d4394b5 2026-02-17 Update VocoderTab.tsx
+ccae0ed 2026-02-17 Vocoder Tab Update
+4b5d20e 2026-02-17 update
+151cdf7 2026-02-17 Update vercel-ignore.sh
+d535b48 2026-02-17 Update
+192ef0b 2026-02-17 Update AdvancedTractTab.tsx
+9ec50af 2026-02-17 Update AdvancedTractTab.tsx
+8a6ab53 2026-02-17 Error Fix
+ba96ac3 2026-02-17 Edit HelpModal
+bbc1373 2026-02-17 Fix
