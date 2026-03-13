@@ -18,3 +18,11 @@ jobs:
 
       - name: Build (Release)
         run: cmake --build vst3/build --config Release
+
+      - name: Upload VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OtonashiTract-Windows-VST3
+          path: |
+            vst3/build/**/OtonashiTract.vst3/**
+            vst3/build/**/OtonashiTract.vst3
