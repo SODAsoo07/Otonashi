@@ -16,8 +16,9 @@ jobs:
       - name: Configure (CMake)
         run: cmake -S vst3 -B vst3/build -G "Visual Studio 17 2022" -A x64
 
-      - name: Build (Release)
-        run: cmake --build vst3/build --config Release
+      - name: Build (Release, verbose)
+        run: cmake --build vst3/build
+--config Release --verbose --config Release
 
       - name: Upload VST3 Artifact
         uses: actions/upload-artifact@v4
@@ -25,4 +26,5 @@ jobs:
           name: OtonashiTract-Windows-VST3
           path: |
             vst3/build/**/OtonashiTract.vst3/**
-            vst3/build/**/OtonashiTract.vst3
+            vst3/build/**/
+ㄱOtonashiTract.vst3
