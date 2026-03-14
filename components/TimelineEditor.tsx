@@ -93,6 +93,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         : language === 'ja'
             ? '\u3059\u3079\u3066\u306E\u30AD\u30FC\u30D5\u30EC\u30FC\u30E0\u3092\u521D\u671F\u5024\u306B\u623B\u3057\u307E\u3059\u304B\uFF1F'
             : 'Reset all keyframes to defaults?';
+    const overlayLabel = language === 'ko' ? '\uC624\uBC84\uB808\uC774' : language === 'ja' ? '\u30AA\u30FC\u30D0\u30FC\u30EC\u30A4' : 'Overlay';
+    const overlayLimitText = language === 'ko' ? '\uCD5C\uB300 3\uAC1C' : language === 'ja' ? '\u6700\u5927 3\u4EF6' : 'Max 3';
+    const overlayLimitAlert = language === 'ko'
+        ? '\uC624\uBC84\uB808\uC774\uB294 \uCD5C\uB300 3\uAC1C\uAE4C\uC9C0\uB9CC \uC120\uD0DD\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.'
+        : language === 'ja'
+            ? '\u30AA\u30FC\u30D0\u30FC\u30EC\u30A4\u306F\u6700\u5927 3 \u4EF6\u307E\u3067\u9078\u629E\u3067\u304D\u307E\u3059\u3002'
+            : 'You can select up to 3 overlay tracks.';
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [draggingKeyframe, setDraggingKeyframe] = useState<{
@@ -105,6 +112,27 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [canvasSize, setCanvasSize] = useState({ w: 1000, h: 200 });
     const [globalShiftStart, setGlobalShiftStart] = useState<{ y: number, initialPoints: {t: number, v: number}[] } | null>(null);
     const [isShiftHeld, setIsShiftHeld] = useState(false);
+    const [overlayTrackIds, setOverlayTrackIds] = useState<string[]>([]);
+
+    useEffect(() => {
+        const validTrackIds = new Set(advTracks.map(t => t.id));
+        setOverlayTrackIds(prev => {
+            const next = prev.filter(id => id !== selectedTrackId && validTrackIds.has(id));
+            if (next.length === prev.length && next.every((id, idx) => id === prev[idx])) return prev;
+            return next;
+        });
+    }, [selectedTrackId, advTracks]);
+
+    const toggleOverlayTrack = (trackId: string) => {
+        setOverlayTrackIds(prev => {
+            if (prev.includes(trackId)) return prev.filter(id => id !== trackId);
+            if (prev.length >= 3) {
+                window.alert(overlayLimitAlert);
+                return prev;
+            }
+            return [...prev, trackId];
+        });
+    };
 
     // Track Shift Key
     useEffect(() => {
@@ -303,6 +331,47 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 ctx.restore();
             }
         }
+
+        // Overlay Tracks (other timelines)
+        if (track && overlayTrackIds.length > 0) {
+            overlayTrackIds.forEach((overlayId, idx) => {
+                const overlayTrack = advTracks.find(t => t.id === overlayId);
+                if (!overlayTrack || overlayTrack.points.length === 0) return;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.strokeStyle = overlayTrack.color;
+                ctx.lineWidth = 1.8;
+                ctx.globalAlpha = 0.22 + (idx * 0.06);
+                ctx.setLineDash([4, 4]);
+
+                if (overlayTrack.interpolation === 'curve') {
+                    for (let i = 0; i < w; i++) {
+                        const tNorm = i / w;
+                        const v = getValueAtTime(overlayTrack.id, tNorm);
+                        const y = RULER_HEIGHT + (1 - (v - overlayTrack.min) / (overlayTrack.max - overlayTrack.min)) * (h - RULER_HEIGHT);
+                        if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
+                    }
+                } else {
+                    overlayTrack.points.forEach((p, i) => {
+                        const x = p.t * w;
+                        const y = RULER_HEIGHT + (1 - (p.v - overlayTrack.min) / (overlayTrack.max - overlayTrack.min)) * (h - RULER_HEIGHT);
+                        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                    });
+                }
+                ctx.stroke();
+
+                overlayTrack.points.forEach(p => {
+                    const x = p.t * w;
+                    const y = RULER_HEIGHT + (1 - (p.v - overlayTrack.min) / (overlayTrack.max - overlayTrack.min)) * (h - RULER_HEIGHT);
+                    ctx.fillStyle = overlayTrack.color;
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                ctx.restore();
+            });
+        }
         
         // Main Track
         if (track) {
@@ -336,7 +405,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             }); 
         }
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
-    }, [canvasSize, selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks, spectrogramCanvas]);
+    }, [canvasSize, selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks, spectrogramCanvas, overlayTrackIds]);
 
     const currentTrack = advTracks.find(t => t.id === selectedTrackId);
     
@@ -394,6 +463,30 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     </button>
                     <button onClick={() => setIsEditMode(!isEditMode)} className={`p-1.5 rounded-lg border transition-all shadow-sm ${isEditMode ? 'bg-amber-400 text-white border-amber-500' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`} title={isEditMode ? text.editModeOn : text.editModeOff}><PencilLine size={16} /></button>
                 </div>
+            </div>
+            <div className="flex items-center gap-1.5 px-1 pb-1 overflow-x-auto custom-scrollbar">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider shrink-0">
+                    {overlayLabel} ({overlayTrackIds.length}/3)
+                </span>
+                {advTracks.filter(t => t.id !== selectedTrackId).map(t => {
+                    const active = overlayTrackIds.includes(t.id);
+                    const disabled = !active && overlayTrackIds.length >= 3;
+                    return (
+                        <button
+                            key={`overlay-${t.id}`}
+                            onClick={() => toggleOverlayTrack(t.id)}
+                            disabled={disabled}
+                            className={`px-2 py-0.5 text-[9px] font-black rounded-full border transition-all whitespace-nowrap ${
+                                active
+                                    ? 'bg-slate-700 text-white border-slate-700'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                            } ${disabled ? 'opacity-35 cursor-not-allowed' : ''}`}
+                            title={disabled ? overlayLimitText : t.name}
+                        >
+                            {t.name}
+                        </button>
+                    );
+                })}
             </div>
             
             <div ref={containerRef} className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner min-h-0">
