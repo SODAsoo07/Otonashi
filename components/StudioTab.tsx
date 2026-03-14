@@ -26,6 +26,9 @@ interface UndoState {
     label: string;
 }
 
+const WAVEFORM_CACHE_WIDTH = 1200;
+const PLAYHEAD_EPSILON = 0.08;
+
 const STUDIO_TEXT = {
     ko: {
         undo: '실행 취소',
@@ -248,7 +251,38 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const startTimeRef = useRef(0);
     const pauseOffsetRef = useRef(0);
     const animationRef = useRef<number | null>(null);
+    const lastPlayheadPosRef = useRef(0);
+    const renderCacheRef = useRef<{ source: AudioBuffer; key: string; rendered: AudioBuffer } | null>(null);
+    const reverbImpulseRef = useRef<{ sampleRate: number; length: number; left: Float32Array; right: Float32Array } | null>(null);
     const activeBuffer = useMemo(() => activeFile ? activeFile.buffer : null, [activeFile]);
+
+    const waveformPeaks = useMemo(() => {
+        if (!activeBuffer) return null;
+        const data = activeBuffer.getChannelData(0);
+        const width = WAVEFORM_CACHE_WIDTH;
+        const peaks = new Float32Array(width * 2);
+        const step = Math.max(1, Math.ceil(data.length / width));
+
+        for (let i = 0; i < width; i++) {
+            let min = 1.0;
+            let max = -1.0;
+            const start = i * step;
+            const end = Math.min(start + step, data.length);
+            for (let j = start; j < end; j++) {
+                const sample = data[j];
+                if (sample < min) min = sample;
+                if (sample > max) max = sample;
+            }
+            peaks[i * 2] = min;
+            peaks[i * 2 + 1] = max;
+        }
+        return { width, peaks };
+    }, [activeBuffer]);
+
+    const setPlayheadImmediate = useCallback((nextPos: number) => {
+        lastPlayheadPosRef.current = nextPos;
+        setPlayheadPos(nextPos);
+    }, []);
 
     const pushUndo = useCallback((label: string = "Edit") => {
         if (activeBuffer) {
@@ -548,11 +582,51 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     const handleStop = useCallback(() => {
         stopPlayback();
-        setIsPaused(false); setPlayheadPos(0); pauseOffsetRef.current = 0;
-    }, [stopPlayback]);
+        setIsPaused(false); setPlayheadImmediate(0); pauseOffsetRef.current = 0;
+    }, [setPlayheadImmediate, stopPlayback]);
 
     const renderStudioAudio = useCallback(async (buf: AudioBuffer) => {
         if (!buf || !audioContext) return null;
+
+        const eqKey = eqBands
+            .map(b => `${b.id}:${b.on ? 1 : 0}:${b.type}:${b.freq.toFixed(1)}:${b.gain.toFixed(2)}:${b.q.toFixed(2)}`)
+            .join(';');
+        const volumeKey = volumeKeyframes
+            .map(p => `${p.t.toFixed(4)}:${p.v.toFixed(4)}`)
+            .join(';');
+        const renderKey = [
+            buf.length,
+            buf.sampleRate,
+            pitchCents,
+            genderShift.toFixed(3),
+            masterGain.toFixed(3),
+            bypassEffects ? 1 : 0,
+            normalizationEnabled ? 1 : 0,
+            enableDelay ? 1 : 0,
+            delayTime.toFixed(3),
+            delayFeedback.toFixed(3),
+            enableReverb ? 1 : 0,
+            reverbMix.toFixed(3),
+            compThresh.toFixed(2),
+            compRatio.toFixed(2),
+            compAttack.toFixed(4),
+            compRelease.toFixed(4),
+            formant.f1.toFixed(1),
+            formant.f2.toFixed(1),
+            formant.f3.toFixed(1),
+            formant.f4.toFixed(1),
+            formant.resonance.toFixed(2),
+            singersFormantEnabled ? 1 : 0,
+            singersFormantFreq.toFixed(1),
+            singersFormantGain.toFixed(2),
+            singersFormantQ.toFixed(2),
+            eqKey,
+            volumeKey
+        ].join('|');
+
+        if (renderCacheRef.current && renderCacheRef.current.source === buf && renderCacheRef.current.key === renderKey) {
+            return renderCacheRef.current.rendered;
+        }
         const renderDur = buf.duration + (enableDelay ? 2 : 0) + (enableReverb ? 3 : 0);
         const offline = new OfflineAudioContext(buf.numberOfChannels, Math.ceil(renderDur * buf.sampleRate), buf.sampleRate);
 
@@ -629,12 +703,24 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             if (enableReverb && reverbMix > 0) {
                 const reverbConv = offline.createConvolver();
                 const rate = offline.sampleRate;
-                const length = rate * 2.0;
-                const impulse = offline.createBuffer(2, length, rate);
-                for (let i = 0; i < 2; i++) {
-                    const ch = impulse.getChannelData(i);
-                    for (let j = 0; j < length; j++) ch[j] = (Math.random() * 2 - 1) * Math.pow(1 - j / length, 2.0);
+                const length = Math.floor(rate * 2.0);
+                if (
+                    !reverbImpulseRef.current ||
+                    reverbImpulseRef.current.sampleRate !== rate ||
+                    reverbImpulseRef.current.length !== length
+                ) {
+                    const left = new Float32Array(length);
+                    const right = new Float32Array(length);
+                    for (let j = 0; j < length; j++) {
+                        const decay = Math.pow(1 - j / length, 2.0);
+                        left[j] = (Math.random() * 2 - 1) * decay;
+                        right[j] = (Math.random() * 2 - 1) * decay;
+                    }
+                    reverbImpulseRef.current = { sampleRate: rate, length, left, right };
                 }
+                const impulse = offline.createBuffer(2, length, rate);
+                impulse.getChannelData(0).set(reverbImpulseRef.current.left);
+                impulse.getChannelData(1).set(reverbImpulseRef.current.right);
                 reverbConv.buffer = impulse;
                 const revGain = offline.createGain(); revGain.gain.value = reverbMix;
                 afterCompressor.connect(reverbConv);
@@ -678,6 +764,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 }
             }
         }
+        renderCacheRef.current = { source: buf, key: renderKey, rendered };
         return rendered;
     }, [audioContext, pitchCents, genderShift, masterGain, bypassEffects, formant, eqBands, enableDelay, delayTime, delayFeedback, enableReverb, reverbMix, compThresh, compRatio, compAttack, compRelease, volumeKeyframes, normalizationEnabled, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
 
@@ -732,9 +819,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         s.onended = () => {
             setIsPlaying(false);
             setIsPaused(false);
-            if (mode === 'all') { setPlayheadPos(0); pauseOffsetRef.current = 0; }
+            if (mode === 'all') { setPlayheadImmediate(0); pauseOffsetRef.current = 0; }
         };
-    }, [isPlaying, isPaused, activeBuffer, renderStudioAudio, audioContext, editTrim]);
+    }, [isPlaying, isPaused, activeBuffer, renderStudioAudio, audioContext, editTrim, setPlayheadImmediate]);
 
     const updatePlayhead = useCallback(() => {
         if (!isPlaying || !activeBuffer) return;
@@ -751,7 +838,15 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
 
         if (currentPos >= 100 && playheadMode === 'all') currentPos = 100;
-        setPlayheadPos(currentPos);
+        currentPos = Math.max(0, Math.min(100, currentPos));
+        if (
+            Math.abs(currentPos - lastPlayheadPosRef.current) >= PLAYHEAD_EPSILON ||
+            currentPos === 0 ||
+            currentPos === 100
+        ) {
+            lastPlayheadPosRef.current = currentPos;
+            setPlayheadPos(currentPos);
+        }
         animationRef.current = requestAnimationFrame(updatePlayhead);
     }, [isPlaying, activeBuffer, audioContext, playheadMode, editTrim]);
 
@@ -762,7 +857,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     }, [isPlaying, updatePlayhead]);
 
     useEffect(() => {
-        if (!canvasRef.current || !activeBuffer) return;
+        if (!canvasRef.current || !waveformPeaks) return;
         const ctx = canvasRef.current.getContext('2d', { alpha: false });
         if (!ctx) return;
         const { width: w, height: h } = canvasRef.current;
@@ -770,20 +865,17 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = '#f1f5f9'; ctx.fillRect(0, 0, w, RULER_HEIGHT);
 
-        const data = activeBuffer.getChannelData(0);
-        const step = Math.ceil(data.length / w);
+        const peakData = waveformPeaks.peaks;
+        const peakWidth = waveformPeaks.width;
         const waveH = h - RULER_HEIGHT;
         const amp = waveH / 2;
         const yOffset = RULER_HEIGHT;
 
         ctx.beginPath(); ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1;
         for (let i = 0; i < w; i++) {
-            let min = 1.0, max = -1.0;
-            const start = i * step;
-            const end = Math.min(start + step, data.length);
-            for (let j = start; j < end; j++) {
-                const datum = data[j]; if (datum < min) min = datum; if (datum > max) max = datum;
-            }
+            const peakIndex = Math.min(peakWidth - 1, Math.floor((i / w) * peakWidth));
+            const min = peakData[peakIndex * 2];
+            const max = peakData[peakIndex * 2 + 1];
             ctx.moveTo(i, yOffset + (amp + min * amp)); ctx.lineTo(i, yOffset + (amp + max * amp));
         }
         ctx.stroke();
@@ -819,7 +911,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             const px = (playheadPos / 100) * w;
             ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
         }
-    }, [activeBuffer, editTrim, playheadPos, showAutomation, volumeKeyframes]);
+    }, [waveformPeaks, editTrim, playheadPos, showAutomation, volumeKeyframes]);
 
     const handleTimelineMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
         if (!canvasRef.current) return;
@@ -898,7 +990,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
 
         // default: selection drag
-        setPlayheadPos(xPct * 100);
+        setPlayheadImmediate(xPct * 100);
         pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
         const startX = xPct;
         setEditTrim({ start: startX, end: startX });
@@ -920,7 +1012,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
         window.addEventListener('mousemove', move);
         window.addEventListener('mouseup', up);
-    }, [showAutomation, volumeKeyframes, pushUndo, activeBuffer]);
+    }, [showAutomation, volumeKeyframes, pushUndo, activeBuffer, setPlayheadImmediate]);
 
     const formatTime = (sec: number) => {
         const m = Math.floor(sec / 60), s = Math.floor(sec % 60), ms = Math.floor((sec % 1) * 1000);
