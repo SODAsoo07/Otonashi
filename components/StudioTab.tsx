@@ -447,40 +447,51 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     const handleFadeIn = useCallback(() => {
         if (!activeBuffer) return;
-        pushUndo("Fade In");
         const sr = activeBuffer.sampleRate;
+        const hasSelection = editTrim.start > 0.0001 || editTrim.end < 0.9999;
+        const rangeStart = hasSelection ? Math.max(0, Math.floor(editTrim.start * activeBuffer.length)) : 0;
+        const rangeEnd = hasSelection ? Math.min(activeBuffer.length, Math.ceil(editTrim.end * activeBuffer.length)) : activeBuffer.length;
+        const rangeLength = Math.max(0, rangeEnd - rangeStart);
+        if (rangeLength <= 0) return;
+        pushUndo("Fade In");
         const newBuf = audioContext.createBuffer(
             activeBuffer.numberOfChannels, activeBuffer.length, sr
         );
-        const fadeSamples = Math.min(Math.floor(fadeDuration * sr), activeBuffer.length);
+        const fadeSamples = Math.max(1, Math.min(Math.floor(fadeDuration * sr), rangeLength));
+        const fadeEnd = rangeStart + fadeSamples;
         for (let ch = 0; ch < activeBuffer.numberOfChannels; ch++) {
             const src = activeBuffer.getChannelData(ch);
             const dst = newBuf.getChannelData(ch);
             for (let i = 0; i < activeBuffer.length; i++) {
-                if (i < fadeSamples) {
-                    dst[i] = src[i] * (i / fadeSamples);
+                if (i >= rangeStart && i < fadeEnd) {
+                    dst[i] = src[i] * ((i - rangeStart) / fadeSamples);
                 } else {
                     dst[i] = src[i];
                 }
             }
         }
         onUpdateFile(newBuf);
-    }, [activeBuffer, audioContext, fadeDuration, pushUndo, onUpdateFile]);
+    }, [activeBuffer, audioContext, editTrim, fadeDuration, pushUndo, onUpdateFile]);
 
     const handleFadeOut = useCallback(() => {
         if (!activeBuffer) return;
-        pushUndo("Fade Out");
         const sr = activeBuffer.sampleRate;
+        const hasSelection = editTrim.start > 0.0001 || editTrim.end < 0.9999;
+        const rangeStart = hasSelection ? Math.max(0, Math.floor(editTrim.start * activeBuffer.length)) : 0;
+        const rangeEnd = hasSelection ? Math.min(activeBuffer.length, Math.ceil(editTrim.end * activeBuffer.length)) : activeBuffer.length;
+        const rangeLength = Math.max(0, rangeEnd - rangeStart);
+        if (rangeLength <= 0) return;
+        pushUndo("Fade Out");
         const newBuf = audioContext.createBuffer(
             activeBuffer.numberOfChannels, activeBuffer.length, sr
         );
-        const fadeSamples = Math.min(Math.floor(fadeDuration * sr), activeBuffer.length);
-        const fadeStart = activeBuffer.length - fadeSamples;
+        const fadeSamples = Math.max(1, Math.min(Math.floor(fadeDuration * sr), rangeLength));
+        const fadeStart = rangeEnd - fadeSamples;
         for (let ch = 0; ch < activeBuffer.numberOfChannels; ch++) {
             const src = activeBuffer.getChannelData(ch);
             const dst = newBuf.getChannelData(ch);
             for (let i = 0; i < activeBuffer.length; i++) {
-                if (i >= fadeStart) {
+                if (i >= fadeStart && i < rangeEnd) {
                     dst[i] = src[i] * (1 - (i - fadeStart) / fadeSamples);
                 } else {
                     dst[i] = src[i];
@@ -488,7 +499,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             }
         }
         onUpdateFile(newBuf);
-    }, [activeBuffer, audioContext, fadeDuration, pushUndo, onUpdateFile]);
+    }, [activeBuffer, audioContext, editTrim, fadeDuration, pushUndo, onUpdateFile]);
 
     const handleSaveSelection = useCallback(() => {
         if (!activeBuffer) return;
@@ -771,7 +782,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const togglePlay = useCallback(async (mode: 'all' | 'selection') => {
         if (isPlaying) {
             if (sourceRef.current) { sourceRef.current.stop(); sourceRef.current = null; }
-            pauseOffsetRef.current = audioContext.currentTime - startTimeRef.current;
+            const pausedOffsetSec = Math.max(0, audioContext.currentTime - startTimeRef.current);
+            pauseOffsetRef.current = pausedOffsetSec;
+            if (activeBuffer && activeBuffer.duration > 0) {
+                setPlayheadImmediate(Math.min(100, (pausedOffsetSec / activeBuffer.duration) * 100));
+            }
             setIsPaused(true);
             setIsPlaying(false);
             if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -791,16 +806,14 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         monitorNode.connect(audioContext.destination);
 
         let startOffset = 0;
-        let dur = rendered.duration;
 
         if (mode === 'selection') {
             const selStart = editTrim.start * activeBuffer.duration;
             const selEnd = editTrim.end * activeBuffer.duration;
-            dur = selEnd - selStart;
 
             if (isPaused) {
-                startOffset = selStart + (pauseOffsetRef.current > 0 ? pauseOffsetRef.current : 0);
-                if (startOffset > selEnd) startOffset = selStart;
+                const paused = pauseOffsetRef.current > 0 ? pauseOffsetRef.current : selStart;
+                startOffset = Math.max(selStart, Math.min(selEnd, paused));
             } else {
                 startOffset = selStart;
             }
