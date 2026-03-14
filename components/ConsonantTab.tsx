@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Combine, MousePointer2, TrendingUp, Play, Save, Undo2, Redo2, AudioLines, Download } from 'lucide-react';
+import { Combine, MousePointer2, TrendingUp, Play, Save, Undo2, Redo2, AudioLines, Download, Plus, Copy, ClipboardPaste, Trash2 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AudioFile, KeyframePoint, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
@@ -96,7 +96,9 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     const text = CONSONANT_TEXT[language];
     const [vowelId, setVowelId] = useState("");
     const [consonantIds, setConsonantIds] = useState<string[]>([]);
-    const [activeConsonantId, setActiveConsonantId] = useState("");
+    const [activeConsonantIndex, setActiveConsonantIndex] = useState(0);
+    const [pendingConsonantIds, setPendingConsonantIds] = useState<string[]>([]);
+    const [consonantClipboard, setConsonantClipboard] = useState<string[] | null>(null);
 
     // Timing & Stretch
     const [vOffMs, setVOffMs] = useState(0);
@@ -131,7 +133,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     const startTimeRef = useRef(0);
     const pauseOffsetRef = useRef(0);
     const animRef = useRef<number | null>(null);
-    const [dragPoint, setDragPoint] = useState<{ type: 'vol' | 'move', track?: 'vowel' | 'consonant', index?: number } | null>(null);
+    const [dragPoint, setDragPoint] = useState<{ type: 'vol' | 'move', track?: 'vowel' | 'consonant', index?: number, grabOffsetPx?: number } | null>(null);
 
     // History
     const [history, setHistory] = useState<any[]>([]);
@@ -153,8 +155,20 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     };
 
     const getCurrentState = useCallback(() => ({
-        vowelId, consonantIds, activeConsonantId, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, vowelGain, consonantGain, eqBands
-    }), [vowelId, consonantIds, activeConsonantId, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, vowelGain, consonantGain, eqBands]);
+        vowelId,
+        consonantIds,
+        activeConsonantIndex,
+        activeConsonantId: consonantIds[activeConsonantIndex] || "",
+        vOffMs,
+        offsetMs,
+        cStretch,
+        vStretch,
+        vVolPts,
+        cVolPts,
+        vowelGain,
+        consonantGain,
+        eqBands
+    }), [vowelId, consonantIds, activeConsonantIndex, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, vowelGain, consonantGain, eqBands]);
 
     const saveHistory = useCallback((label: string) => {
         const state = getCurrentState();
@@ -174,7 +188,9 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             ? state.consonantIds
             : (state.consonantId ? [state.consonantId] : []);
         setConsonantIds(nextConsonants);
-        setActiveConsonantId(state.activeConsonantId || nextConsonants[0] || "");
+        const fallbackIdx = state.activeConsonantId ? nextConsonants.indexOf(state.activeConsonantId) : 0;
+        const restoredIdx = typeof state.activeConsonantIndex === 'number' ? state.activeConsonantIndex : fallbackIdx;
+        setActiveConsonantIndex(Math.max(0, Math.min(restoredIdx, Math.max(0, nextConsonants.length - 1))));
         setVOffMs(state.vOffMs);
         setOffsetMs(state.offsetMs); setCStretch(state.cStretch); setVStretch(state.vStretch || 100);
         setVVolPts(state.vVolPts); setCVolPts(state.cVolPts);
@@ -188,6 +204,55 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
     const commitChange = (label: string = "변경") => saveHistory(label);
 
     const getBuffer = (id: string) => files.find(f => f.id === id)?.buffer;
+    const addConsonantsLabel = language === 'ko' ? '선택 추가' : language === 'ja' ? '選択追加' : 'Add Selected';
+    const copyLabel = language === 'ko' ? '복사' : language === 'ja' ? 'コピー' : 'Copy';
+    const pasteLabel = language === 'ko' ? '붙여넣기' : language === 'ja' ? '貼り付け' : 'Paste';
+    const removeLabel = language === 'ko' ? '활성 제거' : language === 'ja' ? '選択削除' : 'Remove Active';
+    const dragOffsetHint = language === 'ko'
+        ? '오프셋은 파형을 드래그해서 조절'
+        : language === 'ja'
+            ? 'オフセットは波形ドラッグで調整'
+            : 'Adjust offset by dragging waveform';
+
+    useEffect(() => {
+        if (consonantIds.length === 0) {
+            setActiveConsonantIndex(0);
+            return;
+        }
+        setActiveConsonantIndex(prev => Math.max(0, Math.min(prev, consonantIds.length - 1)));
+    }, [consonantIds]);
+
+    const handleAddSelectedConsonants = () => {
+        if (pendingConsonantIds.length === 0) return;
+        const baseLen = consonantIds.length;
+        const next = [...consonantIds, ...pendingConsonantIds];
+        setConsonantIds(next);
+        if (baseLen === 0) setActiveConsonantIndex(0);
+        commitChange("Add consonants");
+    };
+
+    const handleCopyConsonants = () => {
+        if (consonantIds.length === 0) return;
+        setConsonantClipboard([...consonantIds]);
+    };
+
+    const handlePasteConsonants = () => {
+        if (!consonantClipboard || consonantClipboard.length === 0) return;
+        const baseLen = consonantIds.length;
+        const next = [...consonantIds, ...consonantClipboard];
+        setConsonantIds(next);
+        if (baseLen === 0) setActiveConsonantIndex(0);
+        commitChange("Paste consonants");
+    };
+
+    const handleRemoveActiveConsonant = () => {
+        if (consonantIds.length === 0) return;
+        const removeIdx = Math.max(0, Math.min(activeConsonantIndex, consonantIds.length - 1));
+        const next = consonantIds.filter((_, idx) => idx !== removeIdx);
+        setConsonantIds(next);
+        setActiveConsonantIndex(Math.max(0, Math.min(removeIdx, Math.max(0, next.length - 1))));
+        commitChange("Remove consonant");
+    };
 
     const mixConsonant = async () => {
         const v = getBuffer(vowelId);
@@ -292,7 +357,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 if (animRef.current) cancelAnimationFrame(animRef.current);
             };
         }
-    }, [isPlaying, vowelId, consonantIds, activeConsonantId, offsetMs, cStretch, vStretch, vowelGain, consonantGain, eqBands, mixConsonant, audioContext]);
+    }, [isPlaying, vowelId, consonantIds, offsetMs, cStretch, vStretch, vowelGain, consonantGain, eqBands, mixConsonant, audioContext]);
 
     const handleDownload = async () => {
         const b = await mixConsonant();
@@ -308,13 +373,20 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
 
     const getTrackVolumeGeometry = useCallback((track: 'vowel' | 'consonant', canvasW: number, canvasH: number) => {
         const vBuf = getBuffer(vowelId);
-        const activeId = activeConsonantId || consonantIds[0] || "";
+        const activeId = consonantIds[activeConsonantIndex] || consonantIds[0] || "";
         const cBuf = getBuffer(activeId);
+        const consonantBuffers = consonantIds
+            .map(id => getBuffer(id))
+            .filter((buf): buf is AudioBuffer => !!buf);
 
         const vRealDur = vBuf ? vBuf.duration * (vStretch / 100) : 0;
         const cRealDur = cBuf ? cBuf.duration * (cStretch / 100) : 0;
-        const totalDuration = Math.max((vOffMs / 1000) + vRealDur, (offsetMs / 1000) + cRealDur, 1.0) * 1.2;
+        const cMaxRealDur = consonantBuffers.length > 0
+            ? Math.max(...consonantBuffers.map(buf => buf.duration * (cStretch / 100)))
+            : 0;
+        const totalDuration = Math.max((vOffMs / 1000) + vRealDur, (offsetMs / 1000) + cMaxRealDur, 1.0) * 1.2;
         const msToPx = (ms: number) => (ms / (totalDuration * 1000)) * canvasW;
+        const msPerPx = (totalDuration * 1000) / Math.max(1, canvasW);
 
         if (track === 'vowel') {
             if (!vBuf || vRealDur <= 0) return null;
@@ -324,6 +396,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 startPx: msToPx(vOffMs),
                 durPx: msToPx(vRealDur * 1000),
                 canvasH,
+                msPerPx,
             };
         }
 
@@ -334,8 +407,9 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             startPx: msToPx(offsetMs),
             durPx: msToPx(cRealDur * 1000),
             canvasH,
+            msPerPx,
         };
-    }, [getBuffer, vowelId, activeConsonantId, consonantIds, vStretch, cStretch, vOffMs, offsetMs, vVolPts, cVolPts]);
+    }, [getBuffer, vowelId, activeConsonantIndex, consonantIds, vStretch, cStretch, vOffMs, offsetMs, vVolPts, cVolPts]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         if (!canvasRef.current) return;
@@ -369,7 +443,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 return;
             }
 
-            if (!e.shiftKey) return;
+            if (e.button !== 0) return;
 
             const localT = Math.max(0, Math.min(1, (xPx - geom.startPx) / geom.durPx));
             const localV = yPxToVolume(yPx, geom.canvasH);
@@ -384,7 +458,10 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             return;
         }
 
-        setDragPoint({ type: 'move', track: selectedTrack });
+        if (e.button !== 0) return;
+        const moveGeom = getTrackVolumeGeometry(selectedTrack, canvasW, canvasH);
+        const grabOffsetPx = moveGeom ? (xPx - moveGeom.startPx) : 0;
+        setDragPoint({ type: 'move', track: selectedTrack, grabOffsetPx });
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -414,10 +491,14 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 return next;
             });
         } else if (e.buttons === 1) {
-            const dx = e.movementX;
             const targetTrack = dragPoint.track || selectedTrack;
-            if (targetTrack === 'consonant') setOffsetMs(prev => Math.max(0, prev + dx * 2));
-            else setVOffMs(prev => Math.max(0, prev + dx * 2));
+            const geom = getTrackVolumeGeometry(targetTrack, canvasW, canvasH);
+            if (!geom) return;
+            const grabOffsetPx = dragPoint.grabOffsetPx || 0;
+            const nextStartPx = Math.max(0, xPx - grabOffsetPx);
+            const nextMs = nextStartPx * geom.msPerPx;
+            if (targetTrack === 'consonant') setOffsetMs(nextMs);
+            else setVOffMs(nextMs);
         }
     };
 
@@ -455,7 +536,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         const consonantEntries = consonantIds
             .map(id => ({ id, buf: getBuffer(id) }))
             .filter((item): item is { id: string; buf: AudioBuffer } => !!item.buf);
-        const currentConsonant = consonantEntries.find(item => item.id === activeConsonantId) || consonantEntries[0] || null;
+        const currentConsonant = consonantEntries[Math.max(0, Math.min(activeConsonantIndex, consonantEntries.length - 1))] || consonantEntries[0] || null;
         const cBuf = currentConsonant?.buf || null;
 
         const vRealDur = vBuf ? vBuf.duration * (vStretch / 100) : 0;
@@ -504,7 +585,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
 
         if (vBuf) drawWave(vBuf, '#3b82f6', vOffMs, vStretch, selectedTrack === 'vowel', vowelGain);
         consonantEntries.forEach((item, idx) => {
-            const isActiveConsonant = selectedTrack === 'consonant' && currentConsonant?.id === item.id;
+            const isActiveConsonant = selectedTrack === 'consonant' && idx === Math.max(0, Math.min(activeConsonantIndex, consonantEntries.length - 1));
             drawWave(item.buf, '#fb923c', offsetMs, cStretch, isActiveConsonant, consonantGain, idx);
         });
 
@@ -529,7 +610,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
             }
         }
-    }, [vowelId, consonantIds, activeConsonantId, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, selectedTrack, files, vowelGain, consonantGain, playheadTime]);
+    }, [vowelId, consonantIds, activeConsonantIndex, vOffMs, offsetMs, cStretch, vStretch, vVolPts, cVolPts, selectedTrack, files, vowelGain, consonantGain, playheadTime]);
 
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={handleMouseUp}>
@@ -549,7 +630,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                         <div className="w-px h-6 bg-slate-300 mx-1"></div>
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
                             <button onClick={() => setEditMode('move')} className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode === 'move' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}><MousePointer2 size={16} /> {text.move}</button>
-                            <button onClick={() => setEditMode('volume')} title="Shift+Click add, drag move, right-click delete" className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode === 'volume' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}><TrendingUp size={16} /> {text.volume}</button>
+                            <button onClick={() => setEditMode('volume')} title="Click add, drag move, right-click delete" className={`px-4 py-2 rounded-md text-sm font-black flex items-center gap-2 transition-all ${editMode === 'volume' ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}><TrendingUp size={16} /> {text.volume}</button>
                         </div>
                     </div>
                 </div>
@@ -561,44 +642,51 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-shrink-0">
-                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack === 'vowel' ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-100' : 'bg-white border-slate-200'}`} onClick={() => setSelectedTrack('vowel')} onMouseUp={() => commitChange()}>
+                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack === 'vowel' ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-100' : 'bg-white border-slate-200'}`} onClick={() => setSelectedTrack('vowel')}>
                         <label className="text-sm font-black text-slate-900 uppercase tracking-widest block">{text.vowel}</label>
                         <select value={vowelId} onChange={e => { setVowelId(e.target.value); commitChange("모음 변경"); }} className="w-full p-2.5 border rounded-lg font-black text-base text-slate-900">{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
                         <div className="space-y-3">
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>{text.offset}</span><span>{Math.round(vOffMs)}ms</span></div><input type="range" min="0" max="1000" value={vOffMs} onChange={e => setVOffMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-400" /></div>
+                            <div className="rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 space-y-1">
+                                <div className="flex justify-between text-xs font-black text-slate-500"><span>{text.offset}</span><span>{Math.round(vOffMs)}ms</span></div>
+                                <p className="text-[10px] font-bold text-slate-400">{dragOffsetHint}</p>
+                            </div>
                             <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>{text.stretch}</span><span className="text-indigo-600">{vStretch}%</span></div><input type="range" min="50" max="200" value={vStretch} onChange={e => setVStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" /></div>
                         </div>
                     </div>
 
-                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack === 'consonant' ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-100' : 'bg-white border-slate-200'}`} onClick={() => setSelectedTrack('consonant')} onMouseUp={() => commitChange()}>
+                    <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack === 'consonant' ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-100' : 'bg-white border-slate-200'}`} onClick={() => setSelectedTrack('consonant')}>
                         <label className="text-sm font-black text-slate-900 uppercase tracking-widest block">{text.consonant}</label>
                         <select
                             multiple
-                            value={consonantIds}
-                            onChange={e => {
-                                const selected = Array.from(e.target.selectedOptions).map(opt => opt.value);
-                                setConsonantIds(selected);
-                                setActiveConsonantId(prev => selected.includes(prev) ? prev : (selected[0] || ""));
-                                commitChange("Change consonants");
-                            }}
+                            value={pendingConsonantIds}
+                            onChange={e => setPendingConsonantIds(Array.from(e.target.selectedOptions).map(opt => opt.value))}
                             className="w-full p-2.5 border rounded-lg font-black text-sm text-slate-900 min-h-[110px]"
                         >
                             {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                         </select>
+                        <div className="flex flex-wrap gap-2">
+                            <button onClick={handleAddSelectedConsonants} disabled={pendingConsonantIds.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-black border border-orange-200 text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-40 disabled:hover:bg-orange-50 flex items-center gap-1.5"><Plus size={13} /> {addConsonantsLabel}</button>
+                            <button onClick={handleCopyConsonants} disabled={consonantIds.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-black border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white flex items-center gap-1.5"><Copy size={13} /> {copyLabel}</button>
+                            <button onClick={handlePasteConsonants} disabled={!consonantClipboard || consonantClipboard.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-black border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white flex items-center gap-1.5"><ClipboardPaste size={13} /> {pasteLabel}</button>
+                            <button onClick={handleRemoveActiveConsonant} disabled={consonantIds.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-black border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-40 disabled:hover:bg-red-50 flex items-center gap-1.5"><Trash2 size={13} /> {removeLabel}</button>
+                        </div>
                         <select
-                            value={activeConsonantId || consonantIds[0] || ""}
-                            onChange={e => setActiveConsonantId(e.target.value)}
+                            value={consonantIds.length > 0 ? String(activeConsonantIndex) : ""}
+                            onChange={e => setActiveConsonantIndex(Number(e.target.value))}
                             className="w-full p-2 border rounded-lg font-black text-xs text-slate-700"
                             disabled={consonantIds.length === 0}
                         >
                             {consonantIds.length === 0 && <option value="">{text.none}</option>}
-                            {consonantIds.map(id => {
+                            {consonantIds.map((id, idx) => {
                                 const f = files.find(file => file.id === id);
-                                return <option key={`active-${id}`} value={id}>{`Active: ${f?.name || id}`}</option>;
+                                return <option key={`active-${idx}-${id}`} value={String(idx)}>{`${idx + 1}. ${f?.name || id}`}</option>;
                             })}
                         </select>
                         <div className="space-y-3">
-                            <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>{text.offset}</span><span>{Math.round(offsetMs)}ms</span></div><input type="range" min="0" max="1000" value={offsetMs} onChange={e => setOffsetMs(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-400" /></div>
+                            <div className="rounded-lg bg-slate-100 border border-slate-200 px-3 py-2 space-y-1">
+                                <div className="flex justify-between text-xs font-black text-slate-500"><span>{text.offset}</span><span>{Math.round(offsetMs)}ms</span></div>
+                                <p className="text-[10px] font-bold text-slate-400">{dragOffsetHint}</p>
+                            </div>
                             <div className="space-y-1"><div className="flex justify-between text-xs font-black text-slate-500 px-1"><span>{text.stretch}</span><span className="text-pink-600">{cStretch}%</span></div><input type="range" min="50" max="200" value={cStretch} onChange={e => setCStretch(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-pink-500" /></div>
                         </div>
                     </div>
