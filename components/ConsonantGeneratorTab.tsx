@@ -173,40 +173,45 @@ const ConsonantGeneratorTab: React.FC<ConsonantGeneratorTabProps> = ({ audioCont
 
         switch (char) {
             case 'S':
-                setDuration(250); setAttack(30); setDecay(100); setSustain(0.7); setRelease(80);
-                setHpFilter({ on: true, freq: 3500, q: 0.8 });
-                setBpFilter({ on: false, freq: 4000, q: 1 });
-                setLpFilter({ on: false, freq: 8000, q: 1 });
-                setTransientOn(false);
+                setDuration(190); setAttack(6); setDecay(35); setSustain(0.86); setRelease(42);
+                setGain(0.95);
+                setHpFilter({ on: true, freq: 4300, q: 0.9 });
+                setBpFilter({ on: true, freq: 7600, q: 2.4 });
+                setLpFilter({ on: true, freq: 13000, q: 0.9 });
+                setTransientOn(true); setTransientGain(0.22); setTransientFreq(7200); setTransientDecay(5);
                 break;
             case 'Sh':
-                setDuration(250); setAttack(30); setDecay(100); setSustain(0.8); setRelease(100);
-                setHpFilter({ on: true, freq: 1500, q: 0.7 });
-                setBpFilter({ on: true, freq: 2500, q: 0.8 }); // Characteristic resonance
-                setLpFilter({ on: true, freq: 6000, q: 1.0 });
-                setTransientOn(false);
+                setDuration(210); setAttack(8); setDecay(45); setSustain(0.84); setRelease(58);
+                setGain(0.95);
+                setHpFilter({ on: true, freq: 1700, q: 0.8 });
+                setBpFilter({ on: true, freq: 3200, q: 1.4 });
+                setLpFilter({ on: true, freq: 7200, q: 0.9 });
+                setTransientOn(true); setTransientGain(0.18); setTransientFreq(3300); setTransientDecay(6);
                 break;
             case 'T':
-                setDuration(60); setAttack(2); setDecay(25); setSustain(0); setRelease(20);
-                setHpFilter({ on: true, freq: 3500, q: 1.0 });
-                setBpFilter({ on: false, freq: 4000, q: 1 });
-                setLpFilter({ on: false, freq: 8000, q: 1 });
-                setTransientOn(true); setTransientGain(0.9); setTransientFreq(4500); setTransientDecay(8);
+                setDuration(72); setAttack(1); setDecay(18); setSustain(0); setRelease(24);
+                setGain(1.0);
+                setHpFilter({ on: true, freq: 2500, q: 0.9 });
+                setBpFilter({ on: true, freq: 4400, q: 2.5 });
+                setLpFilter({ on: true, freq: 10500, q: 0.8 });
+                setTransientOn(true); setTransientGain(1.08); setTransientFreq(4800); setTransientDecay(7);
                 break;
             case 'K':
-                setDuration(80); setAttack(5); setDecay(40); setSustain(0); setRelease(30);
-                setHpFilter({ on: false, freq: 2000, q: 1 });
-                setBpFilter({ on: true, freq: 1500, q: 2.5 }); // Velar pinch (Mid resonance)
-                setLpFilter({ on: false, freq: 8000, q: 1 });
-                setTransientOn(true); setTransientGain(0.8); setTransientFreq(1500); setTransientDecay(12);
+                setDuration(86); setAttack(1); setDecay(24); setSustain(0); setRelease(34);
+                setGain(1.0);
+                setHpFilter({ on: true, freq: 1200, q: 0.8 });
+                setBpFilter({ on: true, freq: 1900, q: 2.7 });
+                setLpFilter({ on: true, freq: 7600, q: 0.9 });
+                setTransientOn(true); setTransientGain(1.02); setTransientFreq(1950); setTransientDecay(10);
                 break;
             case 'P':
-                setDuration(60); setAttack(2); setDecay(30); setSustain(0); setRelease(30);
-                setNoiseType('pink'); // Darker noise
-                setHpFilter({ on: false, freq: 200, q: 1 });
-                setBpFilter({ on: false, freq: 500, q: 1 });
-                setLpFilter({ on: true, freq: 800, q: 1.0 }); // Low focus
-                setTransientOn(true); setTransientGain(1.0); setTransientFreq(300); setTransientDecay(10);
+                setDuration(76); setAttack(1); setDecay(22); setSustain(0); setRelease(34);
+                setGain(1.0);
+                setNoiseType('pink');
+                setHpFilter({ on: true, freq: 320, q: 0.7 });
+                setBpFilter({ on: true, freq: 950, q: 1.8 });
+                setLpFilter({ on: true, freq: 3400, q: 0.8 });
+                setTransientOn(true); setTransientGain(1.05); setTransientFreq(850); setTransientDecay(9);
                 break;
         }
         commitChange(`${char} 프리셋 적용`);

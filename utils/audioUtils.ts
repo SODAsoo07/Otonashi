@@ -12,6 +12,209 @@ export const AudioUtils = {
     return newBuf;
   },
 
+  detectFundamentalPitch: (buffer: AudioBuffer): number | null => {
+    const data = buffer.getChannelData(0);
+    const sampleRate = buffer.sampleRate;
+    let maxSamples = Math.floor(buffer.length / 2);
+    if (maxSamples > sampleRate) maxSamples = sampleRate;
+
+    let bestOffset = -1;
+    let bestCorrelation = 0;
+    let foundGoodCorrelation = false;
+
+    let lastCorrelation = 1;
+    for (let offset = 0; offset < maxSamples; offset++) {
+      let correlation = 0;
+      for (let i = 0; i < maxSamples; i++) {
+        correlation += Math.abs((data[i]) - (data[i + offset]));
+      }
+      correlation = 1 - (correlation / maxSamples);
+
+      if (correlation > 0.9 && correlation > lastCorrelation) {
+        foundGoodCorrelation = true;
+        if (correlation > bestCorrelation) {
+          bestCorrelation = correlation;
+          bestOffset = offset;
+        }
+      } else if (foundGoodCorrelation) {
+        const shift = (bestCorrelation - lastCorrelation) > 0 ? bestOffset : offset - 1;
+        if (shift > 0) return sampleRate / shift;
+      }
+      lastCorrelation = correlation;
+    }
+
+    if (bestCorrelation > 0.01 && bestOffset > 0) return sampleRate / bestOffset;
+    return null;
+  },
+
+  detectPitchCurve: (
+    buffer: AudioBuffer,
+    windowMs: number = 30,
+    stepSamples: number = 256,
+    interpolate: boolean = false,
+    forcePitch: number | null = null
+  ): { t: number, f0: number, amp: number }[] => {
+    const data = buffer.getChannelData(0);
+    const sr = buffer.sampleRate;
+    const windowSize = Math.floor(sr * (windowMs / 1000));
+    const stepSize = stepSamples;
+    const results: { t: number, f0: number, amp: number }[] = [];
+
+    const minOffset = Math.floor(sr / 1000);
+    const maxOffset = Math.floor(sr / 50);
+
+    for (let i = 0; i < data.length - windowSize; i += stepSize) {
+      let maxCorr = 0;
+      let bestOffset = -1;
+      let energy = 0;
+
+      for (let j = 0; j < windowSize; j++) energy += data[i + j] * data[i + j];
+
+      let pitch = 0;
+      if (forcePitch !== null && forcePitch > 0) {
+        pitch = forcePitch;
+      } else if (energy / windowSize >= 0.0001) {
+        for (let offset = minOffset; offset < maxOffset; offset++) {
+          let correlation = 0;
+          for (let j = 0; j < windowSize - offset; j++) correlation += data[i + j] * data[i + j + offset];
+          if (correlation > maxCorr) {
+            maxCorr = correlation;
+            bestOffset = offset;
+          }
+        }
+        if (bestOffset !== -1) {
+          const expectedAuto = energy;
+          if (expectedAuto > 0 && (maxCorr / expectedAuto) > 0.2) pitch = sr / bestOffset;
+        }
+      }
+
+      const rmsAmp = Math.sqrt(energy / windowSize);
+      const finalAmp = (forcePitch !== null && rmsAmp < 0.0001) ? 10 : rmsAmp * 1000;
+      results.push({ t: i / sr, f0: pitch, amp: finalAmp });
+    }
+
+    if (interpolate && results.length > 0) {
+      let lastValidIdx = -1;
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].f0 > 0) {
+          if (lastValidIdx !== -1 && i - lastValidIdx > 1) {
+            const startF0 = results[lastValidIdx].f0;
+            const endF0 = results[i].f0;
+            const steps = i - lastValidIdx;
+            const f0Step = (endF0 - startF0) / steps;
+            for (let j = 1; j < steps; j++) results[lastValidIdx + j].f0 = startF0 + f0Step * j;
+          } else if (lastValidIdx === -1 && i > 0) {
+            for (let j = 0; j < i; j++) results[j].f0 = results[i].f0;
+          }
+          lastValidIdx = i;
+        }
+      }
+      if (lastValidIdx !== -1 && lastValidIdx < results.length - 1) {
+        for (let j = lastValidIdx + 1; j < results.length; j++) results[j].f0 = results[lastValidIdx].f0;
+      }
+    }
+
+    return results;
+  },
+
+  getFrqAvg: (curve: { t: number, f0: number, amp: number }[]): number => {
+    let value = 0;
+    let r = 0;
+    let q = 0;
+    let freq_avg = 0;
+    let base_value = 0;
+    const p = new Array(6).fill(0);
+    const num_frames = curve.length;
+
+    for (let i = 0; i < num_frames; i++) {
+      value = curve[i].f0;
+      if (value < 1000.0 && value > 55.0) {
+        r = 1.0;
+        for (let j = 0; j <= 5; j++) {
+          if (i > j) {
+            q = curve[i - j - 1].f0 - value;
+            p[j] = value / (value + q * q);
+          } else {
+            p[j] = 1 / (1 + value);
+          }
+          r *= p[j];
+        }
+        freq_avg += value * r;
+        base_value += r;
+      }
+    }
+    if (base_value > 0) freq_avg /= base_value;
+    return freq_avg;
+  },
+
+  generateFrqBuffer: (curve: { t: number, f0: number, amp: number }[], stepSamples: number): ArrayBuffer => {
+    const headerSize = 40;
+    const numFrames = curve.length;
+    const bufferSize = headerSize + numFrames * 16;
+    const arrayBuffer = new ArrayBuffer(bufferSize);
+    const view = new DataView(arrayBuffer);
+
+    const magic = "FREQ0003";
+    for (let i = 0; i < magic.length; i++) view.setUint8(i, magic.charCodeAt(i));
+
+    view.setInt32(8, stepSamples, true);
+    const avgFrq = AudioUtils.getFrqAvg(curve);
+    view.setFloat64(12, avgFrq, true);
+    view.setInt32(36, numFrames, true);
+
+    for (let i = 0; i < numFrames; i++) {
+      const offset = headerSize + i * 16;
+      view.setFloat64(offset, curve[i].f0, true);
+      view.setFloat64(offset + 8, curve[i].amp, true);
+    }
+
+    return arrayBuffer;
+  },
+
+  pitchShiftLengthPreserving: async (ctx: OfflineAudioContext, buffer: AudioBuffer, pitchRatio: number): Promise<AudioBuffer> => {
+    if (Math.abs(pitchRatio - 1.0) < 0.01) return buffer;
+
+    const stretchFactor = 1 / pitchRatio;
+    const sr = buffer.sampleRate;
+    const outFrames = buffer.length;
+    const outBuffer = ctx.createBuffer(buffer.numberOfChannels, outFrames, sr);
+
+    const grainSize = Math.floor(sr * 0.05);
+    const overlap = Math.floor(grainSize * 0.5);
+    const hopSize = grainSize - overlap;
+
+    const win = new Float32Array(grainSize);
+    for (let i = 0; i < grainSize; i++) win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (grainSize - 1)));
+
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const input = buffer.getChannelData(c);
+      const output = outBuffer.getChannelData(c);
+      const stretchedFrames = Math.floor(buffer.length * stretchFactor);
+      const stretched = new Float32Array(stretchedFrames);
+
+      const inHop = stretchFactor > 1 ? Math.floor(hopSize / stretchFactor) : hopSize;
+      const outHop = stretchFactor > 1 ? hopSize : Math.floor(hopSize * stretchFactor);
+
+      let inPos = 0;
+      let outPos = 0;
+      while (inPos + grainSize < input.length && outPos + grainSize < stretched.length) {
+        for (let i = 0; i < grainSize; i++) stretched[outPos + i] += input[inPos + i] * win[i];
+        inPos += inHop;
+        outPos += outHop;
+      }
+
+      for (let i = 0; i < outFrames; i++) {
+        const srcIdx = i * pitchRatio;
+        const idx1 = Math.floor(srcIdx);
+        const idx2 = Math.min(idx1 + 1, stretchedFrames - 1);
+        const frac = srcIdx - idx1;
+        if (idx1 < stretchedFrames) output[i] = stretched[idx1] * (1 - frac) + stretched[idx2] * frac;
+      }
+    }
+
+    return outBuffer;
+  },
+
   deleteRange: (ctx: AudioContext, buf: AudioBuffer, startPct: number, endPct: number): AudioBuffer | null => {
     if (!buf || !ctx) return null;
     const start = Math.floor(buf.length * startPct);

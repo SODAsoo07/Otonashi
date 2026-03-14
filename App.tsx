@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+﻿import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Activity, Download, Globe, HelpCircle, Redo2, Undo2, Upload, User, Volume2 } from 'lucide-react';
 import FileRack from './components/FileRack';
 import HelpModal from './components/HelpModal';
@@ -7,12 +7,14 @@ import ConsonantTab from './components/ConsonantTab';
 import AdvancedTractTab from './components/AdvancedTractTab';
 import ConsonantGeneratorTab from './components/ConsonantGeneratorTab';
 import VocoderTab from './components/VocoderTab';
+import MiscTab from './components/MiscTab';
+import FrqTab from './components/FrqTab';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { AudioFile, UIConfig } from './types';
 import { AudioUtils } from './utils/audioUtils';
 import { LANGUAGE_LABELS } from './utils/translations';
 
-type TabId = 'editor' | 'generator' | 'consonant' | 'sim' | 'vocoder';
+type TabId = 'editor' | 'generator' | 'consonant' | 'sim' | 'vocoder' | 'misc' | 'frq';
 type HistoryState = {
     files: AudioFile[];
     activeFileId: string | null;
@@ -24,12 +26,14 @@ const APP_TEXT = {
         monitor: '모니터',
         tabs: {
             editor: '스튜디오',
-            generator: '자음 생성',
-            consonant: '자음 합성',
+            generator: '자음 생성기',
+            consonant: '자모음 합성기',
             sim: '성도 시뮬레이터',
             vocoder: '보코더',
+            misc: '기타',
+            frq: 'FRQ',
         },
-        undo: '전체 작업 실행 취소',
+        undo: '전체 작업 되돌리기',
         redo: '전체 작업 다시 실행',
         exportProject: '프로젝트 저장',
         importProject: '프로젝트 열기',
@@ -44,6 +48,8 @@ const APP_TEXT = {
             consonant: 'C-V Mixer',
             sim: 'Tract Sim',
             vocoder: 'Vocoder',
+            misc: 'Misc',
+            frq: 'FRQ',
         },
         undo: 'Undo all actions',
         redo: 'Redo all actions',
@@ -60,9 +66,11 @@ const APP_TEXT = {
             consonant: 'C-V ミキサー',
             sim: '声道シミュレーター',
             vocoder: 'ボコーダー',
+            misc: 'その他',
+            frq: 'FRQ',
         },
-        undo: '全体の操作を元に戻す',
-        redo: '全体の操作をやり直す',
+        undo: 'すべての操作を元に戻す',
+        redo: 'すべての操作をやり直す',
         exportProject: 'プロジェクトを保存',
         importProject: 'プロジェクトを開く',
         projectLoadError: 'プロジェクトの読み込み中にエラーが発生しました。',
@@ -101,6 +109,8 @@ const AppContent: React.FC = () => {
         { id: 'consonant', label: text.tabs.consonant },
         { id: 'sim', label: text.tabs.sim },
         { id: 'vocoder', label: text.tabs.vocoder },
+        { id: 'misc', label: text.tabs.misc },
+        { id: 'frq', label: text.tabs.frq },
     ];
 
     const commitHistory = useCallback((currentFiles: AudioFile[], currentActiveFileId: string | null) => {
@@ -250,9 +260,17 @@ const AppContent: React.FC = () => {
 
     const addToRack = (buffer: AudioBuffer, name: string) => {
         commitHistory(files, activeFileId);
+        const suggested = `${name}_${fileCounter.toString().padStart(3, '0')}`;
+        const input = window.prompt(language === 'ko'
+            ? '보관함에 저장할 파일 이름을 입력하세요.'
+            : language === 'ja'
+                ? 'ラックに保存するファイル名を入力してください。'
+                : 'Enter a file name to save in the rack.', suggested);
+        if (input === null) return null;
+        const finalName = input.trim() || suggested;
         const newFile = {
             id: Math.random().toString(36).substr(2, 9),
-            name: `${name}_${fileCounter.toString().padStart(3, '0')}`,
+            name: finalName,
             buffer,
         };
         setFiles(prev => [...prev, newFile]);
@@ -263,12 +281,14 @@ const AppContent: React.FC = () => {
 
     const sendSimToStudio = (buffer: AudioBuffer, name: string) => {
         const id = addToRack(buffer, name);
+        if (!id) return;
         setActiveFileId(id);
         setActiveTab('editor');
     };
 
     const sendSimToVocoder = (buffer: AudioBuffer, name: string) => {
-        addToRack(buffer, name);
+        const id = addToRack(buffer, name);
+        if (!id) return;
         setActiveTab('vocoder');
     };
 
@@ -401,6 +421,12 @@ const AppContent: React.FC = () => {
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'vocoder' ? 'flex' : 'none' }}>
                         <VocoderTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'vocoder'} monitorGainValue={monitorGainValue} />
                     </div>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'misc' ? 'flex' : 'none' }}>
+                        <MiscTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'misc'} monitorGainValue={monitorGainValue} />
+                    </div>
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'frq' ? 'flex' : 'none' }}>
+                        <FrqTab audioContext={audioContext} files={files} isActive={activeTab === 'frq'} />
+                    </div>
                 </div>
             </main>
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
@@ -415,3 +441,4 @@ const App: React.FC = () => (
 );
 
 export default App;
+

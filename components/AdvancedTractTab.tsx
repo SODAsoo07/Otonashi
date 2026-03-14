@@ -264,11 +264,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     const applyVowelPreset = (v: 'A' | 'E' | 'I' | 'O' | 'U' | 'W' | 'Y') => {
         const presets = {
-            'A': { x: 0.2, y: 0.1, lips: 0.9, lipLen: 0.5, nasal: 0.0, throat: 0.1 },
-            'E': { x: 0.6, y: 0.5, lips: 0.7, lipLen: 0.5, nasal: 0.0, throat: 0.3 },
-            'I': { x: 0.9, y: 0.9, lips: 0.2, lipLen: 0.5, nasal: 0.0, throat: 0.2 },
-            'O': { x: 0.2, y: 0.4, lips: 0.3, lipLen: 0.6, nasal: 0.0, throat: 0.5 },
-            'U': { x: 0.1, y: 0.8, lips: 0.2, lipLen: 0.8, nasal: 0.0, throat: 0.4 },
+            // Core vowels tuned for clearer formant contrast (semi-vowels W/Y unchanged)
+            'A': { x: 0.24, y: 0.12, lips: 0.86, lipLen: 0.38, nasal: 0.0, throat: 0.16 },
+            'E': { x: 0.74, y: 0.62, lips: 0.56, lipLen: 0.36, nasal: 0.0, throat: 0.24 },
+            'I': { x: 0.95, y: 0.90, lips: 0.20, lipLen: 0.24, nasal: 0.0, throat: 0.16 },
+            'O': { x: 0.20, y: 0.46, lips: 0.34, lipLen: 0.70, nasal: 0.0, throat: 0.42 },
+            'U': { x: 0.12, y: 0.84, lips: 0.14, lipLen: 0.90, nasal: 0.0, throat: 0.48 },
             'W': { x: 0.0, y: 0.9, lips: 0.0, lipLen: 1.0, nasal: 0.0, throat: 0.4 }, // Labio-velar (extreme U)
             'Y': { x: 1.0, y: 0.9, lips: 0.8, lipLen: 0.1, nasal: 0.0, throat: 0.2 }  // Palatal (extreme I)
         };
@@ -1049,6 +1050,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     simPauseOffsetRef={simPauseOffsetRef}
                     advDuration={advDuration}
                     onResetAllKeyframes={handleResetAllKeyframes}
+                    onUndo={handleUndo}
+                    onRedo={handleRedo}
+                    undoStackLength={undoStack.length}
+                    redoStackLength={redoStack.length}
                 />
             </div>
         </div>
