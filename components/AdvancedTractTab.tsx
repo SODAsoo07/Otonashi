@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves } from 'lucide-react';
+import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves, Download, Upload } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
@@ -238,6 +238,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [ghostTracks, setGhostTracks] = useState<AdvTrack[] | null>(null);
     const [showGhost, setShowGhost] = useState(true);
     const spectrogramCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const tractStateInputRef = useRef<HTMLInputElement | null>(null);
 
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },
@@ -358,8 +359,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     }, [language, localizeTracks]);
 
     const getCurrentState = useCallback(() => ({
-        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration
-    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration]);
+        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration,
+        isEditMode, selectedTrackId, playHeadPos
+    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos]);
 
     const commitChange = useCallback((label: string = "변경") => {
         const state = getCurrentState();
@@ -373,7 +375,69 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setManualPitch(state.manualPitch || 220); setManualGender(state.manualGender || 1.0); if (state.eqBands) setEqBands(state.eqBands);
         setSimIntensity(state.simIntensity !== undefined ? state.simIntensity : 1.0);
         setAdvDuration(state.advDuration !== undefined ? state.advDuration : 2.0);
-    }, [localizeTracks]);
+        if (typeof state.isEditMode === 'boolean') setIsEditMode(state.isEditMode);
+        if (typeof state.selectedTrackId === 'string') setSelectedTrackId(state.selectedTrackId);
+        const restoredPlayhead = typeof state.playHeadPos === 'number' ? state.playHeadPos : playHeadPos;
+        setPlayheadPos(restoredPlayhead);
+        simPauseOffsetRef.current = restoredPlayhead * (state.advDuration !== undefined ? state.advDuration : advDuration);
+    }, [localizeTracks, playHeadPos, advDuration]);
+
+    const simStateSaveLabel = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uC800\uC7A5' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u3092\u4FDD\u5B58' : 'Save Sim State';
+    const simStateLoadLabel = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uBD88\uB7EC\uC624\uAE30' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u3092\u8AAD\u307F\u8FBC\u307F' : 'Load Sim State';
+    const simStateSectionTitle = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uD504\uB9AC\uC14B' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u30D7\u30EA\u30BB\u30C3\u30C8' : 'Sim State Preset';
+    const simStateImportError = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uD30C\uC77C\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u30D5\u30A1\u30A4\u30EB\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002' : 'Failed to load sim state file.';
+    const simStateInvalidFile = language === 'ko' ? '\uC720\uD6A8\uD55C \uC131\uB3C4 \uC0C1\uD0DC \uD30C\uC77C\uC774 \uC544\uB2D9\uB2C8\uB2E4.' : language === 'ja' ? '\u6709\u52B9\u306A\u58F0\u9053\u72B6\u614B\u30D5\u30A1\u30A4\u30EB\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002' : 'Invalid sim state file.';
+
+    const handleExportSimState = useCallback(() => {
+        const payload = {
+            kind: 'otonashi-tract-state',
+            version: '1.0',
+            exportedAt: new Date().toISOString(),
+            simState: getCurrentState(),
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `otonashi_tract_state_${Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+    }, [getCurrentState]);
+
+    const handleImportSimState = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            const raw = JSON.parse(await file.text());
+            const incoming = raw?.simState ?? raw?.tractState ?? raw;
+
+            if (!incoming || typeof incoming !== 'object') {
+                alert(simStateInvalidFile);
+                return;
+            }
+
+            const current = getCurrentState();
+            const merged = {
+                ...current,
+                ...incoming,
+                larynxParams: incoming.larynxParams ? { ...current.larynxParams, ...incoming.larynxParams } : current.larynxParams,
+                liveTract: incoming.liveTract ? { ...current.liveTract, ...incoming.liveTract } : current.liveTract,
+                advTracks: Array.isArray(incoming.advTracks) ? incoming.advTracks : current.advTracks,
+                eqBands: Array.isArray(incoming.eqBands) ? incoming.eqBands : current.eqBands,
+                isEditMode: typeof incoming.isEditMode === 'boolean' ? incoming.isEditMode : current.isEditMode,
+                selectedTrackId: typeof incoming.selectedTrackId === 'string' ? incoming.selectedTrackId : current.selectedTrackId,
+                playHeadPos: typeof incoming.playHeadPos === 'number' ? incoming.playHeadPos : current.playHeadPos,
+            };
+
+            commitChange('Import sim state');
+            restoreState(merged);
+        } catch {
+            alert(simStateImportError);
+        } finally {
+            e.target.value = '';
+        }
+    }, [getCurrentState, commitChange, restoreState, simStateImportError, simStateInvalidFile]);
 
     const handleUndo = useCallback(() => {
         if (undoStack.length === 0) return;
@@ -831,6 +895,32 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 font-bold">
                         {sidebarTab === 'settings' ? (
                             <div className="space-y-6">
+                                <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{simStateSectionTitle}</h3>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={handleExportSimState}
+                                            className="flex-1 py-2 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg text-xs font-black text-slate-700 transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                        >
+                                            <Download size={13} />
+                                            {simStateSaveLabel}
+                                        </button>
+                                        <button
+                                            onClick={() => tractStateInputRef.current?.click()}
+                                            className="flex-1 py-2 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg text-xs font-black text-indigo-700 transition-all shadow-sm flex items-center justify-center gap-1.5"
+                                        >
+                                            <Upload size={13} />
+                                            {simStateLoadLabel}
+                                        </button>
+                                    </div>
+                                    <input
+                                        ref={tractStateInputRef}
+                                        type="file"
+                                        accept=".json"
+                                        className="hidden"
+                                        onChange={handleImportSimState}
+                                    />
+                                </div>
                                 <div className="space-y-2">
                                     <div className="flex items-center justify-between">
                                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">{text.vowelPresets}</h3>

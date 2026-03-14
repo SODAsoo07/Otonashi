@@ -112,6 +112,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const [canvasSize, setCanvasSize] = useState({ w: 1000, h: 200 });
     const [globalShiftStart, setGlobalShiftStart] = useState<{ y: number, initialPoints: {t: number, v: number}[] } | null>(null);
     const [isShiftHeld, setIsShiftHeld] = useState(false);
+    const [isCtrlHeld, setIsCtrlHeld] = useState(false);
     const [overlayTrackIds, setOverlayTrackIds] = useState<string[]>([]);
 
     useEffect(() => {
@@ -134,13 +135,28 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         });
     };
 
-    // Track Shift Key
+    // Track modifier keys
     useEffect(() => {
-        const down = (e: KeyboardEvent) => { if(e.key === 'Shift') setIsShiftHeld(true); };
-        const up = (e: KeyboardEvent) => { if(e.key === 'Shift') setIsShiftHeld(false); };
+        const down = (e: KeyboardEvent) => {
+            if (e.key === 'Shift') setIsShiftHeld(true);
+            if (e.key === 'Control' || e.key === 'Meta') setIsCtrlHeld(true);
+        };
+        const up = (e: KeyboardEvent) => {
+            if (e.key === 'Shift') setIsShiftHeld(false);
+            if (e.key === 'Control' || e.key === 'Meta') setIsCtrlHeld(false);
+        };
+        const blur = () => {
+            setIsShiftHeld(false);
+            setIsCtrlHeld(false);
+        };
         window.addEventListener('keydown', down);
         window.addEventListener('keyup', up);
-        return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+        window.addEventListener('blur', blur);
+        return () => {
+            window.removeEventListener('keydown', down);
+            window.removeEventListener('keyup', up);
+            window.removeEventListener('blur', blur);
+        };
     }, []);
 
     // Handle resize to match parent flex container
@@ -160,74 +176,89 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     }, []);
 
     const handleMouseDown = (e: React.MouseEvent) => {
-        if(!canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); 
+        if (!canvasRef.current) return;
+        const rect = canvasRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         const t = Math.max(0, Math.min(1, x / rect.width));
-        
-        // 1. Global Shift Mode (Shift + Drag)
+
+        const movePlayhead = () => {
+            setPlayheadPos(t);
+            syncVisualsToTime(t);
+            simPauseOffsetRef.current = t * advDuration;
+            if (isAdvPlaying) handleSimulationPlay();
+            setDraggingKeyframe({ isPlayhead: true });
+        };
+
+        // Ctrl/Cmd while in edit mode: timeline navigation
+        if (e.ctrlKey || e.metaKey) {
+            movePlayhead();
+            return;
+        }
+
+        // Global Shift Mode (Shift + Drag)
         if (isEditMode && e.shiftKey) {
             const track = advTracks.find(tr => tr.id === selectedTrackId);
             if (track) {
+                commitChange('Global offset');
                 setGlobalShiftStart({ y, initialPoints: [...track.points] });
                 setDraggingKeyframe({ isGlobalShift: true, trackId: selectedTrackId });
-                return;
             }
-        }
-
-        if (y < RULER_HEIGHT + 3 && !isEditMode) {
-            setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; 
-            if(isAdvPlaying) handleSimulationPlay();
-            setDraggingKeyframe({ isPlayhead: true });
             return;
         }
-        if (isEditMode) {
-            const track = advTracks.find(tr => tr.id === selectedTrackId);
-            if (track) {
-                const graphH = rect.height - RULER_HEIGHT;
-                const hitIdx = track.points.findIndex(p => Math.hypot((p.t * rect.width)-x, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH)-y) < 15);
-                if (e.button === 2) { 
-                    e.preventDefault(); 
-                    if(hitIdx !== -1 && track.points.length > 2) { 
-                        setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, points: t.points.filter((_, i) => i !== hitIdx) } : t)); 
-                        commitChange("포인트 삭제"); 
-                    } 
-                    return; 
-                }
-                if (hitIdx !== -1) { setDraggingKeyframe({ trackId: selectedTrackId, index: hitIdx }); return; }
-                if (y >= RULER_HEIGHT) {
-                    const val = track.min + ((1 - ((y - RULER_HEIGHT) / graphH)) * (track.max - track.min)); 
-                    const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t); 
-                    setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr));
-                    setDraggingKeyframe({ trackId: selectedTrackId, index: nPts.findIndex(p => p.t === t) }); 
-                    commitChange("포인트 추가"); 
-                }
+
+        if (!isEditMode) {
+            movePlayhead();
+            return;
+        }
+
+        const track = advTracks.find(tr => tr.id === selectedTrackId);
+        if (!track) return;
+
+        const graphH = rect.height - RULER_HEIGHT;
+        const hitIdx = track.points.findIndex(
+            p => Math.hypot((p.t * rect.width) - x, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH) - y) < 15
+        );
+
+        if (e.button === 2) {
+            e.preventDefault();
+            if (hitIdx !== -1 && track.points.length > 2) {
+                commitChange('Delete point');
+                setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: tr.points.filter((_, i) => i !== hitIdx) } : tr));
             }
-        } else {
-            setPlayheadPos(t); syncVisualsToTime(t);
-            simPauseOffsetRef.current = t * advDuration; 
-            if(isAdvPlaying) handleSimulationPlay();
-            setDraggingKeyframe({ isPlayhead: true });
+            return;
+        }
+
+        if (hitIdx !== -1) {
+            commitChange('Move point');
+            setDraggingKeyframe({ trackId: selectedTrackId, index: hitIdx });
+            return;
+        }
+
+        if (y >= RULER_HEIGHT) {
+            commitChange('Add point');
+            const val = track.min + ((1 - ((y - RULER_HEIGHT) / graphH)) * (track.max - track.min));
+            const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t);
+            setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr));
+            setDraggingKeyframe({ trackId: selectedTrackId, index: nPts.findIndex(p => p.t === t) });
         }
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
         if(!draggingKeyframe || !canvasRef.current) return;
-        const rect = canvasRef.current.getBoundingClientRect(); 
+        const rect = canvasRef.current.getBoundingClientRect();
         const t = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        
+
         // Handle Global Shift Drag
         if (draggingKeyframe.isGlobalShift && globalShiftStart && draggingKeyframe.trackId) {
             const dy = e.clientY - rect.top - globalShiftStart.y;
             const track = advTracks.find(t => t.id === draggingKeyframe.trackId);
             if (!track) return;
-            
+
             const graphH = rect.height - RULER_HEIGHT;
             const range = track.max - track.min;
-            const deltaV = -(dy / graphH) * range; 
-            
+            const deltaV = -(dy / graphH) * range;
+
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
                 const newPoints = globalShiftStart.initialPoints.map(p => ({
@@ -239,24 +270,29 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             return;
         }
 
-        if (draggingKeyframe.isPlayhead) { 
-            setPlayheadPos(t); 
-            syncVisualsToTime(t); 
-        } 
-        else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) { 
-            const gH = rect.height - RULER_HEIGHT; 
-            const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH))); 
+        if (draggingKeyframe.isPlayhead) {
+            setPlayheadPos(t);
+            syncVisualsToTime(t);
+        }
+        else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) {
+            const gH = rect.height - RULER_HEIGHT;
+            const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH)));
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
                 const valActual = tr.min + nV * (tr.max - tr.min);
-                return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: valActual } : p).sort((a,b)=>a.t-b.t) }; 
+                return { ...tr, points: tr.points.map((p, i) => i === draggingKeyframe.index ? { t, v: valActual } : p) };
             }));
         }
     };
 
-    const handleMouseUp = () => { 
-        if(draggingKeyframe) commitChange("편집 완료"); 
-        setDraggingKeyframe(null); 
+    const handleMouseUp = () => {
+        if (draggingKeyframe?.trackId) {
+            setAdvTracks(prev => prev.map(tr => {
+                if (tr.id !== draggingKeyframe.trackId) return tr;
+                return { ...tr, points: [...tr.points].sort((a, b) => a.t - b.t) };
+            }));
+        }
+        setDraggingKeyframe(null);
         setGlobalShiftStart(null);
     };
 
@@ -412,7 +448,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     // Determine Cursor
     let cursorClass = 'cursor-text';
     if (isEditMode) {
-        if (isShiftHeld) cursorClass = 'cursor-ns-resize'; // Global Shift
+        if (isCtrlHeld) cursorClass = 'cursor-ew-resize'; // Timeline navigation
+        else if (isShiftHeld) cursorClass = 'cursor-ns-resize'; // Global Shift
         else cursorClass = 'cursor-crosshair';
     }
 
