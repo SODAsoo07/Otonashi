@@ -1053,6 +1053,38 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             <Activity size={14} />
                             {gainGraphLabel}
                         </button>
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{text.masterOutput}</span>
+                            <button
+                                onClick={() => setNormalizationEnabled(!normalizationEnabled)}
+                                className={`h-7 px-2 rounded-md border flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-tight transition-all ${normalizationEnabled ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm' : 'bg-white text-slate-500 border-slate-200'}`}
+                                title={text.normalizeTitle}
+                            >
+                                <Activity size={11} className={normalizationEnabled ? "text-indigo-200" : ""} />
+                                {text.normalizeShort}
+                            </button>
+                            <button
+                                onClick={() => setBypassEffects(!bypassEffects)}
+                                className={`h-7 px-2 rounded-md border flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-tight transition-all ${bypassEffects ? 'bg-amber-500 text-white border-amber-400 shadow-sm' : 'bg-white text-slate-400 border-slate-200'}`}
+                                title={text.bypassTitle}
+                            >
+                                <Power size={11} className={bypassEffects ? "animate-pulse" : ""} />
+                                {text.bypass}
+                            </button>
+                            <div className="flex items-center gap-1">
+                                <span className="text-[9px] font-black text-slate-400 uppercase">{text.gain}</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="2"
+                                    step="0.01"
+                                    value={masterGain}
+                                    onChange={e => setMasterGain(Number(e.target.value))}
+                                    className="w-24 h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+                                />
+                                <span className="text-[10px] font-black text-indigo-600 w-9 text-right">{(masterGain * 100).toFixed(0)}%</span>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="flex gap-6 flex-col lg:flex-row">
@@ -1147,36 +1179,6 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                            <div className="p-5 border-t border-slate-200 bg-slate-50/50 space-y-4">
-                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Activity size={14} /> {text.masterOutput}</h3>
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="flex flex-col gap-2 flex-1">
-                                        <button
-                                            onClick={() => setNormalizationEnabled(!normalizationEnabled)}
-                                            className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${normalizationEnabled ? 'bg-indigo-600 text-white border-indigo-400 shadow-sm' : 'bg-white text-slate-500 border-slate-200'}`}
-                                            title={text.normalizeTitle}
-                                        >
-                                            <Activity size={12} className={normalizationEnabled ? "text-indigo-200" : ""} />
-                                            <span className="text-[10px] font-black uppercase tracking-tight">{text.normalizeShort}</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setBypassEffects(!bypassEffects)}
-                                            className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${bypassEffects ? 'bg-amber-500 text-white border-amber-400 shadow-sm' : 'bg-white text-slate-400 border-slate-200'}`}
-                                            title={text.bypassTitle}
-                                        >
-                                            <Power size={12} className={bypassEffects ? "animate-pulse" : ""} />
-                                            <span className="text-[10px] font-black uppercase tracking-tight">{text.bypass}</span>
-                                        </button>
-                                    </div>
-                                    <div className="flex-[1.5] space-y-1">
-                                        <div className="flex justify-between text-[9px] font-black text-slate-400 uppercase">
-                                            <span>{text.gain}</span>
-                                            <span className="text-indigo-600">{(masterGain * 100).toFixed(0)}%</span>
-                                        </div>
-                                        <input type="range" min="0" max="2" step="0.01" value={masterGain} onChange={e => setMasterGain(Number(e.target.value))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" />
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
