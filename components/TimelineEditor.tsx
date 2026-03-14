@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { PencilLine, Eye, EyeOff, GitCommit, Spline, MoveVertical } from 'lucide-react';
+import { PencilLine, Eye, EyeOff, GitCommit, Spline, MoveVertical, RotateCcw } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AdvTrack } from '../types';
 import { RULER_HEIGHT } from '../utils/audioUtils';
@@ -28,6 +28,7 @@ interface TimelineEditorProps {
     getValueAtTime: (id: string, t: number, tracks?: AdvTrack[]) => number;
     simPauseOffsetRef: React.MutableRefObject<number>;
     advDuration: number;
+    onResetAllKeyframes: () => void;
 }
 
 const TIMELINE_TEXT = {
@@ -77,10 +78,21 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     playHeadPos, setPlayheadPos, syncVisualsToTime, handleSimulationPlay, isAdvPlaying,
     commitChange, isEditMode, setIsEditMode, showGhost, setShowGhost, ghostTracks,
     showSpectrogram, spectrogramCanvas, previewBuffer, getCurrentValue, getValueAtTime,
-    simPauseOffsetRef, advDuration
+    simPauseOffsetRef, advDuration, onResetAllKeyframes
 }) => {
     const { language } = useLanguage();
     const text = TIMELINE_TEXT[language];
+    const resetAllLabel = language === 'ko' ? '\uC804\uCCB4 \uCD08\uAE30\uD654' : language === 'ja' ? '\u5168\u4F53\u30EA\u30BB\u30C3\u30C8' : 'Reset All';
+    const resetAllTitle = language === 'ko'
+        ? '\uBAA8\uB4E0 \uD0A4\uD504\uB808\uC784\uC744 \uAE30\uBCF8\uAC12\uC73C\uB85C \uCD08\uAE30\uD654'
+        : language === 'ja'
+            ? '\u3059\u3079\u3066\u306E\u30AD\u30FC\u30D5\u30EC\u30FC\u30E0\u3092\u521D\u671F\u5024\u306B\u623B\u3059'
+            : 'Reset all keyframes to defaults';
+    const resetAllConfirm = language === 'ko'
+        ? '\uBAA8\uB4E0 \uD0A4\uD504\uB808\uC784\uC744 \uAE30\uBCF8\uAC12\uC73C\uB85C \uCD08\uAE30\uD654\uD560\uAE4C\uC694?'
+        : language === 'ja'
+            ? '\u3059\u3079\u3066\u306E\u30AD\u30FC\u30D5\u30EC\u30FC\u30E0\u3092\u521D\u671F\u5024\u306B\u623B\u3057\u307E\u3059\u304B\uFF1F'
+            : 'Reset all keyframes to defaults?';
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [draggingKeyframe, setDraggingKeyframe] = useState<{
@@ -357,6 +369,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             {showGhost ? <Eye size={14} /> : <EyeOff size={14} />} {text.guide}
                         </button>
                     )}
+                    <button
+                        onClick={() => {
+                            if (window.confirm(resetAllConfirm)) {
+                                onResetAllKeyframes();
+                            }
+                        }}
+                        className="px-2.5 py-1 text-[10px] font-black rounded-lg border transition-all flex items-center gap-1 bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100"
+                        title={resetAllTitle}
+                    >
+                        <RotateCcw size={13} />
+                        {resetAllLabel}
+                    </button>
                     <button
                         onClick={() => {
                             setAdvTracks(prev => prev.map(t => t.id === selectedTrackId ? { ...t, interpolation: t.interpolation === 'curve' ? 'linear' : 'curve' } : t));

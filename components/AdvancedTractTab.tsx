@@ -775,6 +775,25 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         commitChange("기록");
     }
 
+    const handleResetAllKeyframes = useCallback(() => {
+        commitChange("Reset all keyframes");
+        const defaultTracks = createDefaultAdvTracks(language);
+        setAdvTracks(defaultTracks);
+        setSelectedTrackId('pitch');
+        setPlayheadPos(0);
+        simPauseOffsetRef.current = 0;
+        setLiveTract({
+            x: getValueAtTime('tongueX', 0, defaultTracks),
+            y: getValueAtTime('tongueY', 0, defaultTracks),
+            lips: getValueAtTime('lips', 0, defaultTracks),
+            lipLen: getValueAtTime('lipLen', 0, defaultTracks),
+            throat: getValueAtTime('throat', 0, defaultTracks),
+            nasal: getValueAtTime('nasal', 0, defaultTracks),
+        });
+        setManualPitch(getValueAtTime('pitch', 0, defaultTracks));
+        setManualGender(getValueAtTime('gender', 0, defaultTracks));
+    }, [commitChange, language, getValueAtTime]);
+
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
 
     return (
@@ -939,6 +958,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     getValueAtTime={getValueAtTime}
                     simPauseOffsetRef={simPauseOffsetRef}
                     advDuration={advDuration}
+                    onResetAllKeyframes={handleResetAllKeyframes}
                 />
             </div>
         </div>
