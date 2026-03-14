@@ -198,6 +198,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     // Clipboard State
     const [clipboard, setClipboard] = useState<AudioBuffer | null>(null);
+    const [mixPasteGain, setMixPasteGain] = useState(1.0);
+    const [fitClipboardToSelection, setFitClipboardToSelection] = useState(true);
 
     // UI Tabs
     const [sideTab, setSideTab] = useState<'effects' | 'formant_filter' | 'formant'>('effects');
@@ -255,6 +257,35 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
     }, [activeBuffer]);
 
+    const mixPasteLabel = language === 'ko' ? '\uBBF9\uC2A4' : language === 'ja' ? '\u30DF\u30C3\u30AF\u30B9' : 'Mix';
+    const fitSelectionLabel = language === 'ko' ? '\uC120\uD0DD\uAD6C\uAC04 \uB9DE\uCDA4' : language === 'ja' ? '\u9078\u629E\u7BC4\u56F2\u306B\u5408\u308F\u305B\u308B' : 'Fit Selection';
+    const gainGraphLabel = language === 'ko' ? '\uAC8C\uC778 \uADF8\uB798\uD504' : language === 'ja' ? '\u30B2\u30A4\u30F3\u30B0\u30E9\u30D5' : 'Gain Graph';
+    const gainGraphHint = language === 'ko'
+        ? 'Shift+\uD074\uB9AD \uCD94\uAC00, \uB4DC\uB798\uADF8 \uC774\uB3D9, \uC6B0\uD074\uB9AD \uC0AD\uC81C'
+        : language === 'ja'
+            ? 'Shift+\u30AF\u30EA\u30C3\u30AF\u3067\u8FFD\u52A0\u3001\u30C9\u30E9\u30C3\u30B0\u3067\u79FB\u52D5\u3001\u53F3\u30AF\u30EA\u30C3\u30AF\u3067\u524A\u9664'
+            : 'Shift+Click add, drag move, right-click delete';
+
+    const mixBuffersWithGain = useCallback((base: AudioBuffer, overlay: AudioBuffer, startSample: number, gain: number) => {
+        const numChannels = Math.max(base.numberOfChannels, overlay.numberOfChannels);
+        const length = Math.max(base.length, startSample + overlay.length);
+        const newBuf = audioContext.createBuffer(numChannels, length, base.sampleRate);
+        const safeGain = Math.max(0, Math.min(2, gain));
+
+        for (let i = 0; i < numChannels; i++) {
+            const out = newBuf.getChannelData(i);
+            const baseData = i < base.numberOfChannels ? base.getChannelData(i) : null;
+            const overlayData = i < overlay.numberOfChannels ? overlay.getChannelData(i) : null;
+
+            for (let j = 0; j < length; j++) {
+                const dry = baseData && j < baseData.length ? baseData[j] : 0;
+                const wet = overlayData && j >= startSample && (j - startSample) < overlay.length ? overlayData[j - startSample] * safeGain : 0;
+                out[j] = Math.tanh(dry + wet);
+            }
+        }
+        return newBuf;
+    }, [audioContext]);
+
     const handleUndo = useCallback(() => {
         if (undoStack.length === 0 || !activeBuffer) return;
         const prev = undoStack[undoStack.length - 1];
@@ -281,18 +312,31 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
     }, [activeBuffer, audioContext, editTrim]);
 
-    const handlePasteMix = useCallback(() => {
+    const handlePasteMix = useCallback(async () => {
         if (!activeBuffer || !clipboard) return;
         pushUndo("Mix Paste");
 
-        // Calculate insert point from playhead
-        const startSample = Math.floor((playheadPos / 100) * activeBuffer.duration * activeBuffer.sampleRate);
-        const newBuf = AudioUtils.mixBuffersAtTime(audioContext, activeBuffer, clipboard, startSample);
+        let overlayBuf = clipboard;
+        let startSample = Math.floor((playheadPos / 100) * activeBuffer.length);
+        const hasSelection = editTrim.start > 0.0001 || editTrim.end < 0.9999;
 
-        if (newBuf) {
-            onUpdateFile(newBuf);
+        if (hasSelection) {
+            const selectionStartSample = Math.floor(activeBuffer.length * editTrim.start);
+            const selectionDurSec = (editTrim.end - editTrim.start) * activeBuffer.duration;
+            startSample = selectionStartSample;
+
+            if (fitClipboardToSelection && selectionDurSec > 0.001) {
+                const ratio = overlayBuf.duration / selectionDurSec;
+                if (Number.isFinite(ratio) && ratio > 0) {
+                    const stretched = await AudioUtils.applyStretch(overlayBuf, ratio);
+                    if (stretched) overlayBuf = stretched;
+                }
+            }
         }
-    }, [activeBuffer, clipboard, audioContext, playheadPos, pushUndo, onUpdateFile]);
+
+        const newBuf = mixBuffersWithGain(activeBuffer, overlayBuf, startSample, mixPasteGain);
+        onUpdateFile(newBuf);
+    }, [activeBuffer, clipboard, playheadPos, editTrim, fitClipboardToSelection, mixPasteGain, pushUndo, onUpdateFile, mixBuffersWithGain]);
 
     const handlePasteImprint = useCallback(async () => {
         if (!activeBuffer || !clipboard) return;
@@ -385,6 +429,82 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             onAddToRack(newBuf, `${activeFile?.name}_Cut`);
         }
     }, [activeBuffer, audioContext, editTrim, activeFile, onAddToRack]);
+
+    const renderFormantOnly = useCallback(async (buf: AudioBuffer) => {
+        if (!buf || !audioContext) return null;
+        const offline = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate);
+
+        const src = offline.createBufferSource();
+        src.buffer = buf;
+
+        const fShift = offline.createBiquadFilter();
+        fShift.type = 'peaking';
+        fShift.frequency.value = 1000 * genderShift;
+        fShift.gain.value = 6;
+
+        const fNodes = [formant.f1, formant.f2, formant.f3, formant.f4].map((freq, idx) => {
+            const f = offline.createBiquadFilter();
+            f.type = 'peaking';
+            f.frequency.value = freq;
+            f.Q.value = formant.resonance;
+            f.gain.value = 12 - (idx * 2);
+            return f;
+        });
+
+        src.connect(fShift);
+        let lastNode: AudioNode = fShift;
+        fNodes.forEach(node => {
+            lastNode.connect(node);
+            lastNode = node;
+        });
+
+        if (singersFormantEnabled) {
+            const sfFilter = offline.createBiquadFilter();
+            sfFilter.type = 'peaking';
+            sfFilter.frequency.value = singersFormantFreq;
+            sfFilter.gain.value = singersFormantGain;
+            sfFilter.Q.value = singersFormantQ;
+            lastNode.connect(sfFilter);
+            lastNode = sfFilter;
+        }
+
+        lastNode.connect(offline.destination);
+        src.start(0);
+        return await offline.startRendering();
+    }, [audioContext, formant, genderShift, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
+
+    const applyFormantLabel = language === 'ko' ? '\uD3EC\uBA3C\uD2B8 \uC801\uC6A9' : language === 'ja' ? '\u30D5\u30A9\u30EB\u30DE\u30F3\u30C8\u9069\u7528' : 'Apply Formant';
+    const applyFormantHint = language === 'ko'
+        ? '\uC120\uD0DD \uC601\uC5ED\uC774 \uC788\uC73C\uBA74 \uADF8 \uAD6C\uAC04\uC5D0\uB9CC \uC801\uC6A9\uB429\uB2C8\uB2E4.'
+        : language === 'ja'
+            ? '\u9078\u629E\u9818\u57DF\u304C\u3042\u308C\u3070\u305D\u306E\u533A\u9593\u3060\u3051\u306B\u9069\u7528\u3055\u308C\u307E\u3059\u3002'
+            : 'If a selection exists, apply only to that range.';
+
+    const handleApplyFormantFilter = useCallback(async () => {
+        if (!activeBuffer) return;
+
+        const hasSelectedRange = editTrim.start > 0.0001 || editTrim.end < 0.9999;
+        pushUndo("Apply Formant Filter");
+
+        if (hasSelectedRange) {
+            const selectionBuf = AudioUtils.createBufferFromSlice(audioContext, activeBuffer, editTrim.start, editTrim.end);
+            if (!selectionBuf) return;
+
+            const processedSelection = await renderFormantOnly(selectionBuf);
+            if (!processedSelection) return;
+
+            const tempBuf = AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end);
+            if (!tempBuf) return;
+
+            const startSample = Math.floor(activeBuffer.duration * editTrim.start * activeBuffer.sampleRate);
+            const finalBuf = AudioUtils.mixBuffersAtTime(audioContext, tempBuf, processedSelection, startSample);
+            onUpdateFile(finalBuf);
+            return;
+        }
+
+        const processed = await renderFormantOnly(activeBuffer);
+        if (processed) onUpdateFile(processed);
+    }, [activeBuffer, audioContext, editTrim, onUpdateFile, pushUndo, renderFormantOnly]);
 
     const stopPlayback = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch (e) { } sourceRef.current = null; }
@@ -634,6 +754,29 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
         ctx.stroke();
 
+        if (showAutomation && volumeKeyframes.length > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 2;
+            volumeKeyframes.forEach((p, idx) => {
+                const x = p.t * w;
+                const y = yOffset + (1 - Math.max(0, Math.min(1, p.v))) * waveH;
+                if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            volumeKeyframes.forEach((p, idx) => {
+                const x = p.t * w;
+                const y = yOffset + (1 - Math.max(0, Math.min(1, p.v))) * waveH;
+                ctx.beginPath();
+                ctx.fillStyle = idx === 0 || idx === volumeKeyframes.length - 1 ? '#10b981' : '#34d399';
+                ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
         const sX = editTrim.start * w, eX = editTrim.end * w;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
         ctx.fillRect(sX, RULER_HEIGHT, eX - sX, waveH);
@@ -643,6 +786,107 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             ctx.beginPath(); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1; ctx.moveTo(px, 0); ctx.lineTo(px, h); ctx.stroke();
         }
     }, [activeBuffer, editTrim, playheadPos, showAutomation, volumeKeyframes]);
+
+    const handleTimelineMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (!canvasRef.current) return;
+        const rect = canvasRef.current.getBoundingClientRect();
+        const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const yPx = e.clientY - rect.top;
+        const waveH = rect.height - RULER_HEIGHT;
+        const vFromY = Math.max(0, Math.min(1, 1 - ((yPx - RULER_HEIGHT) / waveH)));
+
+        const findGainHit = (pct: number, py: number) => {
+            const hitRadius = 10;
+            for (let i = 0; i < volumeKeyframes.length; i++) {
+                const p = volumeKeyframes[i];
+                const px = p.t * rect.width;
+                const y = RULER_HEIGHT + (1 - p.v) * waveH;
+                if (Math.hypot(px - (pct * rect.width), y - py) <= hitRadius) return i;
+            }
+            return -1;
+        };
+
+        // Gain graph editing
+        if (showAutomation && yPx >= RULER_HEIGHT) {
+            const hitIdx = findGainHit(xPct, yPx);
+
+            if (e.button === 2) {
+                e.preventDefault();
+                if (hitIdx > 0 && hitIdx < volumeKeyframes.length - 1) {
+                    pushUndo('Delete Gain Keyframe');
+                    setVolumeKeyframes(prev => prev.filter((_, i) => i !== hitIdx));
+                }
+                return;
+            }
+
+            if (hitIdx !== -1 || e.shiftKey) {
+                let targetIdx = hitIdx;
+                if (hitIdx === -1 && e.shiftKey) {
+                    pushUndo('Add Gain Keyframe');
+                    setVolumeKeyframes(prev => {
+                        const next = [...prev, { t: xPct, v: vFromY }].sort((a, b) => a.t - b.t);
+                        targetIdx = next.findIndex(p => Math.abs(p.t - xPct) < 1e-6 && Math.abs(p.v - vFromY) < 1e-6);
+                        return next;
+                    });
+                } else {
+                    pushUndo('Move Gain Keyframe');
+                }
+
+                const move = (me: MouseEvent) => {
+                    const curRect = canvasRef.current?.getBoundingClientRect();
+                    if (!curRect) return;
+                    const curXPct = Math.max(0, Math.min(1, (me.clientX - curRect.left) / curRect.width));
+                    const curYPx = me.clientY - curRect.top;
+                    const curV = Math.max(0, Math.min(1, 1 - ((curYPx - RULER_HEIGHT) / (curRect.height - RULER_HEIGHT))));
+
+                    setVolumeKeyframes(prev => {
+                        if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+                        const next = [...prev];
+                        const isFirst = targetIdx === 0;
+                        const isLast = targetIdx === next.length - 1;
+                        const minT = isFirst ? 0 : next[targetIdx - 1].t + 0.001;
+                        const maxT = isLast ? 1 : next[targetIdx + 1].t - 0.001;
+                        const nextT = isFirst ? 0 : isLast ? 1 : Math.max(minT, Math.min(maxT, curXPct));
+                        next[targetIdx] = { t: nextT, v: curV };
+                        return next;
+                    });
+                };
+
+                const up = () => {
+                    window.removeEventListener('mousemove', move);
+                    window.removeEventListener('mouseup', up);
+                };
+
+                window.addEventListener('mousemove', move);
+                window.addEventListener('mouseup', up);
+                return;
+            }
+        }
+
+        // default: selection drag
+        setPlayheadPos(xPct * 100);
+        pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
+        const startX = xPct;
+        setEditTrim({ start: startX, end: startX });
+
+        const move = (me: MouseEvent) => {
+            const curRect = canvasRef.current?.getBoundingClientRect();
+            if (!curRect) return;
+            const curX = Math.max(0, Math.min(1, (me.clientX - curRect.left) / curRect.width));
+            setEditTrim({
+                start: Math.min(startX, curX),
+                end: Math.max(startX, curX)
+            });
+        };
+
+        const up = () => {
+            window.removeEventListener('mousemove', move);
+            window.removeEventListener('mouseup', up);
+        };
+
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+    }, [showAutomation, volumeKeyframes, pushUndo, activeBuffer]);
 
     const formatTime = (sec: number) => {
         const m = Math.floor(sec / 60), s = Math.floor(sec % 60), ms = Math.floor((sec % 1) * 1000);
@@ -669,8 +913,36 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             <button onClick={handlePasteMix} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent" title={text.mixPasteTitle}>
                                 <Layers size={14} /> {text.mixPaste}
                             </button>
+                            <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
+                                <span className="text-[10px] font-black text-emerald-700">{mixPasteLabel}</span>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={2}
+                                    step={0.05}
+                                    value={mixPasteGain}
+                                    onChange={e => setMixPasteGain(Number(e.target.value))}
+                                    className="w-16 h-1.5 bg-emerald-100 rounded-full appearance-none accent-emerald-600"
+                                    title={mixPasteLabel}
+                                />
+                                <span className="text-[10px] font-black text-emerald-700 w-8 text-right">{Math.round(mixPasteGain * 100)}%</span>
+                                <button
+                                    onClick={() => setFitClipboardToSelection(!fitClipboardToSelection)}
+                                    className={`text-[9px] px-2 py-0.5 rounded border font-black ${fitClipboardToSelection ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-emerald-700 border-emerald-300'}`}
+                                >
+                                    {fitSelectionLabel}
+                                </button>
+                            </div>
                             <button onClick={handlePasteImprint} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-pink-600 disabled:opacity-30 disabled:hover:bg-transparent" title={text.imprintTitle}>
                                 <Fingerprint size={14} /> {text.imprint}
+                            </button>
+                            <button
+                                onClick={() => setShowAutomation(!showAutomation)}
+                                className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${showAutomation ? 'bg-emerald-600 text-white shadow' : 'hover:bg-white text-emerald-700 border border-emerald-200'}`}
+                                title={gainGraphHint}
+                            >
+                                <Activity size={14} />
+                                {gainGraphLabel}
                             </button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             {/* Fade In / Out */}
@@ -721,38 +993,13 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
                 <div className="flex flex-col gap-6">
                     <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-inner overflow-hidden select-none h-[400px] relative">
-                        <canvas ref={canvasRef} width={1200} height={400} className="w-full h-full object-cover cursor-crosshair"
-                            onMouseDown={(e) => {
-                                const rect = canvasRef.current!.getBoundingClientRect();
-                                const xPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-
-                                // 1. Playhead Position Update
-                                setPlayheadPos(xPct * 100);
-                                pauseOffsetRef.current = xPct * (activeBuffer?.duration || 0);
-
-                                // 2. Init Selection Drag (Reset selection to start point)
-                                const startX = xPct;
-                                setEditTrim({ start: startX, end: startX });
-
-                                const move = (me: MouseEvent) => {
-                                    const curRect = canvasRef.current?.getBoundingClientRect();
-                                    if (!curRect) return;
-                                    const curX = Math.max(0, Math.min(1, (me.clientX - curRect.left) / curRect.width));
-                                    // Update selection based on drag
-                                    setEditTrim({
-                                        start: Math.min(startX, curX),
-                                        end: Math.max(startX, curX)
-                                    });
-                                };
-
-                                const up = () => {
-                                    window.removeEventListener('mousemove', move);
-                                    window.removeEventListener('mouseup', up);
-                                };
-
-                                window.addEventListener('mousemove', move);
-                                window.addEventListener('mouseup', up);
-                            }}
+                        <canvas
+                            ref={canvasRef}
+                            width={1200}
+                            height={400}
+                            className="w-full h-full object-cover cursor-crosshair"
+                            onMouseDown={handleTimelineMouseDown}
+                            onContextMenu={e => e.preventDefault()}
                         />
                         <div className="absolute top-0 bottom-0 bg-white/10 border-x border-white/30 pointer-events-none" style={{ left: `${editTrim.start * 100}%`, width: `${(editTrim.end - editTrim.start) * 100}%` }} />
                         <div className="absolute top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/50 transition-colors" style={{ left: `calc(${editTrim.start * 100}% - 4px)` }} onMouseDown={(e) => { e.stopPropagation(); const startX = e.clientX; const initVal = editTrim.start; const rect = canvasRef.current!.getBoundingClientRect(); const move = (me: MouseEvent) => { const diff = (me.clientX - startX) / rect.width; setEditTrim(prev => ({ ...prev, start: Math.max(0, Math.min(prev.end, initVal + diff)) })); }; const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }} />
@@ -811,7 +1058,19 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                     </div>
                                 )}
                                 {sideTab === 'formant_filter' && (
-                                    <FormantPad formant={formant} onChange={setFormant} />
+                                    <div className="space-y-3">
+                                        <FormantPad formant={formant} onChange={setFormant} />
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                                            <p className="text-[10px] text-slate-500 font-bold leading-tight">{applyFormantHint}</p>
+                                            <button
+                                                onClick={handleApplyFormantFilter}
+                                                disabled={!activeBuffer}
+                                                className="w-full py-2 rounded-lg text-xs font-black bg-indigo-500 hover:bg-indigo-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                {applyFormantLabel}
+                                            </button>
+                                        </div>
+                                    </div>
                                 )}
                                 {sideTab === 'formant' && (
                                     <div className="space-y-4">
