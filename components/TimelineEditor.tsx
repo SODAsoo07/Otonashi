@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { PencilLine, Eye, EyeOff, GitCommit, Spline, MoveVertical, RotateCcw } from 'lucide-react';
+import { PencilLine, Eye, EyeOff, GitCommit, Spline, MoveVertical, RotateCcw, Undo2, Redo2 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AdvTrack } from '../types';
 import { RULER_HEIGHT } from '../utils/audioUtils';
@@ -29,6 +29,10 @@ interface TimelineEditorProps {
     simPauseOffsetRef: React.MutableRefObject<number>;
     advDuration: number;
     onResetAllKeyframes: () => void;
+    onUndo: () => void;
+    onRedo: () => void;
+    undoStackLength: number;
+    redoStackLength: number;
 }
 
 const TIMELINE_TEXT = {
@@ -78,7 +82,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     playHeadPos, setPlayheadPos, syncVisualsToTime, handleSimulationPlay, isAdvPlaying,
     commitChange, isEditMode, setIsEditMode, showGhost, setShowGhost, ghostTracks,
     showSpectrogram, spectrogramCanvas, previewBuffer, getCurrentValue, getValueAtTime,
-    simPauseOffsetRef, advDuration, onResetAllKeyframes
+    simPauseOffsetRef, advDuration, onResetAllKeyframes,
+    onUndo, onRedo, undoStackLength, redoStackLength
 }) => {
     const { language } = useLanguage();
     const text = TIMELINE_TEXT[language];
@@ -475,6 +480,22 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             {showGhost ? <Eye size={14} /> : <EyeOff size={14} />} {text.guide}
                         </button>
                     )}
+                    <button
+                        onClick={onUndo}
+                        disabled={undoStackLength === 0}
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        title="Undo"
+                    >
+                        <Undo2 size={14} />
+                    </button>
+                    <button
+                        onClick={onRedo}
+                        disabled={redoStackLength === 0}
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        title="Redo"
+                    >
+                        <Redo2 size={14} />
+                    </button>
                     <button
                         onClick={() => {
                             if (window.confirm(resetAllConfirm)) {

@@ -260,6 +260,12 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const mixPasteLabel = language === 'ko' ? '\uBBF9\uC2A4' : language === 'ja' ? '\u30DF\u30C3\u30AF\u30B9' : 'Mix';
     const fitSelectionLabel = language === 'ko' ? '\uC120\uD0DD\uAD6C\uAC04 \uB9DE\uCDA4' : language === 'ja' ? '\u9078\u629E\u7BC4\u56F2\u306B\u5408\u308F\u305B\u308B' : 'Fit Selection';
     const gainGraphLabel = language === 'ko' ? '\uAC8C\uC778 \uADF8\uB798\uD504' : language === 'ja' ? '\u30B2\u30A4\u30F3\u30B0\u30E9\u30D5' : 'Gain Graph';
+    const insertSilenceLabel = language === 'ko' ? '\uBB35\uC74C \uC0BD\uC785' : language === 'ja' ? '\u7121\u97F3\u633F\u5165' : 'Insert Silence';
+    const insertSilenceTitle = language === 'ko'
+        ? '\uC7AC\uC0DD \uC704\uCE58(\uB610\uB294 \uC120\uD0DD \uC2DC \uC120\uD0DD \uC2DC\uC791)\uC5D0 \uBB35\uC74C\uC744 \uC0BD\uC785'
+        : language === 'ja'
+            ? '\u518D\u751F\u4F4D\u7F6E\uff08\u9078\u629E\u6642\u306F\u9078\u629E\u958B\u59CB\uff09\u306B\u7121\u97F3\u3092\u633F\u5165'
+            : 'Insert silence at playhead (or selection start)';
     const gainGraphHint = language === 'ko'
         ? 'Shift+\uD074\uB9AD \uCD94\uAC00, \uB4DC\uB798\uADF8 \uC774\uB3D9, \uC6B0\uD074\uB9AD \uC0AD\uC81C'
         : language === 'ja'
@@ -311,6 +317,34 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             // Optional: Visual feedback could be added here
         }
     }, [activeBuffer, audioContext, editTrim]);
+
+    const handleInsertSilence = useCallback(() => {
+        if (!activeBuffer) return;
+        pushUndo("Insert Silence");
+
+        const hasSelection = editTrim.start > 0.0001 || editTrim.end < 0.9999;
+        const startSample = hasSelection
+            ? Math.floor(activeBuffer.length * editTrim.start)
+            : Math.floor((playheadPos / 100) * activeBuffer.length);
+
+        const insertSamples = hasSelection
+            ? Math.max(1, Math.floor((editTrim.end - editTrim.start) * activeBuffer.length))
+            : Math.max(1, Math.floor(activeBuffer.sampleRate * 0.2)); // 200ms default
+
+        const newLength = activeBuffer.length + insertSamples;
+        const newBuf = audioContext.createBuffer(activeBuffer.numberOfChannels, newLength, activeBuffer.sampleRate);
+
+        for (let ch = 0; ch < activeBuffer.numberOfChannels; ch++) {
+            const src = activeBuffer.getChannelData(ch);
+            const dst = newBuf.getChannelData(ch);
+
+            if (startSample > 0) dst.set(src.subarray(0, startSample), 0);
+            dst.fill(0, startSample, startSample + insertSamples);
+            dst.set(src.subarray(startSample), startSample + insertSamples);
+        }
+
+        onUpdateFile(newBuf);
+    }, [activeBuffer, audioContext, editTrim, playheadPos, pushUndo, onUpdateFile]);
 
     const handlePasteMix = useCallback(async () => {
         if (!activeBuffer || !clipboard) return;
@@ -907,6 +941,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             <button onClick={handleCopy} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white ${clipboard ? 'text-indigo-600' : 'text-slate-500'}`} title={text.copyTitle}>
                                 <Copy size={14} /> {text.copy}
+                            </button>
+                            <button onClick={handleInsertSilence} disabled={!activeBuffer} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-slate-600 disabled:opacity-30" title={insertSilenceTitle}>
+                                <Square size={12} /> {insertSilenceLabel}
                             </button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             {/* Fade In / Out */}

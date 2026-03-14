@@ -71,6 +71,26 @@ const CONSONANT_TEXT = {
     },
 } as const;
 
+const VOL_MIN = 0;
+const VOL_MAX = 2;
+const VOL_BASE_Y_RATIO = 0.44; // 100% line: slightly above center
+const VOL_STEP_Y_RATIO = 0.22; // 50% step spacing
+
+const clampVolume = (v: number) => Math.max(VOL_MIN, Math.min(VOL_MAX, v));
+
+const volumeToYPx = (v: number, h: number) => {
+    if (h <= 0) return 0;
+    const clamped = clampVolume(v);
+    const y = h * (VOL_BASE_Y_RATIO - ((clamped - 1) / 0.5) * VOL_STEP_Y_RATIO);
+    return Math.max(0, Math.min(h, y));
+};
+
+const yPxToVolume = (y: number, h: number) => {
+    if (h <= 0) return 1;
+    const raw = 1 + (((h * VOL_BASE_Y_RATIO) - y) / (h * VOL_STEP_Y_RATIO)) * 0.5;
+    return clampVolume(raw);
+};
+
 const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0 }) => {
     const { language } = useLanguage();
     const text = CONSONANT_TEXT[language];
@@ -331,7 +351,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
 
             const hitIdx = geom.points.findIndex((p) => {
                 const px = geom.startPx + (p.t * geom.durPx);
-                const py = (1 - p.v) * geom.canvasH;
+                const py = volumeToYPx(p.v, geom.canvasH);
                 return Math.hypot(px - xPx, py - yPx) <= 11;
             });
 
@@ -352,7 +372,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             if (!e.shiftKey) return;
 
             const localT = Math.max(0, Math.min(1, (xPx - geom.startPx) / geom.durPx));
-            const localV = Math.max(0, Math.min(1, 1 - (yPx / geom.canvasH)));
+            const localV = yPxToVolume(yPx, geom.canvasH);
             let newIndex = 0;
             geom.setPoints(prev => {
                 const next = [...prev, { t: localT, v: localV }].sort((a, b) => a.t - b.t);
@@ -381,7 +401,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             if (!geom || geom.durPx <= 1) return;
 
             const localT = Math.max(0, Math.min(1, (xPx - geom.startPx) / geom.durPx));
-            const localV = Math.max(0, Math.min(1, 1 - (yPx / geom.canvasH)));
+            const localV = yPxToVolume(yPx, geom.canvasH);
             geom.setPoints(prev => {
                 if (dragPoint.index === undefined || dragPoint.index < 0 || dragPoint.index >= prev.length) return prev;
                 const next = [...prev];
@@ -413,6 +433,23 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         if (!ctx) return;
         const w = canvasRef.current.width, h = canvasRef.current.height;
         ctx.clearRect(0, 0, w, h); ctx.fillStyle = '#1e293b'; ctx.fillRect(0, 0, w, h);
+
+        const guideLevels = [0.5, 1.0, 1.5];
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+        ctx.font = '10px sans-serif';
+        guideLevels.forEach(level => {
+            const y = volumeToYPx(level, h);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+            ctx.fillText(`${Math.round(level * 100)}%`, 6, Math.max(10, y - 4));
+        });
+        ctx.restore();
 
         const vBuf = getBuffer(vowelId);
         const consonantEntries = consonantIds
@@ -478,9 +515,9 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             ctx.setLineDash([5, 5]);
             const startPx = msToPx(offMs);
             const durPx = msToPx(realDurSec * 1000);
-            pts.forEach((p, i) => { const x = startPx + (p.t * durPx); const y = (1 - p.v) * h; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+            pts.forEach((p, i) => { const x = startPx + (p.t * durPx); const y = volumeToYPx(p.v, h); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
             ctx.stroke(); ctx.setLineDash([]);
-            pts.forEach(p => { const x = startPx + (p.t * durPx); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, (1 - p.v) * h, 4, 0, Math.PI * 2); ctx.fill(); });
+            pts.forEach(p => { const x = startPx + (p.t * durPx); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, volumeToYPx(p.v, h), 4, 0, Math.PI * 2); ctx.fill(); });
         };
 
         if (selectedTrack === 'vowel' && vBuf) drawLine(vVolPts, '#60a5fa', true, vOffMs, vRealDur);
