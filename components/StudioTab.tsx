@@ -206,6 +206,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     // UI Tabs
     const [sideTab, setSideTab] = useState<'effects' | 'formant_filter' | 'formant'>('effects');
+    const [effectsSectionEnabled, setEffectsSectionEnabled] = useState(true);
+    const [formantFilterSectionEnabled, setFormantFilterSectionEnabled] = useState(true);
+    const [formantSectionEnabled, setFormantSectionEnabled] = useState(true);
     const [undoStack, setUndoStack] = useState<UndoState[]>([]);
     const [redoStack, setRedoStack] = useState<UndoState[]>([]);
 
@@ -306,6 +309,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         : language === 'ja'
             ? 'Shift+\u30AF\u30EA\u30C3\u30AF\u3067\u8FFD\u52A0\u3001\u30C9\u30E9\u30C3\u30B0\u3067\u79FB\u52D5\u3001\u53F3\u30AF\u30EA\u30C3\u30AF\u3067\u524A\u9664'
             : 'Shift+Click add, drag move, right-click delete';
+    const sectionOnLabel = language === 'ko' ? '켜짐' : language === 'ja' ? 'オン' : 'On';
+    const sectionOffLabel = language === 'ko' ? '꺼짐' : language === 'ja' ? 'オフ' : 'Off';
 
     const mixBuffersWithGain = useCallback((base: AudioBuffer, overlay: AudioBuffer, startSample: number, gain: number) => {
         const numChannels = Math.max(base.numberOfChannels, overlay.numberOfChannels);
@@ -550,7 +555,41 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
         lastNode.connect(offline.destination);
         src.start(0);
-        return await offline.startRendering();
+        const rendered = await offline.startRendering();
+
+        // Prevent sudden loudness jumps after formant filtering:
+        // keep output peak below both original peak and safe headroom.
+        let inPeak = 0;
+        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+            const data = buf.getChannelData(ch);
+            for (let i = 0; i < data.length; i++) {
+                const abs = Math.abs(data[i]);
+                if (abs > inPeak) inPeak = abs;
+            }
+        }
+
+        let outPeak = 0;
+        for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+            const data = rendered.getChannelData(ch);
+            for (let i = 0; i < data.length; i++) {
+                const abs = Math.abs(data[i]);
+                if (abs > outPeak) outPeak = abs;
+            }
+        }
+
+        if (outPeak > 0) {
+            let gain = 1;
+            if (inPeak > 0 && outPeak > inPeak) gain = Math.min(gain, inPeak / outPeak);
+            if (outPeak > 0.98) gain = Math.min(gain, 0.98 / outPeak);
+            if (gain < 1) {
+                for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+                    const data = rendered.getChannelData(ch);
+                    for (let i = 0; i < data.length; i++) data[i] *= gain;
+                }
+            }
+        }
+
+        return rendered;
     }, [audioContext, formant, genderShift, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
 
     const applyFormantLabel = language === 'ko' ? '\uD3EC\uBA3C\uD2B8 \uC801\uC6A9' : language === 'ja' ? '\u30D5\u30A9\u30EB\u30DE\u30F3\u30C8\u9069\u7528' : 'Apply Formant';
@@ -561,7 +600,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             : 'If a selection exists, apply only to that range.';
 
     const handleApplyFormantFilter = useCallback(async () => {
-        if (!activeBuffer) return;
+        if (!activeBuffer || !formantFilterSectionEnabled) return;
 
         const hasSelectedRange = editTrim.start > 0.0001 || editTrim.end < 0.9999;
         pushUndo("Apply Formant Filter");
@@ -572,19 +611,28 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
             const processedSelection = await renderFormantOnly(selectionBuf);
             if (!processedSelection) return;
-
-            const tempBuf = AudioUtils.deleteRange(audioContext, activeBuffer, editTrim.start, editTrim.end);
-            if (!tempBuf) return;
-
             const startSample = Math.floor(activeBuffer.duration * editTrim.start * activeBuffer.sampleRate);
-            const finalBuf = AudioUtils.mixBuffersAtTime(audioContext, tempBuf, processedSelection, startSample);
+            const endSample = Math.min(activeBuffer.length, startSample + processedSelection.length);
+            const finalBuf = audioContext.createBuffer(activeBuffer.numberOfChannels, activeBuffer.length, activeBuffer.sampleRate);
+
+            for (let ch = 0; ch < finalBuf.numberOfChannels; ch++) {
+                const dst = finalBuf.getChannelData(ch);
+                const src = activeBuffer.getChannelData(Math.min(ch, activeBuffer.numberOfChannels - 1));
+                dst.set(src);
+                const proc = processedSelection.getChannelData(Math.min(ch, processedSelection.numberOfChannels - 1));
+                const replaceLen = Math.max(0, endSample - startSample);
+                for (let i = 0; i < replaceLen; i++) {
+                    dst[startSample + i] = proc[i];
+                }
+            }
+
             onUpdateFile(finalBuf);
             return;
         }
 
         const processed = await renderFormantOnly(activeBuffer);
         if (processed) onUpdateFile(processed);
-    }, [activeBuffer, audioContext, editTrim, onUpdateFile, pushUndo, renderFormantOnly]);
+    }, [activeBuffer, audioContext, editTrim, formantFilterSectionEnabled, onUpdateFile, pushUndo, renderFormantOnly]);
 
     const stopPlayback = useCallback(() => {
         if (sourceRef.current) { try { sourceRef.current.stop(); } catch (e) { } sourceRef.current = null; }
@@ -613,6 +661,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             genderShift.toFixed(3),
             masterGain.toFixed(3),
             bypassEffects ? 1 : 0,
+            effectsSectionEnabled ? 1 : 0,
+            formantFilterSectionEnabled ? 1 : 0,
+            formantSectionEnabled ? 1 : 0,
             normalizationEnabled ? 1 : 0,
             enableDelay ? 1 : 0,
             delayTime.toFixed(3),
@@ -639,7 +690,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (renderCacheRef.current && renderCacheRef.current.source === buf && renderCacheRef.current.key === renderKey) {
             return renderCacheRef.current.rendered;
         }
-        const renderDur = buf.duration + (enableDelay ? 2 : 0) + (enableReverb ? 3 : 0);
+        const effectsProcessingEnabled = !bypassEffects && effectsSectionEnabled;
+        const formantProcessingEnabled = !bypassEffects && formantSectionEnabled;
+        const renderDur = buf.duration + (effectsProcessingEnabled && enableDelay ? 2 : 0) + (effectsProcessingEnabled && enableReverb ? 3 : 0);
         const offline = new OfflineAudioContext(buf.numberOfChannels, Math.ceil(renderDur * buf.sampleRate), buf.sampleRate);
 
         // 내부 masterGain만 사용 (모니터 볼륨은 재생 시 별도 GainNode로 적용)
@@ -651,102 +704,111 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         const inputNode = currentNode;
 
         if (!bypassEffects) {
-            // EQ
-            eqBands.forEach(b => {
-                if (b.on) {
+            if (effectsSectionEnabled) {
+                // EQ
+                eqBands.forEach(b => {
+                    if (b.on) {
+                        const f = offline.createBiquadFilter();
+                        f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = b.gain;
+                        currentNode.connect(f); currentNode = f;
+                    }
+                });
+            }
+
+            let processedNode: AudioNode = currentNode;
+
+            if (formantSectionEnabled) {
+                const fShift = offline.createBiquadFilter();
+                fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
+
+                const fNodes = [formant.f1, formant.f2, formant.f3, formant.f4].map((freq, idx) => {
                     const f = offline.createBiquadFilter();
-                    f.type = b.type; f.frequency.value = b.freq; f.Q.value = b.q; f.gain.value = b.gain;
-                    currentNode.connect(f); currentNode = f;
-                }
-            });
+                    f.type = 'peaking'; f.frequency.value = freq;
+                    f.Q.value = formant.resonance;
+                    f.gain.value = 12 - (idx * 2);
+                    return f;
+                });
 
-            // Formant
-            const fShift = offline.createBiquadFilter();
-            fShift.type = 'peaking'; fShift.frequency.value = 1000 * genderShift; fShift.gain.value = 6;
+                processedNode.connect(fShift);
+                let lastFNode = fShift;
+                fNodes.forEach(fn => { lastFNode.connect(fn); lastFNode = fn; });
+                processedNode = lastFNode;
+            }
 
-            const fNodes = [formant.f1, formant.f2, formant.f3, formant.f4].map((freq, idx) => {
-                const f = offline.createBiquadFilter();
-                f.type = 'peaking'; f.frequency.value = freq;
-                f.Q.value = formant.resonance;
-                f.gain.value = 12 - (idx * 2);
-                return f;
-            });
+            if (effectsSectionEnabled) {
+                const compressor = offline.createDynamicsCompressor();
+                compressor.threshold.value = compThresh;
+                compressor.ratio.value = compRatio;
+                compressor.attack.value = compAttack;
+                compressor.release.value = compRelease;
+                processedNode.connect(compressor);
+                processedNode = compressor;
+            }
 
-            currentNode.connect(fShift);
-            let lastFNode = fShift;
-            fNodes.forEach(fn => { lastFNode.connect(fn); lastFNode = fn; });
-
-            // Compressor
-            const compressor = offline.createDynamicsCompressor();
-            compressor.threshold.value = compThresh;
-            compressor.ratio.value = compRatio;
-            compressor.attack.value = compAttack;
-            compressor.release.value = compRelease;
-            lastFNode.connect(compressor);
-
-            // Singer's Formant (2.5~4kHz peaking boost)
-            let afterCompressor: AudioNode = compressor;
-            if (singersFormantEnabled) {
+            if (formantSectionEnabled && singersFormantEnabled) {
                 const sfFilter = offline.createBiquadFilter();
                 sfFilter.type = 'peaking';
                 sfFilter.frequency.value = singersFormantFreq;
                 sfFilter.gain.value = singersFormantGain;
                 sfFilter.Q.value = singersFormantQ;
-                compressor.connect(sfFilter);
-                afterCompressor = sfFilter;
+                processedNode.connect(sfFilter);
+                processedNode = sfFilter;
             }
 
-            // Time-based (Delay/Reverb)
-            const dryGain = offline.createGain();
-            const effectMerge = offline.createGain();
+            if (effectsSectionEnabled) {
+                const dryGain = offline.createGain();
+                const effectMerge = offline.createGain();
 
-            afterCompressor.connect(dryGain);
-            dryGain.connect(finalOutput);
+                processedNode.connect(dryGain);
+                dryGain.connect(finalOutput);
 
-            if (enableDelay && delayTime > 0) {
-                const delay = offline.createDelay(); delay.delayTime.value = delayTime;
-                const fb = offline.createGain(); fb.gain.value = delayFeedback;
-                const delayOut = offline.createGain(); delayOut.gain.value = 0.5;
-                afterCompressor.connect(delay);
-                delay.connect(fb); fb.connect(delay);
-                delay.connect(delayOut); delayOut.connect(effectMerge);
-            }
-
-            if (enableReverb && reverbMix > 0) {
-                const reverbConv = offline.createConvolver();
-                const rate = offline.sampleRate;
-                const length = Math.floor(rate * 2.0);
-                if (
-                    !reverbImpulseRef.current ||
-                    reverbImpulseRef.current.sampleRate !== rate ||
-                    reverbImpulseRef.current.length !== length
-                ) {
-                    const left = new Float32Array(length);
-                    const right = new Float32Array(length);
-                    for (let j = 0; j < length; j++) {
-                        const decay = Math.pow(1 - j / length, 2.0);
-                        left[j] = (Math.random() * 2 - 1) * decay;
-                        right[j] = (Math.random() * 2 - 1) * decay;
-                    }
-                    reverbImpulseRef.current = { sampleRate: rate, length, left, right };
+                if (enableDelay && delayTime > 0) {
+                    const delay = offline.createDelay(); delay.delayTime.value = delayTime;
+                    const fb = offline.createGain(); fb.gain.value = delayFeedback;
+                    const delayOut = offline.createGain(); delayOut.gain.value = 0.5;
+                    processedNode.connect(delay);
+                    delay.connect(fb); fb.connect(delay);
+                    delay.connect(delayOut); delayOut.connect(effectMerge);
                 }
-                const impulse = offline.createBuffer(2, length, rate);
-                impulse.getChannelData(0).set(reverbImpulseRef.current.left);
-                impulse.getChannelData(1).set(reverbImpulseRef.current.right);
-                reverbConv.buffer = impulse;
-                const revGain = offline.createGain(); revGain.gain.value = reverbMix;
-                afterCompressor.connect(reverbConv);
-                reverbConv.connect(revGain);
-                revGain.connect(effectMerge);
-            }
 
-            effectMerge.connect(finalOutput);
+                if (enableReverb && reverbMix > 0) {
+                    const reverbConv = offline.createConvolver();
+                    const rate = offline.sampleRate;
+                    const length = Math.floor(rate * 2.0);
+                    if (
+                        !reverbImpulseRef.current ||
+                        reverbImpulseRef.current.sampleRate !== rate ||
+                        reverbImpulseRef.current.length !== length
+                    ) {
+                        const left = new Float32Array(length);
+                        const right = new Float32Array(length);
+                        for (let j = 0; j < length; j++) {
+                            const decay = Math.pow(1 - j / length, 2.0);
+                            left[j] = (Math.random() * 2 - 1) * decay;
+                            right[j] = (Math.random() * 2 - 1) * decay;
+                        }
+                        reverbImpulseRef.current = { sampleRate: rate, length, left, right };
+                    }
+                    const impulse = offline.createBuffer(2, length, rate);
+                    impulse.getChannelData(0).set(reverbImpulseRef.current.left);
+                    impulse.getChannelData(1).set(reverbImpulseRef.current.right);
+                    reverbConv.buffer = impulse;
+                    const revGain = offline.createGain(); revGain.gain.value = reverbMix;
+                    processedNode.connect(reverbConv);
+                    reverbConv.connect(revGain);
+                    revGain.connect(effectMerge);
+                }
+
+                effectMerge.connect(finalOutput);
+            } else {
+                processedNode.connect(finalOutput);
+            }
         } else {
             currentNode.connect(finalOutput);
         }
 
         const s1 = offline.createBufferSource(); s1.buffer = buf;
-        if (!bypassEffects && pitchCents !== 0) s1.playbackRate.value = Math.pow(2, pitchCents / 1200);
+        if (!bypassEffects && effectsSectionEnabled && pitchCents !== 0) s1.playbackRate.value = Math.pow(2, pitchCents / 1200);
 
         const autoGain = offline.createGain();
         if (volumeKeyframes.length > 0) {
@@ -778,7 +840,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
         renderCacheRef.current = { source: buf, key: renderKey, rendered };
         return rendered;
-    }, [audioContext, pitchCents, genderShift, masterGain, bypassEffects, formant, eqBands, enableDelay, delayTime, delayFeedback, enableReverb, reverbMix, compThresh, compRatio, compAttack, compRelease, volumeKeyframes, normalizationEnabled, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
+    }, [audioContext, pitchCents, genderShift, masterGain, bypassEffects, effectsSectionEnabled, formantFilterSectionEnabled, formantSectionEnabled, formant, eqBands, enableDelay, delayTime, delayFeedback, enableReverb, reverbMix, compThresh, compRatio, compAttack, compRelease, volumeKeyframes, normalizationEnabled, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
 
     const togglePlay = useCallback(async (mode: 'all' | 'selection') => {
         if (isPlaying) {
@@ -1208,6 +1270,21 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         </div>
 
                         <div className="w-full lg:w-[420px] bg-white border border-slate-200 rounded-2xl flex flex-col overflow-hidden shrink-0 shadow-sm h-[320px]">
+                            <div className="px-3 py-2 border-b border-slate-200 bg-white flex flex-wrap items-center gap-2">
+                                {([
+                                    { id: 'effects', label: text.effects, enabled: effectsSectionEnabled, toggle: () => setEffectsSectionEnabled(v => !v) },
+                                    { id: 'formant_filter', label: text.formantFilter, enabled: formantFilterSectionEnabled, toggle: () => setFormantFilterSectionEnabled(v => !v) },
+                                    { id: 'formant', label: text.formant, enabled: formantSectionEnabled, toggle: () => setFormantSectionEnabled(v => !v) }
+                                ] as const).map(section => (
+                                    <button
+                                        key={section.id}
+                                        onClick={section.toggle}
+                                        className={`px-2.5 py-1 rounded-lg border text-[10px] font-black transition-all ${section.enabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                                    >
+                                        {section.label} · {section.enabled ? sectionOnLabel : sectionOffLabel}
+                                    </button>
+                                ))}
+                            </div>
                             <div className="flex border-b border-slate-200 bg-slate-50/50">
                                 {[
                                     { id: 'effects', label: text.effects },
@@ -1219,7 +1296,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             </div>
                             <div className="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-6">
                                 {sideTab === 'effects' && (
-                                    <div className="space-y-6">
+                                    <div className={`space-y-6 ${effectsSectionEnabled ? '' : 'opacity-45 pointer-events-none'}`}>
                                         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3">
                                             <div className="flex items-center justify-between">
                                                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Sparkles size={12} /> {text.reverbDelay}</h3>
@@ -1246,13 +1323,13 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                     </div>
                                 )}
                                 {sideTab === 'formant_filter' && (
-                                    <div className="space-y-3">
+                                    <div className={`space-y-3 ${formantFilterSectionEnabled ? '' : 'opacity-45 pointer-events-none'}`}>
                                         <FormantPad formant={formant} onChange={setFormant} />
                                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
                                             <p className="text-[10px] text-slate-500 font-bold leading-tight">{applyFormantHint}</p>
                                             <button
                                                 onClick={handleApplyFormantFilter}
-                                                disabled={!activeBuffer}
+                                                disabled={!activeBuffer || !formantFilterSectionEnabled}
                                                 className="w-full py-2 rounded-lg text-xs font-black bg-indigo-500 hover:bg-indigo-600 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                             >
                                                 {applyFormantLabel}
@@ -1261,7 +1338,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                     </div>
                                 )}
                                 {sideTab === 'formant' && (
-                                    <div className="space-y-4">
+                                    <div className={`space-y-4 ${formantSectionEnabled ? '' : 'opacity-45 pointer-events-none'}`}>
                                         <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><AudioLines size={12} /> {text.formantDetail}</h3>
                                         <RangeControl label={text.formantF1} value={formant.f1} min={200} max={1200} step={10} onChange={v => setFormant({ ...formant, f1: v })} unit="Hz" />
                                         <RangeControl label={text.formantF2} value={formant.f2} min={500} max={3000} step={10} onChange={v => setFormant({ ...formant, f2: v })} unit="Hz" />

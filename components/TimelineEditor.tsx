@@ -77,6 +77,8 @@ const TIMELINE_TEXT = {
     },
 } as const;
 
+const GRAPH_BOTTOM_PADDING = 16;
+
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
     advTracks, setAdvTracks, selectedTrackId, setSelectedTrackId,
     playHeadPos, setPlayheadPos, syncVisualsToTime, handleSimulationPlay, isAdvPlaying,
@@ -220,7 +222,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         const track = advTracks.find(tr => tr.id === selectedTrackId);
         if (!track) return;
 
-        const graphH = rect.height - RULER_HEIGHT;
+        const graphH = Math.max(1, rect.height - RULER_HEIGHT - GRAPH_BOTTOM_PADDING);
         const hitIdx = track.points.findIndex(
             p => Math.hypot((p.t * rect.width) - x, (RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * graphH) - y) < 15
         );
@@ -242,7 +244,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
         if (y >= RULER_HEIGHT) {
             commitChange('Add point');
-            const val = track.min + ((1 - ((y - RULER_HEIGHT) / graphH)) * (track.max - track.min));
+            const normY = Math.max(0, Math.min(1, (y - RULER_HEIGHT) / graphH));
+            const val = track.min + ((1 - normY) * (track.max - track.min));
             const nPts = [...track.points, { t, v: val }].sort((a, b) => a.t - b.t);
             setAdvTracks(prev => prev.map(tr => tr.id === selectedTrackId ? { ...tr, points: nPts } : tr));
             setDraggingKeyframe({ trackId: selectedTrackId, index: nPts.findIndex(p => p.t === t) });
@@ -260,7 +263,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             const track = advTracks.find(t => t.id === draggingKeyframe.trackId);
             if (!track) return;
 
-            const graphH = rect.height - RULER_HEIGHT;
+            const graphH = Math.max(1, rect.height - RULER_HEIGHT - GRAPH_BOTTOM_PADDING);
             const range = track.max - track.min;
             const deltaV = -(dy / graphH) * range;
 
@@ -280,7 +283,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             syncVisualsToTime(t);
         }
         else if (draggingKeyframe.trackId && draggingKeyframe.index !== undefined) {
-            const gH = rect.height - RULER_HEIGHT;
+            const gH = Math.max(1, rect.height - RULER_HEIGHT - GRAPH_BOTTOM_PADDING);
             const nV = Math.max(0, Math.min(1, 1 - (((e.clientY - rect.top) - RULER_HEIGHT) / gH)));
             setAdvTracks(prev => prev.map(tr => {
                 if (tr.id !== draggingKeyframe.trackId) return tr;
@@ -308,14 +311,17 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         if(!ctx) return; 
         const { w, h } = canvasSize;
         const track = advTracks.find(t => t.id === selectedTrackId);
+        const graphH = Math.max(1, h - RULER_HEIGHT - GRAPH_BOTTOM_PADDING);
+        const valueToY = (value: number, min: number, max: number) =>
+            RULER_HEIGHT + (1 - (value - min) / (max - min)) * graphH;
         
         ctx.clearRect(0, 0, w, h); 
         ctx.fillStyle = '#f8f8f6'; 
-        ctx.fillRect(0, RULER_HEIGHT, w, h - RULER_HEIGHT); 
+        ctx.fillRect(0, RULER_HEIGHT, w, graphH); 
 
         // Spectrogram
         if (showSpectrogram && spectrogramCanvas) {
-            ctx.drawImage(spectrogramCanvas, 0, RULER_HEIGHT, w, h - RULER_HEIGHT);
+            ctx.drawImage(spectrogramCanvas, 0, RULER_HEIGHT, w, graphH);
         }
         
         // Preview Waveform
@@ -327,7 +333,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             ctx.lineWidth = 1;
             const data = previewBuffer.getChannelData(0); 
             const step = Math.ceil(data.length / w);
-            const waveH = h - RULER_HEIGHT; 
+            const waveH = graphH; 
             const amp = waveH / 2; 
             const center = RULER_HEIGHT + amp;
             for (let i = 0; i < w; i++) {
@@ -358,13 +364,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                      for(let i=0; i<w; i++) {
                          const t = i / w;
                          const v = getValueAtTime(ghost.id, t, ghostTracks);
-                         const y = RULER_HEIGHT + (1 - (v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT);
+                         const y = valueToY(v, ghost.min, ghost.max);
                          if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
                      }
                 } else {
                      ghost.points.forEach((p, i) => { 
                         const x = p.t * w; 
-                        const y = RULER_HEIGHT + (1 - (p.v - ghost.min) / (ghost.max - ghost.min)) * (h - RULER_HEIGHT); 
+                        const y = valueToY(p.v, ghost.min, ghost.max); 
                         if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
                     }); 
                 }
@@ -390,13 +396,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     for (let i = 0; i < w; i++) {
                         const tNorm = i / w;
                         const v = getValueAtTime(overlayTrack.id, tNorm);
-                        const y = RULER_HEIGHT + (1 - (v - overlayTrack.min) / (overlayTrack.max - overlayTrack.min)) * (h - RULER_HEIGHT);
+                        const y = valueToY(v, overlayTrack.min, overlayTrack.max);
                         if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
                     }
                 } else {
                     overlayTrack.points.forEach((p, i) => {
                         const x = p.t * w;
-                        const y = RULER_HEIGHT + (1 - (p.v - overlayTrack.min) / (overlayTrack.max - overlayTrack.min)) * (h - RULER_HEIGHT);
+                        const y = valueToY(p.v, overlayTrack.min, overlayTrack.max);
                         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                     });
                 }
@@ -404,7 +410,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
                 overlayTrack.points.forEach(p => {
                     const x = p.t * w;
-                    const y = RULER_HEIGHT + (1 - (p.v - overlayTrack.min) / (overlayTrack.max - overlayTrack.min)) * (h - RULER_HEIGHT);
+                    const y = valueToY(p.v, overlayTrack.min, overlayTrack.max);
                     ctx.fillStyle = overlayTrack.color;
                     ctx.beginPath();
                     ctx.arc(x, y, 3.5, 0, Math.PI * 2);
@@ -424,13 +430,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                  for(let i=0; i<w; i++) {
                      const t = i / w;
                      const v = getValueAtTime(track.id, t);
-                     const y = RULER_HEIGHT + (1 - (v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT);
+                     const y = valueToY(v, track.min, track.max);
                      if(i===0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
                  }
             } else {
                  track.points.forEach((p, i) => { 
                     const x = p.t * w; 
-                    const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
+                    const y = valueToY(p.v, track.min, track.max); 
                     if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); 
                 }); 
             }
@@ -438,7 +444,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             ctx.stroke(); 
             track.points.forEach((p, i) => { 
                 const x = p.t * w; 
-                const y = RULER_HEIGHT + (1 - (p.v - track.min) / (track.max - track.min)) * (h - RULER_HEIGHT); 
+                const y = valueToY(p.v, track.min, track.max); 
                 ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : track.color; 
                 ctx.beginPath(); 
                 ctx.arc(x, y, 6, 0, Math.PI*2); 
