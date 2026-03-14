@@ -251,6 +251,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
     const startTimeRef = useRef(0);
     const pauseOffsetRef = useRef(0);
     const animationRef = useRef<number | null>(null);
+    const manualStopRef = useRef(false);
     const lastPlayheadPosRef = useRef(0);
     const renderCacheRef = useRef<{ source: AudioBuffer; key: string; rendered: AudioBuffer } | null>(null);
     const reverbImpulseRef = useRef<{ sampleRate: number; length: number; left: Float32Array; right: Float32Array } | null>(null);
@@ -781,7 +782,11 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     const togglePlay = useCallback(async (mode: 'all' | 'selection') => {
         if (isPlaying) {
-            if (sourceRef.current) { sourceRef.current.stop(); sourceRef.current = null; }
+            if (sourceRef.current) {
+                manualStopRef.current = true;
+                sourceRef.current.stop();
+                sourceRef.current = null;
+            }
             const pausedOffsetSec = Math.max(0, audioContext.currentTime - startTimeRef.current);
             pauseOffsetRef.current = pausedOffsetSec;
             if (activeBuffer && activeBuffer.duration > 0) {
@@ -796,6 +801,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         if (!activeBuffer) return;
         const rendered = await renderStudioAudio(activeBuffer);
         if (!rendered) return;
+        manualStopRef.current = false;
 
         const s = audioContext.createBufferSource();
         s.buffer = rendered;
@@ -818,7 +824,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                 startOffset = selStart;
             }
         } else {
-            if (isPaused) startOffset = pauseOffsetRef.current % rendered.duration;
+            if (isPaused || pauseOffsetRef.current > 0) startOffset = pauseOffsetRef.current % rendered.duration;
         }
 
         s.start(0, startOffset);
@@ -830,6 +836,10 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         setPlayheadMode(mode);
 
         s.onended = () => {
+            if (manualStopRef.current) {
+                manualStopRef.current = false;
+                return;
+            }
             setIsPlaying(false);
             setIsPaused(false);
             if (mode === 'all') { setPlayheadImmediate(0); pauseOffsetRef.current = 0; }

@@ -861,6 +861,35 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
 
+    useEffect(() => {
+        if (!isActive) return;
+        const handleKey = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            const isTyping = !!target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+            if (isTyping) return;
+
+            if (e.code === 'Space') {
+                e.preventDefault();
+                handleSimulationPlay();
+                return;
+            }
+
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                handleUndo();
+                return;
+            }
+
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                setIsEditMode(prev => !prev);
+            }
+        };
+
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [isActive, handleSimulationPlay, handleUndo]);
+
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden h-full">
             {showAnalyzer && <FormantAnalyzer files={files} audioContext={audioContext} onClose={() => setShowAnalyzer(false)} onApply={handleAnalyzerApply} />}
