@@ -36,8 +36,8 @@ const STUDIO_TEXT = {
         cutTitle: '선택 영역 자르기',
         copy: '복사',
         copyTitle: '선택 영역 복사',
-        mixPaste: '겹쳐넣기',
-        mixPasteTitle: '클립보드 오디오를 현재 위치에 겹쳐 붙여넣기',
+        mixPaste: '붙여넣기',
+        mixPasteTitle: '클립보드 오디오를 현재 위치에 믹스로 붙여넣기',
         imprint: '텍스처 입히기',
         imprintTitle: '선택 영역에 클립보드 텍스처를 입히기',
         fadeIn: '페이드 인',
@@ -905,44 +905,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                             <button onClick={() => togglePlay('all')} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${isPlaying ? 'bg-white shadow text-slate-900' : 'hover:bg-white text-slate-600'}`}>{isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />} {isPlaying ? text.pause : text.play}</button>
                             <button onClick={handleStop} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 hover:bg-white text-red-500 transition-colors font-black"><Square size={14} fill="currentColor" /> {text.stop}</button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                            <button onClick={handleCutSelection} className="p-1.5 hover:bg-white rounded text-slate-600 hover:text-red-500 transition-all" title={text.cutTitle}><Scissors size={16} /></button>
-                            <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             <button onClick={handleCopy} className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white ${clipboard ? 'text-indigo-600' : 'text-slate-500'}`} title={text.copyTitle}>
                                 <Copy size={14} /> {text.copy}
-                            </button>
-                            <button onClick={handlePasteMix} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-slate-600 disabled:opacity-30 disabled:hover:bg-transparent" title={text.mixPasteTitle}>
-                                <Layers size={14} /> {text.mixPaste}
-                            </button>
-                            <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
-                                <span className="text-[10px] font-black text-emerald-700">{mixPasteLabel}</span>
-                                <input
-                                    type="range"
-                                    min={0}
-                                    max={2}
-                                    step={0.05}
-                                    value={mixPasteGain}
-                                    onChange={e => setMixPasteGain(Number(e.target.value))}
-                                    className="w-16 h-1.5 bg-emerald-100 rounded-full appearance-none accent-emerald-600"
-                                    title={mixPasteLabel}
-                                />
-                                <span className="text-[10px] font-black text-emerald-700 w-8 text-right">{Math.round(mixPasteGain * 100)}%</span>
-                                <button
-                                    onClick={() => setFitClipboardToSelection(!fitClipboardToSelection)}
-                                    className={`text-[9px] px-2 py-0.5 rounded border font-black ${fitClipboardToSelection ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-emerald-700 border-emerald-300'}`}
-                                >
-                                    {fitSelectionLabel}
-                                </button>
-                            </div>
-                            <button onClick={handlePasteImprint} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-white text-pink-600 disabled:opacity-30 disabled:hover:bg-transparent" title={text.imprintTitle}>
-                                <Fingerprint size={14} /> {text.imprint}
-                            </button>
-                            <button
-                                onClick={() => setShowAutomation(!showAutomation)}
-                                className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${showAutomation ? 'bg-emerald-600 text-white shadow' : 'hover:bg-white text-emerald-700 border border-emerald-200'}`}
-                                title={gainGraphHint}
-                            >
-                                <Activity size={14} />
-                                {gainGraphLabel}
                             </button>
                             <div className="w-px h-4 bg-slate-300 mx-1"></div>
                             {/* Fade In / Out */}
@@ -1012,6 +976,46 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                 {text.clipboardReady(clipboard.duration)}
                             </div>
                         )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-xl p-3">
+                        <button onClick={handleCutSelection} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-slate-50 text-slate-700 border border-slate-200" title={text.cutTitle}>
+                            <Scissors size={14} /> {language === 'ko' ? '잘라내기' : language === 'ja' ? 'カット' : 'Cut'}
+                        </button>
+                        <button onClick={handlePasteMix} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-slate-50 text-slate-700 border border-slate-200 disabled:opacity-30 disabled:hover:bg-transparent" title={text.mixPasteTitle}>
+                            <Layers size={14} /> {text.mixPaste}
+                        </button>
+                        <div className="flex items-center gap-1 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1">
+                            <span className="text-[10px] font-black text-emerald-700">{mixPasteLabel}</span>
+                            <input
+                                type="range"
+                                min={0}
+                                max={2}
+                                step={0.05}
+                                value={mixPasteGain}
+                                onChange={e => setMixPasteGain(Number(e.target.value))}
+                                className="w-16 h-1.5 bg-emerald-100 rounded-full appearance-none accent-emerald-600"
+                                title={mixPasteLabel}
+                            />
+                            <span className="text-[10px] font-black text-emerald-700 w-8 text-right">{Math.round(mixPasteGain * 100)}%</span>
+                            <button
+                                onClick={() => setFitClipboardToSelection(!fitClipboardToSelection)}
+                                className={`text-[9px] px-2 py-0.5 rounded border font-black ${fitClipboardToSelection ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-emerald-700 border-emerald-300'}`}
+                            >
+                                {fitSelectionLabel}
+                            </button>
+                        </div>
+                        <button onClick={handlePasteImprint} disabled={!clipboard} className="px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all hover:bg-slate-50 text-pink-600 border border-pink-100 disabled:opacity-30 disabled:hover:bg-transparent" title={text.imprintTitle}>
+                            <Fingerprint size={14} /> {text.imprint}
+                        </button>
+                        <button
+                            onClick={() => setShowAutomation(!showAutomation)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-black flex items-center gap-2 transition-all ${showAutomation ? 'bg-emerald-600 text-white shadow' : 'bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50'}`}
+                            title={gainGraphHint}
+                        >
+                            <Activity size={14} />
+                            {gainGraphLabel}
+                        </button>
                     </div>
 
                     <div className="flex gap-6 flex-col lg:flex-row">
