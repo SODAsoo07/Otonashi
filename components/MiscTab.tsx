@@ -15,10 +15,10 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
     const [selectedFileId, setSelectedFileId] = useState<string>('');
     const activeFile = files.find(f => f.id === selectedFileId) || null;
 
-    // Subharmonic Injector State
+    // Singer's Formant Booster State
     const [exciterOn, setExciterOn] = useState(false);
     const [exciterMix, setExciterMix] = useState(0.5); // 0.0 to 1.0
-    const [exciterPitch, setExciterPitch] = useState(261.6); // C4 default
+    const [exciterPitch, setExciterPitch] = useState(3200); // singer's formant center
 
     // ADSR Envelope State
     const [adsrOn, setAdsrOn] = useState(false);
@@ -37,6 +37,7 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
     // Batch Processing State
     const [isBatchMode, setIsBatchMode] = useState(false);
     const [selectedBatchFiles, setSelectedBatchFiles] = useState<Set<string>>(new Set());
+    const [isBatchDropdownOpen, setIsBatchDropdownOpen] = useState(false);
 
     // Player State
     const [isPlaying, setIsPlaying] = useState(false);
@@ -57,6 +58,7 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         } else if (files.length === 0) {
             setSelectedFileId('');
             setSelectedBatchFiles(new Set());
+            setIsBatchDropdownOpen(false);
         }
 
         // Auto-update batch selection to ensure deleted files are removed
@@ -69,6 +71,12 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         });
 
     }, [files, selectedFileId]);
+
+    useEffect(() => {
+        if (!isBatchMode) {
+            setIsBatchDropdownOpen(false);
+        }
+    }, [isBatchMode]);
 
     // Update monitor gain dynamically
     useEffect(() => {
@@ -153,6 +161,55 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         setPlayheadPos(0);
     }, []);
 
+    const connectSingersFormantBoost = useCallback((
+        ctx: AudioContext | OfflineAudioContext,
+        input: AudioNode,
+        output: AudioNode,
+        mixAmount: number,
+        centerFreq: number
+    ) => {
+        const clampedCenter = Math.min(4300, Math.max(2400, centerFreq));
+
+        // Keep the source body while adding focused singer-presence.
+        const dryGain = ctx.createGain();
+        dryGain.gain.value = mixAmount > 1.0 ? Math.max(0.55, 1.0 - ((mixAmount - 1.0) * 0.35)) : 1.0;
+        input.connect(dryGain);
+        dryGain.connect(output);
+
+        const highpass = ctx.createBiquadFilter();
+        highpass.type = 'highpass';
+        highpass.frequency.value = 1800;
+        highpass.Q.value = 0.7;
+
+        const presencePeak = ctx.createBiquadFilter();
+        presencePeak.type = 'peaking';
+        presencePeak.frequency.value = clampedCenter;
+        presencePeak.Q.value = 3.2;
+        presencePeak.gain.value = 8 + (mixAmount * 5);
+
+        const airShelf = ctx.createBiquadFilter();
+        airShelf.type = 'highshelf';
+        airShelf.frequency.value = Math.min(5800, clampedCenter + 1300);
+        airShelf.gain.value = 2.5 + (mixAmount * 2.0);
+
+        const wetGain = ctx.createGain();
+        wetGain.gain.value = Math.min(1.2, 0.35 + (mixAmount * 0.55));
+
+        const safetyCompressor = ctx.createDynamicsCompressor();
+        safetyCompressor.threshold.value = -12;
+        safetyCompressor.knee.value = 8;
+        safetyCompressor.ratio.value = 8;
+        safetyCompressor.attack.value = 0.003;
+        safetyCompressor.release.value = 0.08;
+
+        input.connect(highpass);
+        highpass.connect(presencePeak);
+        presencePeak.connect(airShelf);
+        airShelf.connect(wetGain);
+        wetGain.connect(safetyCompressor);
+        safetyCompressor.connect(output);
+    }, []);
+
     // Stop on unmount or tab switch
     useEffect(() => {
         if (!isActive) stopAudio();
@@ -206,131 +263,17 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
             masterGain.gain.value = 1.0;
         }
 
-        // Dry signal
-        const dryGain = audioContext.createGain();
-        dryGain.gain.value = exciterOn ? (exciterMix > 1.0 ? Math.max(0, 1.0 - (exciterMix - 1.0)) : 1.0) : 1.0;
-        source.connect(dryGain);
-        dryGain.connect(masterGain);
-
-        // Subharmonic Injector Path
         if (exciterOn) {
-            setIsPlaying(false); // Pause UI while calculating
-
-            const offlineCtx = new OfflineAudioContext(
-                activeFile.buffer.numberOfChannels,
-                activeFile.buffer.length,
-                activeFile.buffer.sampleRate
-            );
-
-            const offlineSource = offlineCtx.createBufferSource();
-            offlineSource.buffer = activeFile.buffer;
-
-            // Subharmonic synthesis by envelope-modulated low sine carrier
-
-            // 1. The Carrier oscillator
-            const osc = offlineCtx.createOscillator();
-            osc.type = 'sine';
-            osc.frequency.value = Math.max(30, exciterPitch * 0.5);
-
-            // Keep injected tone in low-mid band
-            const oscLp = offlineCtx.createBiquadFilter();
-            oscLp.type = 'lowpass';
-            oscLp.frequency.value = Math.max(120, exciterPitch * 1.6);
-            oscLp.Q.value = 0.6;
-
-            // 2. Modulator: Extract Volume Envelope (Envelope Follower)
-            // To avoid harsh intermodulation, we don't multiply raw audio and sawtooth.
-            // We multiply the *volume envelope* of the audio and the sawtooth.
-
-            const amGain = offlineCtx.createGain();
-            amGain.gain.value = 0; // Controlled by envelope
-            osc.connect(oscLp);
-            oscLp.connect(amGain);
-
-            const modulatorSource = offlineCtx.createBufferSource();
-            modulatorSource.buffer = activeFile.buffer;
-
-            // Pre-compression for Modulator to stabilize exciter dynamics (Phase 9)
-            const modCompressor = offlineCtx.createDynamicsCompressor();
-            modCompressor.threshold.value = -40; // Heavy compression
-            modCompressor.ratio.value = 20;
-            modCompressor.attack.value = 0.005;
-            modCompressor.release.value = 0.050;
-
-            // Rectify the signal (absolute value)
-            const rectShaper = offlineCtx.createWaveShaper();
-            const curve = new Float32Array(44100);
-            for (let i = 0; i < 44100; ++i) {
-                const x = (i * 2) / 44100 - 1;
-                curve[i] = Math.abs(x);
-            }
-            rectShaper.curve = curve;
-
-            // Lowpass filter to smooth it into an envelope
-            const envFilter1 = offlineCtx.createBiquadFilter();
-            envFilter1.type = 'lowpass';
-            envFilter1.frequency.value = 30; // Slower 30Hz for less zipper noise
-            envFilter1.Q.value = 0.5;
-
-            const envFilter2 = offlineCtx.createBiquadFilter();
-            envFilter2.type = 'lowpass';
-            envFilter2.frequency.value = 30; // Secondary stage for smooth roll-off
-            envFilter2.Q.value = 0.5;
-
-            // Boost modulator signal slightly to ensure good modulation depth
-            const modBoost = offlineCtx.createGain();
-            modBoost.gain.value = 2.0;
-
-            modulatorSource.connect(modCompressor);
-            modCompressor.connect(rectShaper);
-            rectShaper.connect(envFilter1);
-            envFilter1.connect(envFilter2);
-            envFilter2.connect(modBoost);
-            modBoost.connect(amGain.gain);
-
-            // Main mix on offline ctx
-            // Dry signal remains at full volume up to 100% mix, then ducks if mix > 100%
-            const dry = offlineCtx.createGain();
-            dry.gain.value = exciterMix > 1.0 ? Math.max(0, 1.0 - (exciterMix - 1.0)) : 1.0;
-            offlineSource.connect(dry);
-            dry.connect(offlineCtx.destination);
-
-            // Add the modulated (excited) signal on top
-            const wet = offlineCtx.createGain();
-            // Scaling wet by exciterMix. 
-            wet.gain.value = exciterMix;
-            amGain.connect(wet);
-            const shapeFilter = offlineCtx.createBiquadFilter();
-            shapeFilter.type = 'lowpass';
-            shapeFilter.frequency.value = Math.max(120, exciterPitch * 1.2);
-            wet.connect(shapeFilter);
-            shapeFilter.connect(offlineCtx.destination);
-
-            offlineSource.start(0);
-            modulatorSource.start(0);
-            osc.start(0);
-
-            const renderedBuffer = await offlineCtx.startRendering();
-
-            // Now play the rendered buffer
-            const renderedSource = audioContext.createBufferSource();
-            renderedSource.buffer = renderedBuffer;
-
-            const renderedMonitorNode = audioContext.createGain();
-            renderedMonitorNode.gain.value = monitorGainValue;
-            monitorNodeRef.current = renderedMonitorNode;
-
-            renderedSource.connect(renderedMonitorNode);
-            renderedMonitorNode.connect(audioContext.destination);
-            renderedSource.start();
-            sourceRef.current = renderedSource;
-            setIsPlaying(true);
-
+            connectSingersFormantBoost(audioContext, source, masterGain, exciterMix, exciterPitch);
         } else {
-            // Normal playback
-            source.start();
-            sourceRef.current = source;
+            const dryGain = audioContext.createGain();
+            dryGain.gain.value = 1.0;
+            source.connect(dryGain);
+            dryGain.connect(masterGain);
         }
+
+        source.start();
+        sourceRef.current = source;
 
         const animate = () => {
             if (!isPlaying && !sourceRef.current) return;
@@ -360,76 +303,13 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         const offlineSource = offlineCtx.createBufferSource();
         offlineSource.buffer = file.buffer;
 
-        // Subharmonic synthesis by envelope-modulated low sine carrier
-
-        const osc = offlineCtx.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.value = Math.max(30, exciterPitch * 0.5);
-
-        const oscLp = offlineCtx.createBiquadFilter();
-        oscLp.type = 'lowpass';
-        oscLp.frequency.value = Math.max(120, exciterPitch * 1.6);
-        oscLp.Q.value = 0.6;
-
-        // 2. Modulator: Extract Volume Envelope (Envelope Follower)
-        const amGain = offlineCtx.createGain();
-        amGain.gain.value = 0;
-        osc.connect(oscLp);
-        oscLp.connect(amGain);
-
-        const modulatorSource = offlineCtx.createBufferSource();
-        modulatorSource.buffer = file.buffer;
-
-        // Pre-compression for Modulator to stabilize exciter dynamics (Phase 9)
-        const modCompressor = offlineCtx.createDynamicsCompressor();
-        modCompressor.threshold.value = -40; // Heavy compression
-        modCompressor.ratio.value = 20;
-        modCompressor.attack.value = 0.005;
-        modCompressor.release.value = 0.050;
-
-        // Rectify
-        const rectShaper = offlineCtx.createWaveShaper();
-        const curve = new Float32Array(44100);
-        for (let i = 0; i < 44100; ++i) {
-            const x = (i * 2) / 44100 - 1;
-            curve[i] = Math.abs(x);
-        }
-        rectShaper.curve = curve;
-
-        // Double lowpass filtering for smoother envelope (prevents pops)
-        const envFilter1 = offlineCtx.createBiquadFilter();
-        envFilter1.type = 'lowpass';
-        envFilter1.frequency.value = 30; // 30Hz first stage
-        envFilter1.Q.value = 0.5;
-
-        const envFilter2 = offlineCtx.createBiquadFilter();
-        envFilter2.type = 'lowpass';
-        envFilter2.frequency.value = 30; // 30Hz second stage
-        envFilter2.Q.value = 0.5;
-
-        const modBoost = offlineCtx.createGain();
-        modBoost.gain.value = 2.0;
-
-        modulatorSource.connect(modCompressor);
-        modCompressor.connect(rectShaper);
-        rectShaper.connect(envFilter1);
-        envFilter1.connect(envFilter2);
-        envFilter2.connect(modBoost);
-        modBoost.connect(amGain.gain);
-
-        const dry = offlineCtx.createGain();
-        dry.gain.value = exciterMix > 1.0 ? Math.max(0, 1.0 - (exciterMix - 1.0)) : 1.0;
-        offlineSource.connect(dry);
-
-        let finalWetOutput: AudioNode = offlineCtx.destination;
-        let finalDryOutput: AudioNode = offlineCtx.destination;
+        let finalOutput: AudioNode = offlineCtx.destination;
 
         // Final Output Stage (ADSR)
         if (adsrOn) {
             const masterGain = offlineCtx.createGain();
             masterGain.connect(offlineCtx.destination);
-            finalWetOutput = masterGain;
-            finalDryOutput = masterGain;
+            finalOutput = masterGain;
 
             const duration = offlineSource.buffer!.duration;
             masterGain.gain.setValueAtTime(0, 0);
@@ -449,21 +329,10 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
             offlineSource.playbackRate.value = ratio;
         }
 
-        dry.connect(finalDryOutput);
-
         if (exciterOn) {
-            const wet = offlineCtx.createGain();
-            wet.gain.value = exciterMix;
-            amGain.connect(wet);
-
-            const shapeFilter = offlineCtx.createBiquadFilter();
-            shapeFilter.type = 'lowpass';
-            shapeFilter.frequency.value = Math.max(120, exciterPitch * 1.2);
-            wet.connect(shapeFilter);
-            shapeFilter.connect(finalWetOutput);
-
-            osc.start(0);
-            modulatorSource.start(0);
+            connectSingersFormantBoost(offlineCtx, offlineSource, finalOutput, exciterMix, exciterPitch);
+        } else {
+            offlineSource.connect(finalOutput);
         }
 
         offlineSource.start(0);
@@ -478,7 +347,7 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
             return { buffer: finalBuffer, suffix: 'Tune' };
         }
 
-        return { buffer: renderedBuffer, suffix: tuneOn ? 'Tune' : 'SubH' };
+        return { buffer: renderedBuffer, suffix: tuneOn ? 'Tune' : (exciterOn ? 'SForm' : 'Misc') };
     };
 
     const handleSave = async () => {
@@ -519,33 +388,49 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
                 <span className="text-sm font-black text-slate-700 shrink-0">대상 오디오:</span>
                 <div className="flex items-center justify-between w-full">
-                    <div className="flex-[2] flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                    <div className="flex-[2] min-w-0">
                         {isBatchMode ? (
-                            <div className="flex gap-2">
+                            <div className="relative w-full max-w-[360px]">
                                 <button
-                                    onClick={() => setSelectedBatchFiles(new Set(files.map(f => f.id)))}
-                                    className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold whitespace-nowrap"
-                                >전체 선택</button>
-                                <button
-                                    onClick={() => setSelectedBatchFiles(new Set())}
-                                    className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg text-xs font-bold whitespace-nowrap"
-                                >선택 해제</button>
-                                {files.map(f => (
-                                    <label key={f.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer whitespace-nowrap transition-all ${selectedBatchFiles.has(f.id) ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedBatchFiles.has(f.id)}
-                                            onChange={(e) => {
-                                                const next = new Set(selectedBatchFiles);
-                                                if (e.target.checked) next.add(f.id); else next.delete(f.id);
-                                                setSelectedBatchFiles(next);
-                                            }}
-                                            className="accent-indigo-500"
-                                        />
-                                        <span className="text-xs font-bold truncate max-w-[150px]">{f.name}</span>
-                                    </label>
-                                ))}
-                                {files.length === 0 && <span className="text-xs text-slate-400 py-1.5">보관함이 비어 있습니다.</span>}
+                                    onClick={() => setIsBatchDropdownOpen(v => !v)}
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 text-left hover:border-indigo-300 hover:bg-indigo-50/40 transition-all"
+                                >
+                                    {selectedBatchFiles.size > 0
+                                        ? `${selectedBatchFiles.size}개 선택됨`
+                                        : (files.length === 0 ? '오디오 파일 없음' : '파일 선택')}
+                                </button>
+                                {isBatchDropdownOpen && (
+                                    <div className="absolute z-20 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-lg p-2">
+                                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                                            <button
+                                                onClick={() => setSelectedBatchFiles(new Set(files.map(f => f.id)))}
+                                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                                            >전체 선택</button>
+                                            <button
+                                                onClick={() => setSelectedBatchFiles(new Set())}
+                                                className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-lg text-[11px] font-bold whitespace-nowrap"
+                                            >선택 해제</button>
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto custom-scrollbar py-2 space-y-1">
+                                            {files.map(f => (
+                                                <label key={f.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-md border cursor-pointer transition-all ${selectedBatchFiles.has(f.id) ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedBatchFiles.has(f.id)}
+                                                        onChange={(e) => {
+                                                            const next = new Set(selectedBatchFiles);
+                                                            if (e.target.checked) next.add(f.id); else next.delete(f.id);
+                                                            setSelectedBatchFiles(next);
+                                                        }}
+                                                        className="accent-indigo-500"
+                                                    />
+                                                    <span className="text-xs font-bold truncate">{f.name}</span>
+                                                </label>
+                                            ))}
+                                            {files.length === 0 && <span className="block text-xs text-slate-400 py-2 text-center">보관함이 비어 있습니다.</span>}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <select
@@ -591,12 +476,12 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
 
-                {/* 1. Subharmonic Injector */}
+                {/* 1. Singer's Formant Booster */}
                 <div className={`bg-white rounded-2xl border ${exciterOn ? 'border-indigo-300 shadow-md ring-2 ring-indigo-50 leading-none' : 'border-slate-200 shadow-sm'} overflow-hidden transition-all flex flex-col`}>
                     <div className={`p-4 border-b flex items-center justify-between ${exciterOn ? 'bg-indigo-50 border-indigo-100' : 'bg-slate-50 border-slate-200'}`}>
                         <div className="flex items-center gap-2">
                             <Zap size={18} className={exciterOn ? 'text-indigo-500' : 'text-slate-400'} />
-                            <h3 className={`text-sm font-black uppercase tracking-wide ${exciterOn ? 'text-indigo-700' : 'text-slate-600'}`}>1. Subharmonic Injector</h3>
+                            <h3 className={`text-sm font-black uppercase tracking-wide ${exciterOn ? 'text-indigo-700' : 'text-slate-600'}`}>1. Singer&apos;s Formant Boost</h3>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" className="sr-only peer" checked={exciterOn} onChange={() => setExciterOn(!exciterOn)} />
@@ -604,7 +489,7 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
                         </label>
                     </div>
                     <div className="p-5 flex-1 flex flex-col gap-6 opacity-100 transition-opacity" style={{ opacity: exciterOn ? 1 : 0.5 }}>
-                        <p className="text-xs font-bold text-slate-500">입력 신호의 에너지 엔벨로프로 저주파 캐리어를 변조해, 원본 질감은 유지하면서 저역 서브하모닉을 보강합니다.</p>
+                        <p className="text-xs font-bold text-slate-500">서브하모닉 대신 2.4~4.3kHz 존재감 대역을 강하게 부스트해, 원본 질감을 지키면서 발음 선명도와 전면감을 올립니다.</p>
 
                         <div className="space-y-2">
                             <div className="flex justify-between items-center text-xs font-black">
@@ -621,19 +506,19 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
 
                         <div className="space-y-2">
                             <div className="flex justify-between items-center text-xs font-black">
-                                <span className="text-slate-500">Subharmonic Ref Pitch (기준 피치)</span>
+                                <span className="text-slate-500">Formant Center (중심 주파수)</span>
                                 <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{exciterPitch.toFixed(1)} Hz</span>
                             </div>
                             <input
-                                type="range" min="50" max="600" step="1" value={exciterPitch}
+                                type="range" min="2400" max="4300" step="10" value={exciterPitch}
                                 onChange={e => setExciterPitch(Number(e.target.value))}
                                 disabled={!exciterOn}
                                 className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                             />
                             <div className="flex justify-between text-[10px] font-bold text-slate-400 px-1 pt-1">
-                                <span>50Hz (Sub Low)</span>
-                                <span>C4 (261.6Hz)</span>
-                                <span>600Hz (고음)</span>
+                                <span>2.4kHz</span>
+                                <span>3.2kHz (권장)</span>
+                                <span>4.3kHz</span>
                             </div>
                         </div>
                     </div>
