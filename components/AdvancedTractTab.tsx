@@ -190,7 +190,7 @@ const createDefaultAdvTracks = (language: keyof typeof ADVANCED_TRACT_TRACK_NAME
         { id: 'pitch', name: labels.pitch, group: 'edit', color: '#fbbf24', points: [{ t: 0, v: 220 }, { t: 1, v: 220 }], min: 50, max: 600, interpolation: 'curve' },
         { id: 'gender', name: labels.gender, group: 'edit', color: '#ec4899', points: [{ t: 0, v: 1 }, { t: 1, v: 1 }], min: 0.5, max: 2.0, interpolation: 'curve' },
         { id: 'gain', name: labels.gain, group: 'edit', color: '#ef4444', points: [{ t: 0, v: 0 }, { t: 0.1, v: 1 }, { t: 0.9, v: 1 }, { t: 1, v: 0 }], min: 0, max: 1.5, interpolation: 'linear' },
-        { id: 'breath', name: labels.breath, group: 'edit', color: '#22d3ee', points: [{ t: 0, v: 0.01 }, { t: 1, v: 0.01 }], min: 0, max: 0.3, interpolation: 'linear' },
+        { id: 'breath', name: labels.breath, group: 'edit', color: '#22d3ee', points: [{ t: 0, v: 0 }, { t: 1, v: 0 }], min: 0, max: 0.3, interpolation: 'linear' },
     ];
 };
 
@@ -207,7 +207,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const { language } = useLanguage();
     const text = ADVANCED_TRACT_TEXT[language];
     // --- State ---
-    const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: false, jitterDepth: 10, jitterRate: 5, breathOn: true, breathGain: 0.1, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
+    const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: false, jitterDepth: 10, jitterRate: 5, breathOn: true, breathGain: 0, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
     const [tractSourceType, setTractSourceType] = useState('synth');
     const [tractSourceFileId, setTractSourceFileId] = useState("");
     const [synthWaveform, setSynthWaveform] = useState('sawtooth');
@@ -515,8 +515,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (f3) f3.frequency.setTargetAtTime(fr3, now, 0.01);
         if (nasF) nasF.frequency.setTargetAtTime(Math.max(400, (10000 - (n * 9000)) * gender), now, 0.01);
         if (sNode instanceof OscillatorNode) sNode.frequency.setTargetAtTime(pitch, now, 0.01);
-        if (nG) nG.gain.setTargetAtTime(getValueAtTime('breath', playHeadPos), now, 0.01);
-    }, [audioContext, getValueAtTime, playHeadPos]);
+        if (nG) nG.gain.setTargetAtTime(getValueAtTime('breath', playHeadPos) * (larynxParams.breathOn ? larynxParams.breathGain : 0), now, 0.01);
+    }, [audioContext, getValueAtTime, playHeadPos, larynxParams.breathGain, larynxParams.breathOn]);
 
     const startLivePreview = useCallback(() => {
         if (!audioContext || liveAudioRef.current) return;
@@ -554,7 +554,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
         const g = audioContext.createGain();
         g.gain.value = 0.1; // Reduced from 0.5 to 0.1 for comfortable listening
-        const nG = audioContext.createGain(); nG.gain.value = getValueAtTime('breath', playHeadPos);
+        const nG = audioContext.createGain(); nG.gain.value = getValueAtTime('breath', playHeadPos) * (larynxParams.breathOn ? larynxParams.breathGain : 0);
 
         const f1 = audioContext.createBiquadFilter(); f1.type = 'peaking'; f1.Q.value = 4; f1.gain.value = 12 * simIntensity;
         const f2 = audioContext.createBiquadFilter(); f2.type = 'peaking'; f2.Q.value = 4; f2.gain.value = 12 * simIntensity;
@@ -716,8 +716,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             f2.frequency.linearRampToValueAtTime((800 + x * 1400) * lF * lipF * gFactor, time);
             f3.frequency.linearRampToValueAtTime((2000 + l * 1500) * lF * gFactor, time);
             nasF.frequency.linearRampToValueAtTime(Math.max(400, 10000 - n * 9000) * gFactor, time);
-            const breathV = getV('breath', t);
-            nG.gain.linearRampToValueAtTime(breathV, time);
+                        const breathV = getV('breath', t) * (larynxParams.breathOn ? larynxParams.breathGain : 0);
+                        nG.gain.linearRampToValueAtTime(breathV, time);
         }
 
         sNode.connect(mG);
@@ -1011,6 +1011,21 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     {larynxParams.noiseSourceType === 'file' && (
                                         <select value={larynxParams.noiseSourceFileId} onChange={e => setLarynxParams({ ...larynxParams, noiseSourceFileId: e.target.value })} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900"><option value="">{text.noiseFilePlaceholder}</option>{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
                                     )}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between text-[10px] font-black text-slate-500">
+                                            <span>{text.breath}</span>
+                                            <span className="text-cyan-600">{Math.round(larynxParams.breathGain * 100)}%</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="1.5"
+                                            step="0.01"
+                                            value={larynxParams.breathGain}
+                                            onChange={e => setLarynxParams({ ...larynxParams, breathGain: Number(e.target.value) })}
+                                            className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-cyan-500"
+                                        />
+                                    </div>
                                 </div>
                                 <div className="space-y-4">
                                     <ParamInput label={text.duration} value={advDuration} min={0.5} max={30} step={0.1} onChange={setAdvDuration} colorClass="text-slate-500" />
