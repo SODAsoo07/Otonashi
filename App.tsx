@@ -19,6 +19,97 @@ type HistoryState = {
     files: AudioFile[];
     activeFileId: string | null;
 };
+type TabHistory = {
+    undo: HistoryState[];
+    redo: HistoryState[];
+};
+type ProjectFileData = {
+    id: string;
+    name: string;
+    data: string;
+};
+type SerializedProjectData = {
+    version: string;
+    timestamp?: number;
+    files: ProjectFileData[];
+    ui: UIConfig;
+    activeFileId?: string | null;
+    activeTab?: TabId;
+    fileCounter?: number;
+};
+
+const AUTOSAVE_KEY = 'otonashi_autosave_v1';
+const AUTOSAVE_DB = 'otonashi_autosave_db';
+const AUTOSAVE_STORE = 'sessions';
+const AUTOSAVE_RECORD_ID = 'latest';
+const AUTOSAVE_INTERVAL_MS = 10000;
+
+const createEmptyTabHistories = (): Record<TabId, TabHistory> => ({
+    editor: { undo: [], redo: [] },
+    generator: { undo: [], redo: [] },
+    consonant: { undo: [], redo: [] },
+    sim: { undo: [], redo: [] },
+    vocoder: { undo: [], redo: [] },
+    misc: { undo: [], redo: [] },
+    frq: { undo: [], redo: [] },
+});
+
+const openAutosaveDb = (): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(AUTOSAVE_DB, 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(AUTOSAVE_STORE)) {
+                db.createObjectStore(AUTOSAVE_STORE);
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+};
+
+const readAutosavePayload = async (): Promise<string | null> => {
+    try {
+        const db = await openAutosaveDb();
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction(AUTOSAVE_STORE, 'readonly');
+            const store = tx.objectStore(AUTOSAVE_STORE);
+            const req = store.get(AUTOSAVE_RECORD_ID);
+            req.onsuccess = () => resolve((req.result as string | undefined) ?? null);
+            req.onerror = () => reject(req.error);
+        });
+    } catch {
+        return localStorage.getItem(AUTOSAVE_KEY);
+    }
+};
+
+const writeAutosavePayload = async (payload: string): Promise<void> => {
+    try {
+        const db = await openAutosaveDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(AUTOSAVE_STORE, 'readwrite');
+            tx.objectStore(AUTOSAVE_STORE).put(payload, AUTOSAVE_RECORD_ID);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch {
+        localStorage.setItem(AUTOSAVE_KEY, payload);
+    }
+};
+
+const clearAutosavePayload = async (): Promise<void> => {
+    try {
+        const db = await openAutosaveDb();
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(AUTOSAVE_STORE, 'readwrite');
+            tx.objectStore(AUTOSAVE_STORE).delete(AUTOSAVE_RECORD_ID);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    } finally {
+        localStorage.removeItem(AUTOSAVE_KEY);
+    }
+};
 
 const APP_TEXT = {
     ko: {
@@ -33,8 +124,8 @@ const APP_TEXT = {
             misc: '기타',
             frq: 'FRQ',
         },
-        undo: '전체 작업 되돌리기',
-        redo: '전체 작업 다시 실행',
+        undo: '현재 탭 작업 되돌리기',
+        redo: '현재 탭 작업 다시 실행',
         exportProject: '프로젝트 저장',
         importProject: '프로젝트 열기',
         projectLoadError: '프로젝트를 불러오는 중 오류가 발생했습니다.',
@@ -51,8 +142,8 @@ const APP_TEXT = {
             misc: 'Misc',
             frq: 'FRQ',
         },
-        undo: 'Undo all actions',
-        redo: 'Redo all actions',
+        undo: 'Undo current tab',
+        redo: 'Redo current tab',
         exportProject: 'Save project',
         importProject: 'Open project',
         projectLoadError: 'An error occurred while loading the project.',
@@ -69,8 +160,8 @@ const APP_TEXT = {
             misc: 'その他',
             frq: 'FRQ',
         },
-        undo: 'すべての操作を元に戻す',
-        redo: 'すべての操作をやり直す',
+        undo: '現在のタブを元に戻す',
+        redo: '現在のタブをやり直す',
         exportProject: 'プロジェクトを保存',
         importProject: 'プロジェクトを開く',
         projectLoadError: 'プロジェクトの読み込み中にエラーが発生しました。',
@@ -87,8 +178,9 @@ const AppContent: React.FC = () => {
     const [showHelp, setShowHelp] = useState(false);
     const [fileCounter, setFileCounter] = useState(1);
     const [isRackOpen, setIsRackOpen] = useState(true);
-    const [historyStack, setHistoryStack] = useState<HistoryState[]>([]);
-    const [redoStack, setRedoStack] = useState<HistoryState[]>([]);
+    const [tabHistories, setTabHistories] = useState<Record<TabId, TabHistory>>(createEmptyTabHistories);
+    const [pendingRecoveryTs, setPendingRecoveryTs] = useState<number | null>(null);
+    const [isRecovering, setIsRecovering] = useState(false);
     const [monitorVolume, setMonitorVolume] = useState(80);
     const [isResizing, setIsResizing] = useState(false);
     const [uiConfig, setUiConfig] = useState<UIConfig>({
@@ -100,6 +192,9 @@ const AppContent: React.FC = () => {
         sidebarWidth: 256,
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const autosaveTimerRef = useRef<number | null>(null);
+    const autosaveInFlightRef = useRef(false);
+    const lastAutosaveSignatureRef = useRef('');
 
     const monitorGainValue = monitorVolume / 100;
     const activeFile = useMemo(() => files.find(f => f.id === activeFileId), [files, activeFileId]);
@@ -112,29 +207,59 @@ const AppContent: React.FC = () => {
         { id: 'misc', label: text.tabs.misc },
         { id: 'frq', label: text.tabs.frq },
     ];
+    const activeTabHistory = tabHistories[activeTab];
 
-    const commitHistory = useCallback((currentFiles: AudioFile[], currentActiveFileId: string | null) => {
-        setHistoryStack(prev => [...prev.slice(-29), { files: [...currentFiles], activeFileId: currentActiveFileId }]);
-        setRedoStack([]);
-    }, []);
+    const commitHistory = useCallback((currentFiles: AudioFile[], currentActiveFileId: string | null, targetTab: TabId = activeTab) => {
+        setTabHistories(prev => {
+            const tabHistory = prev[targetTab];
+            const nextUndo = [...tabHistory.undo.slice(-29), { files: [...currentFiles], activeFileId: currentActiveFileId }];
+            return {
+                ...prev,
+                [targetTab]: {
+                    undo: nextUndo,
+                    redo: [],
+                },
+            };
+        });
+    }, [activeTab]);
 
     const handleGlobalUndo = useCallback(() => {
-        if (historyStack.length === 0) return;
-        const prevState = historyStack[historyStack.length - 1];
-        setRedoStack(prev => [...prev, { files: [...files], activeFileId }]);
-        setHistoryStack(prev => prev.slice(0, -1));
+        const currentHistory = tabHistories[activeTab];
+        if (!currentHistory || currentHistory.undo.length === 0) return;
+        const prevState = currentHistory.undo[currentHistory.undo.length - 1];
+
+        setTabHistories(prev => {
+            const history = prev[activeTab];
+            return {
+                ...prev,
+                [activeTab]: {
+                    undo: history.undo.slice(0, -1),
+                    redo: [...history.redo, { files: [...files], activeFileId }],
+                },
+            };
+        });
         setFiles(prevState.files);
         setActiveFileId(prevState.activeFileId);
-    }, [historyStack, files, activeFileId]);
+    }, [tabHistories, activeTab, files, activeFileId]);
 
     const handleGlobalRedo = useCallback(() => {
-        if (redoStack.length === 0) return;
-        const nextState = redoStack[redoStack.length - 1];
-        setHistoryStack(prev => [...prev, { files: [...files], activeFileId }]);
-        setRedoStack(prev => prev.slice(0, -1));
+        const currentHistory = tabHistories[activeTab];
+        if (!currentHistory || currentHistory.redo.length === 0) return;
+        const nextState = currentHistory.redo[currentHistory.redo.length - 1];
+
+        setTabHistories(prev => {
+            const history = prev[activeTab];
+            return {
+                ...prev,
+                [activeTab]: {
+                    undo: [...history.undo, { files: [...files], activeFileId }],
+                    redo: history.redo.slice(0, -1),
+                },
+            };
+        });
         setFiles(nextState.files);
         setActiveFileId(nextState.activeFileId);
-    }, [redoStack, files, activeFileId]);
+    }, [tabHistories, activeTab, files, activeFileId]);
 
     useEffect(() => {
         const styleId = 'otonashi-theme-vars';
@@ -188,6 +313,141 @@ const AppContent: React.FC = () => {
         }
     };
 
+    const buildSerializableProject = useCallback(async (): Promise<SerializedProjectData> => {
+        const fileData: ProjectFileData[] = [];
+        for (const file of files) {
+            const blob = AudioUtils.bufferToWavBlob(file.buffer);
+            const base64 = await AudioUtils.blobToBase64(blob);
+            fileData.push({ id: file.id, name: file.name, data: base64 });
+        }
+        return {
+            version: '1.6',
+            timestamp: Date.now(),
+            files: fileData,
+            ui: uiConfig,
+            activeFileId,
+            activeTab,
+            fileCounter,
+        };
+    }, [files, uiConfig, activeFileId, activeTab, fileCounter]);
+
+    const applyProjectData = useCallback(async (data: SerializedProjectData) => {
+        const importedFiles: AudioFile[] = [];
+        for (const item of data.files || []) {
+            const response = await fetch(item.data);
+            const buffer = await audioContext.decodeAudioData(await response.arrayBuffer());
+            importedFiles.push({ id: item.id, name: item.name, buffer });
+        }
+
+        if (data.ui) setUiConfig(data.ui);
+        setFiles(importedFiles);
+        setActiveFileId(data.activeFileId ?? importedFiles[0]?.id ?? null);
+        setActiveTab(data.activeTab ?? 'editor');
+        setFileCounter(typeof data.fileCounter === 'number' ? data.fileCounter : Math.max(1, importedFiles.length + 1));
+        setTabHistories(createEmptyTabHistories());
+    }, [audioContext]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            const target = e.target as HTMLElement | null;
+            const tagName = target?.tagName?.toLowerCase();
+            const isTextInput = !!target && (target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select');
+            if (isTextInput) return;
+            if (e.key.toLowerCase() !== 'z') return;
+            e.preventDefault();
+            if (e.shiftKey) handleGlobalRedo();
+            else handleGlobalUndo();
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleGlobalUndo, handleGlobalRedo]);
+
+    useEffect(() => {
+        let mounted = true;
+        const loadRecovery = async () => {
+            try {
+                const raw = await readAutosavePayload();
+                if (!raw || !mounted) return;
+                const parsed = JSON.parse(raw) as SerializedProjectData;
+                if (parsed && Array.isArray(parsed.files)) {
+                    setPendingRecoveryTs(typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now());
+                }
+            } catch (err) {
+                console.warn('Failed to read autosave', err);
+            }
+        };
+        void loadRecovery();
+        return () => { mounted = false; };
+    }, []);
+
+    const autosaveSignature = useMemo(() => {
+        const fileSig = files.map(f => `${f.id}:${f.name}:${f.buffer.length}:${f.buffer.sampleRate}`).join('|');
+        return `${activeTab}::${activeFileId ?? ''}::${fileCounter}::${JSON.stringify(uiConfig)}::${fileSig}`;
+    }, [files, activeTab, activeFileId, fileCounter, uiConfig]);
+
+    const saveAutosaveNow = useCallback(async () => {
+        if (autosaveInFlightRef.current) return;
+        autosaveInFlightRef.current = true;
+        try {
+            const payload = await buildSerializableProject();
+            await writeAutosavePayload(JSON.stringify(payload));
+            lastAutosaveSignatureRef.current = autosaveSignature;
+        } catch (err) {
+            console.warn('Autosave failed', err);
+        } finally {
+            autosaveInFlightRef.current = false;
+        }
+    }, [buildSerializableProject, autosaveSignature]);
+
+    useEffect(() => {
+        if (lastAutosaveSignatureRef.current === autosaveSignature) return;
+        if (autosaveTimerRef.current) {
+            window.clearTimeout(autosaveTimerRef.current);
+        }
+        autosaveTimerRef.current = window.setTimeout(() => {
+            void saveAutosaveNow();
+        }, AUTOSAVE_INTERVAL_MS);
+        return () => {
+            if (autosaveTimerRef.current) {
+                window.clearTimeout(autosaveTimerRef.current);
+                autosaveTimerRef.current = null;
+            }
+        };
+    }, [autosaveSignature, saveAutosaveNow]);
+
+    useEffect(() => {
+        const onBeforeUnload = () => {
+            if (lastAutosaveSignatureRef.current !== autosaveSignature) {
+                void saveAutosaveNow();
+            }
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [autosaveSignature, saveAutosaveNow]);
+
+    const handleRecoverAutosave = useCallback(async () => {
+        try {
+            setIsRecovering(true);
+            const raw = await readAutosavePayload();
+            if (!raw) return;
+            const parsed = JSON.parse(raw) as SerializedProjectData;
+            await applyProjectData(parsed);
+            await clearAutosavePayload();
+            setPendingRecoveryTs(null);
+        } catch (err) {
+            alert(text.projectLoadError);
+        } finally {
+            setIsRecovering(false);
+        }
+    }, [applyProjectData, text.projectLoadError]);
+
+    const handleDiscardAutosave = useCallback(() => {
+        void clearAutosavePayload();
+        setPendingRecoveryTs(null);
+    }, []);
+
     const handleFileUpload = async (filesToUpload: FileList | File[]) => {
         await ensureAudioContext();
         commitHistory(files, activeFileId);
@@ -215,15 +475,7 @@ const AppContent: React.FC = () => {
     };
 
     const handleProjectExport = async () => {
-        const fileData = await Promise.all(
-            files.map(async file => {
-                const blob = AudioUtils.bufferToWavBlob(file.buffer);
-                const base64 = await AudioUtils.blobToBase64(blob);
-                return { id: file.id, name: file.name, data: base64 };
-            })
-        );
-
-        const projectData = { version: '1.5', files: fileData, ui: uiConfig };
+        const projectData = await buildSerializableProject();
         const blob = new Blob([JSON.stringify(projectData)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -238,19 +490,8 @@ const AppContent: React.FC = () => {
         if (!file) return;
 
         try {
-            const data = JSON.parse(await file.text());
-            if (data.ui) setUiConfig(data.ui);
-            if (data.files) {
-                const importedFiles: AudioFile[] = [];
-                for (const item of data.files) {
-                    const response = await fetch(item.data);
-                    const buffer = await audioContext.decodeAudioData(await response.arrayBuffer());
-                    importedFiles.push({ id: item.id, name: item.name, buffer });
-                }
-                commitHistory(files, activeFileId);
-                setFiles(importedFiles);
-                setActiveFileId(importedFiles[0]?.id ?? null);
-            }
+            const data = JSON.parse(await file.text()) as SerializedProjectData;
+            await applyProjectData(data);
         } catch (err) {
             alert(text.projectLoadError);
         } finally {
@@ -359,10 +600,10 @@ const AppContent: React.FC = () => {
                         <span className="text-[9px] text-slate-400 font-bold">{text.monitor}</span>
                     </div>
                     <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                        <button onClick={handleGlobalUndo} disabled={historyStack.length === 0} title={text.undo} className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30">
+                        <button onClick={handleGlobalUndo} disabled={activeTabHistory.undo.length === 0} title={text.undo} className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30">
                             <Undo2 size={16} />
                         </button>
-                        <button onClick={handleGlobalRedo} disabled={redoStack.length === 0} title={text.redo} className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30">
+                        <button onClick={handleGlobalRedo} disabled={activeTabHistory.redo.length === 0} title={text.redo} className="p-1.5 text-slate-500 hover:bg-white hover:text-indigo-600 rounded-md transition-all disabled:opacity-30">
                             <Redo2 size={16} />
                         </button>
                     </div>
@@ -430,6 +671,39 @@ const AppContent: React.FC = () => {
                 </div>
             </main>
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+            {pendingRecoveryTs !== null && (
+                <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-5 space-y-4">
+                        <h3 className="text-base font-black text-slate-800">
+                            {language === 'ko' ? '자동 저장된 작업을 발견했습니다' : language === 'ja' ? '自動保存された作業が見つかりました' : 'Autosaved session found'}
+                        </h3>
+                        <p className="text-xs font-bold text-slate-500 leading-relaxed">
+                            {language === 'ko'
+                                ? `저장 시각: ${new Date(pendingRecoveryTs).toLocaleString()}`
+                                : language === 'ja'
+                                    ? `保存時刻: ${new Date(pendingRecoveryTs).toLocaleString()}`
+                                    : `Saved at: ${new Date(pendingRecoveryTs).toLocaleString()}`}
+                        </p>
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                                onClick={handleDiscardAutosave}
+                                className="px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-xs font-black hover:bg-slate-50"
+                            >
+                                {language === 'ko' ? '폐기' : language === 'ja' ? '破棄' : 'Discard'}
+                            </button>
+                            <button
+                                onClick={handleRecoverAutosave}
+                                disabled={isRecovering}
+                                className="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 text-white text-xs font-black"
+                            >
+                                {isRecovering
+                                    ? (language === 'ko' ? '복구 중...' : language === 'ja' ? '復元中...' : 'Recovering...')
+                                    : (language === 'ko' ? '복구' : language === 'ja' ? '復元' : 'Recover')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

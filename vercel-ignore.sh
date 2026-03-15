@@ -1,20 +1,44 @@
 #!/bin/bash
+set -euo pipefail
 
-echo "Current Vercel Branch: $VERCEL_GIT_COMMIT_REF"
+# Vercel "Ignored Build Step" policy:
+# - exit 0: skip deployment
+# - exit 1: proceed with deployment
+#
+# This script disables automatic Git-triggered builds by default.
+# It only allows a build when MANUAL_VERCEL_BUILD=1 is set, and
+# optional branch/commit filters match.
+#
+# Optional filters:
+#   MANUAL_VERCEL_BRANCH=<branch-name>
+#   MANUAL_VERCEL_COMMIT=<full-or-prefix-sha>
 
-# [Whitelist 방식] 
-# 배포를 허용할 브랜치 이름을 | (파이프)로 구분해서 적어주세요.
-# 여기에 적히지 않은 모든 브랜치는 Vercel 배포가 자동으로 취소됩니다.
+ref="${VERCEL_GIT_COMMIT_REF:-}"
+sha="${VERCEL_GIT_COMMIT_SHA:-}"
+manual="${MANUAL_VERCEL_BUILD:-0}"
+target_branch="${MANUAL_VERCEL_BRANCH:-}"
+target_commit="${MANUAL_VERCEL_COMMIT:-}"
 
-case "$VERCEL_GIT_COMMIT_REF" in
-  "public")
-    # 1. 배포를 허용할 브랜치들 (Exit Code 1 -> 빌드 진행)
-    echo "✅ Proceeding with deployment for ALLOWED branch: $VERCEL_GIT_COMMIT_REF"
-    exit 1
-    ;;
-  *)
-    # 2. 그 외 모든 브랜치 (Exit Code 0 -> 빌드 취소)
-    echo "🛑 Skipping deployment for branch: $VERCEL_GIT_COMMIT_REF (Not in whitelist)"
+echo "Vercel ref: ${ref:-<none>}"
+echo "Vercel sha: ${sha:-<none>}"
+
+if [[ "$manual" != "1" ]]; then
+  echo "Skipping build: MANUAL_VERCEL_BUILD is not enabled."
+  exit 0
+fi
+
+if [[ -n "$target_branch" && "$ref" != "$target_branch" ]]; then
+  echo "Skipping build: branch mismatch (expected '$target_branch', got '${ref:-<none>}')."
+  exit 0
+fi
+
+if [[ -n "$target_commit" ]]; then
+  # commit prefix match is allowed (e.g. first 7~12 chars)
+  if [[ -z "$sha" || "$sha" != "$target_commit"* ]]; then
+    echo "Skipping build: commit mismatch (expected prefix '$target_commit', got '${sha:-<none>}')."
     exit 0
-    ;;
-esac
+  fi
+fi
+
+echo "Proceeding with manual deployment (filters matched)."
+exit 1
