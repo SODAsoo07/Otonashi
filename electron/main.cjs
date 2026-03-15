@@ -10,12 +10,17 @@ if (!app.requestSingleInstanceLock()) {
 let win = null;
 
 async function createWindow() {
+  const iconPath = process.platform === 'win32'
+    ? path.join(__dirname, 'assets', 'otonashi.ico')
+    : undefined;
+
   win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 700,
     title: 'OTONASHI',
+    icon: iconPath,
     backgroundColor: '#f8f8f6',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

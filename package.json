@@ -1,7 +1,7 @@
 {
   "name": "otonashi",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.5.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -16,7 +16,8 @@
     "appId": "com.sodasoo07.otonashi",
     "productName": "OTONASHI",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "electron/assets"
     },
     "files": [
       "dist/**/*",
@@ -33,10 +34,16 @@
       "identity": null
     },
     "win": {
+      "icon": "electron/assets/otonashi.ico",
       "target": [
         "nsis",
         "zip"
       ]
+    },
+    "nsis": {
+      "installerIcon": "electron/assets/otonashi.ico",
+      "uninstallerIcon": "electron/assets/otonashi.ico",
+      "installerHeaderIcon": "electron/assets/otonashi.ico"
     }
   },
   "dependencies": {
