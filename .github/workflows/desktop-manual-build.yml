@@ -1,0 +1,166 @@
+name: Desktop Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Build target branch or tag"
+        required: true
+        default: "Public"
+      commit_sha:
+        description: "Optional exact commit SHA override"
+        required: false
+        default: ""
+      target_os:
+        description: "Build platform"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+      fail_if_no_desktop_script:
+        description: "Fail when desktop build script is missing"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  build_windows:
+    name: Build Windows
+    if: ${{ inputs.target_os == 'all' || inputs.target_os == 'windows' }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Checkout commit override
+        if: ${{ inputs.commit_sha != '' }}
+        shell: bash
+        run: |
+          git checkout "${{ inputs.commit_sha }}"
+          git log --oneline -n 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Check desktop build script (Windows)
+        id: script_win
+        shell: bash
+        run: |
+          SCRIPT_NAME="build:desktop:win"
+          HAS_SCRIPT=$(node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const key=process.argv[1]; process.stdout.write(pkg?.scripts?.[key] ? '1' : '0');" "$SCRIPT_NAME")
+          echo "script_name=$SCRIPT_NAME" >> "$GITHUB_OUTPUT"
+          echo "has_script=$HAS_SCRIPT" >> "$GITHUB_OUTPUT"
+          echo "Detected $SCRIPT_NAME: $HAS_SCRIPT"
+
+      - name: Build desktop (Windows)
+        if: ${{ steps.script_win.outputs.has_script == '1' }}
+        run: npm run ${{ steps.script_win.outputs.script_name }}
+
+      - name: Fail when desktop script is missing (Windows)
+        if: ${{ steps.script_win.outputs.has_script != '1' && inputs.fail_if_no_desktop_script }}
+        shell: bash
+        run: |
+          echo "Missing npm script: ${{ steps.script_win.outputs.script_name }}"
+          echo "Add desktop packaging scripts first (electron-builder / tauri / forge)."
+          exit 1
+
+      - name: Skip notice when desktop script is missing (Windows)
+        if: ${{ steps.script_win.outputs.has_script != '1' && !inputs.fail_if_no_desktop_script }}
+        shell: bash
+        run: |
+          echo "Skipping desktop packaging because ${{ steps.script_win.outputs.script_name }} is missing."
+
+      - name: Upload build artifacts (Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            dist/**
+            release/**
+            dist-electron/**
+            out/**
+
+  build_macos:
+    name: Build macOS
+    if: ${{ inputs.target_os == 'all' || inputs.target_os == 'macos' }}
+    runs-on: macos-latest
+    steps:
+      - name: Checkout ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      - name: Checkout commit override
+        if: ${{ inputs.commit_sha != '' }}
+        shell: bash
+        run: |
+          git checkout "${{ inputs.commit_sha }}"
+          git log --oneline -n 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build
+
+      - name: Check desktop build script (macOS)
+        id: script_mac
+        shell: bash
+        run: |
+          SCRIPT_NAME="build:desktop:mac"
+          HAS_SCRIPT=$(node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const key=process.argv[1]; process.stdout.write(pkg?.scripts?.[key] ? '1' : '0');" "$SCRIPT_NAME")
+          echo "script_name=$SCRIPT_NAME" >> "$GITHUB_OUTPUT"
+          echo "has_script=$HAS_SCRIPT" >> "$GITHUB_OUTPUT"
+          echo "Detected $SCRIPT_NAME: $HAS_SCRIPT"
+
+      - name: Build desktop (macOS)
+        if: ${{ steps.script_mac.outputs.has_script == '1' }}
+        run: npm run ${{ steps.script_mac.outputs.script_name }}
+
+      - name: Fail when desktop script is missing (macOS)
+        if: ${{ steps.script_mac.outputs.has_script != '1' && inputs.fail_if_no_desktop_script }}
+        shell: bash
+        run: |
+          echo "Missing npm script: ${{ steps.script_mac.outputs.script_name }}"
+          echo "Add desktop packaging scripts first (electron-builder / tauri / forge)."
+          exit 1
+
+      - name: Skip notice when desktop script is missing (macOS)
+        if: ${{ steps.script_mac.outputs.has_script != '1' && !inputs.fail_if_no_desktop_script }}
+        shell: bash
+        run: |
+          echo "Skipping desktop packaging because ${{ steps.script_mac.outputs.script_name }} is missing."
+
+      - name: Upload build artifacts (macOS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            dist/**
+            release/**
+            dist-electron/**
+            out/**
