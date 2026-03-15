@@ -9,6 +9,10 @@ lerna-debug.log*
 
 node_modules
 dist
+release
+out
+*.blockmap
+latest*.yml
 dist-ssr
 *.local
 
