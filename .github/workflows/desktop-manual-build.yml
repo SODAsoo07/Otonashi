@@ -60,6 +60,16 @@ jobs:
       - name: Build web assets
         run: npm run build
 
+      - name: Cache electron-builder binaries (Windows)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-builder-cache-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-cache-
+
       - name: Check desktop build script (Windows)
         id: script_win
         shell: bash
@@ -72,7 +82,28 @@ jobs:
 
       - name: Build desktop (Windows)
         if: ${{ steps.script_win.outputs.has_script == '1' }}
-        run: npm run ${{ steps.script_win.outputs.script_name }}
+        shell: bash
+        run: |
+          set +e
+          max_attempts=4
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "Desktop build attempt ${attempt}/${max_attempts}"
+            npm run "${{ steps.script_win.outputs.script_name }}"
+            code=$?
+            if [ "$code" -eq 0 ]; then
+              echo "Desktop build succeeded."
+              exit 0
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              delay=$((attempt * 15))
+              echo "Desktop build failed with exit code ${code}. Retrying in ${delay}s..."
+              sleep "$delay"
+            fi
+            attempt=$((attempt + 1))
+          done
+          echo "Desktop build failed after ${max_attempts} attempts."
+          exit "$code"
 
       - name: Fail when desktop script is missing (Windows)
         if: ${{ steps.script_win.outputs.has_script != '1' && inputs.fail_if_no_desktop_script }}
@@ -129,6 +160,16 @@ jobs:
       - name: Build web assets
         run: npm run build
 
+      - name: Cache electron-builder binaries (macOS)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-builder-cache-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-electron-builder-cache-
+
       - name: Check desktop build script (macOS)
         id: script_mac
         shell: bash
@@ -141,7 +182,28 @@ jobs:
 
       - name: Build desktop (macOS)
         if: ${{ steps.script_mac.outputs.has_script == '1' }}
-        run: npm run ${{ steps.script_mac.outputs.script_name }}
+        shell: bash
+        run: |
+          set +e
+          max_attempts=4
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "Desktop build attempt ${attempt}/${max_attempts}"
+            npm run "${{ steps.script_mac.outputs.script_name }}"
+            code=$?
+            if [ "$code" -eq 0 ]; then
+              echo "Desktop build succeeded."
+              exit 0
+            fi
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              delay=$((attempt * 15))
+              echo "Desktop build failed with exit code ${code}. Retrying in ${delay}s..."
+              sleep "$delay"
+            fi
+            attempt=$((attempt + 1))
+          done
+          echo "Desktop build failed after ${max_attempts} attempts."
+          exit "$code"
 
       - name: Fail when desktop script is missing (macOS)
         if: ${{ steps.script_mac.outputs.has_script != '1' && inputs.fail_if_no_desktop_script }}
