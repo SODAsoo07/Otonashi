@@ -37,6 +37,7 @@ export interface LarynxParams {
   breathOn: boolean;
   breathGain: number;
   noiseSourceType: string;
+  noisePreset: 'white' | 'pink' | 'brown';
   noiseSourceFileId: string;
   loopOn: boolean;
 }

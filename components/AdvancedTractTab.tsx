@@ -178,6 +178,90 @@ const ADVANCED_TRACT_TRACK_NAMES = {
 } as const;
 
 type AdvancedTrackNameKey = keyof typeof ADVANCED_TRACT_TRACK_NAMES.ko;
+type NoisePreset = 'white' | 'pink' | 'brown';
+type BlendWave = 'sawtooth' | 'sine' | 'square' | 'noise';
+type SynthBlend = Record<BlendWave, number>;
+
+const DEFAULT_SYNTH_BLEND: SynthBlend = { sawtooth: 1, sine: 0, square: 0, noise: 0 };
+const DEFAULT_BREATH_GAIN = 0.18;
+const BREATH_INTENSITY_SCALE = 0.42;
+const DEFAULT_LARYNX_PARAMS: LarynxParams = {
+    jitterOn: false,
+    jitterDepth: 10,
+    jitterRate: 5,
+    breathOn: true,
+    breathGain: DEFAULT_BREATH_GAIN,
+    noiseSourceType: 'generated',
+    noisePreset: 'white',
+    noiseSourceFileId: '',
+    loopOn: true,
+};
+
+const normalizeSynthBlend = (blend: Partial<SynthBlend> | null | undefined): SynthBlend => {
+    const raw: SynthBlend = {
+        sawtooth: Math.max(0, blend?.sawtooth ?? 0),
+        sine: Math.max(0, blend?.sine ?? 0),
+        square: Math.max(0, blend?.square ?? 0),
+        noise: Math.max(0, blend?.noise ?? 0),
+    };
+    const sum = raw.sawtooth + raw.sine + raw.square + raw.noise;
+    if (sum <= 0.0001) return { ...DEFAULT_SYNTH_BLEND };
+    return {
+        sawtooth: raw.sawtooth / sum,
+        sine: raw.sine / sum,
+        square: raw.square / sum,
+        noise: raw.noise / sum,
+    };
+};
+
+const createNoiseBuffer = (ctx: AudioContext | OfflineAudioContext, length: number, preset: NoisePreset): AudioBuffer => {
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    if (preset === 'pink') {
+        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+        for (let i = 0; i < length; i++) {
+            const white = Math.random() * 2 - 1;
+            b0 = 0.99886 * b0 + white * 0.0555179;
+            b1 = 0.99332 * b1 + white * 0.0750759;
+            b2 = 0.96900 * b2 + white * 0.1538520;
+            b3 = 0.86650 * b3 + white * 0.3104856;
+            b4 = 0.55000 * b4 + white * 0.5329522;
+            b5 = -0.7616 * b5 - white * 0.0168980;
+            const pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+            b6 = white * 0.115926;
+            data[i] = Math.max(-1, Math.min(1, pink * 0.11));
+        }
+        return buffer;
+    }
+
+    if (preset === 'brown') {
+        let last = 0;
+        for (let i = 0; i < length; i++) {
+            const white = Math.random() * 2 - 1;
+            last = (last + 0.02 * white) / 1.02;
+            data[i] = Math.max(-1, Math.min(1, last * 3.5));
+        }
+        return buffer;
+    }
+
+    for (let i = 0; i < length; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    return buffer;
+};
+
+const getBlendForWaveform = (waveform: string, blend: SynthBlend): SynthBlend => {
+    if (waveform === 'sawtooth' || waveform === 'sine' || waveform === 'square' || waveform === 'noise') {
+        return normalizeSynthBlend({
+            sawtooth: waveform === 'sawtooth' ? 1 : 0,
+            sine: waveform === 'sine' ? 1 : 0,
+            square: waveform === 'square' ? 1 : 0,
+            noise: waveform === 'noise' ? 1 : 0,
+        });
+    }
+    return normalizeSynthBlend(blend);
+};
 
 const createDefaultAdvTracks = (language: keyof typeof ADVANCED_TRACT_TRACK_NAMES): AdvTrack[] => {
     const labels = ADVANCED_TRACT_TRACK_NAMES[language];
@@ -207,11 +291,18 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0, onSendToStudio, onSendToVocoder }) => {
     const { language } = useLanguage();
     const text = ADVANCED_TRACT_TEXT[language];
+    const waveBlendLabel = language === 'ko' ? '파형 블렌드' : language === 'ja' ? '波形ブレンド' : 'Wave Blend';
+    const waveNoiseOnlyLabel = language === 'ko' ? '노이즈 단독' : language === 'ja' ? 'ノイズ単体' : 'Noise Only';
+    const waveMixRatioLabel = language === 'ko' ? '파형 비율' : language === 'ja' ? '波形比率' : 'Wave Ratio';
+    const generatedNoiseLabel = language === 'ko' ? '노이즈 프리셋' : language === 'ja' ? 'ノイズプリセット' : 'Noise Preset';
+    const pinkNoiseLabel = language === 'ko' ? '핑크 노이즈' : language === 'ja' ? 'ピンクノイズ' : 'Pink Noise';
+    const brownNoiseLabel = language === 'ko' ? '브라운 노이즈' : language === 'ja' ? 'ブラウンノイズ' : 'Brown Noise';
     // --- State ---
-    const [larynxParams, setLarynxParams] = useState<LarynxParams>({ jitterOn: false, jitterDepth: 10, jitterRate: 5, breathOn: true, breathGain: 0, noiseSourceType: 'generated', noiseSourceFileId: "", loopOn: true });
+    const [larynxParams, setLarynxParams] = useState<LarynxParams>({ ...DEFAULT_LARYNX_PARAMS });
     const [tractSourceType, setTractSourceType] = useState('synth');
     const [tractSourceFileId, setTractSourceFileId] = useState("");
-    const [synthWaveform, setSynthWaveform] = useState('sawtooth');
+    const [synthWaveform, setSynthWaveform] = useState<'blend' | 'noise' | 'sawtooth' | 'sine' | 'square'>('blend');
+    const [synthBlend, setSynthBlend] = useState<SynthBlend>({ ...DEFAULT_SYNTH_BLEND });
     const [pulseWidth, setPulseWidth] = useState(0.5);
     const [advDuration, setAdvDuration] = useState(2.0);
     const [fadeOutDuration] = useState(0.1);
@@ -248,6 +339,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         { id: 4, type: 'highshelf', freq: 6000, gain: 0, q: 0.7, on: true },
         { id: 5, type: 'lowpass', freq: 15000, gain: 0, q: 0.7, on: true }
     ]);
+    const normalizedSynthBlend = normalizeSynthBlend(synthBlend);
 
     const [advTracks, setAdvTracks] = useState<AdvTrack[]>(() => createDefaultAdvTracks(language));
 
@@ -361,9 +453,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     }, [language, localizeTracks]);
 
     const getCurrentState = useCallback(() => ({
-        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration,
+        larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration,
         isEditMode, selectedTrackId, playHeadPos
-    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos]);
+    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos]);
 
     const commitChange = useCallback((label: string = "변경") => {
         const state = getCurrentState();
@@ -372,8 +464,26 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     }, [getCurrentState]);
 
     const restoreState = useCallback((state: any) => {
-        setLarynxParams(state.larynxParams); setTractSourceType(state.tractSourceType); setTractSourceFileId(state.tractSourceFileId);
-        setSynthWaveform(state.synthWaveform); setPulseWidth(state.pulseWidth); setLiveTract(state.liveTract); setAdvTracks(localizeTracks(state.advTracks));
+        const restoredWaveform = (typeof state.synthWaveform === 'string' && ['blend', 'noise', 'sawtooth', 'sine', 'square'].includes(state.synthWaveform))
+            ? state.synthWaveform
+            : 'blend';
+        const nextLarynx = { ...DEFAULT_LARYNX_PARAMS, ...(state.larynxParams ?? {}) };
+        const nextBlend = normalizeSynthBlend(
+            state.synthBlend
+                ? state.synthBlend
+                : (restoredWaveform === 'sawtooth' || restoredWaveform === 'sine' || restoredWaveform === 'square' || restoredWaveform === 'noise'
+                    ? getBlendForWaveform(restoredWaveform, DEFAULT_SYNTH_BLEND)
+                    : DEFAULT_SYNTH_BLEND)
+        );
+
+        setLarynxParams(nextLarynx);
+        setTractSourceType(state.tractSourceType);
+        setTractSourceFileId(state.tractSourceFileId);
+        setSynthWaveform(restoredWaveform as 'blend' | 'noise' | 'sawtooth' | 'sine' | 'square');
+        setSynthBlend(nextBlend);
+        setPulseWidth(state.pulseWidth);
+        setLiveTract(state.liveTract);
+        setAdvTracks(localizeTracks(state.advTracks));
         setManualPitch(state.manualPitch || 220); setManualGender(state.manualGender || 1.0); if (state.eqBands) setEqBands(state.eqBands);
         setSimIntensity(state.simIntensity !== undefined ? state.simIntensity : 1.0);
         setAdvDuration(state.advDuration !== undefined ? state.advDuration : 2.0);
@@ -505,7 +615,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     const updateLiveAudio = useCallback((x: number, y: number, l: number, t: number, len: number, n: number, pitch: number, gender: number) => {
         if (!liveAudioRef.current || !audioContext) return;
-        const now = audioContext.currentTime; const { f1, f2, f3, nasF, sNode, nG } = liveAudioRef.current;
+        const now = audioContext.currentTime; const { f1, f2, f3, nasF, sNode, sourceOscillators, nG } = liveAudioRef.current;
         const lF = 1.0 - (len * 0.3); const liF = 0.5 + (l * 0.5);
         let fr1 = (200 + (1 - y) * 600 - (t * 50)) * lF * liF;
         let fr2 = (800 + x * 1400) * lF * liF;
@@ -515,47 +625,74 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         if (f2) f2.frequency.setTargetAtTime(fr2, now, 0.01);
         if (f3) f3.frequency.setTargetAtTime(fr3, now, 0.01);
         if (nasF) nasF.frequency.setTargetAtTime(Math.max(400, (10000 - (n * 9000)) * gender), now, 0.01);
-        if (sNode instanceof OscillatorNode) sNode.frequency.setTargetAtTime(pitch, now, 0.01);
-        if (nG) nG.gain.setTargetAtTime(getValueAtTime('breath', playHeadPos) * (larynxParams.breathOn ? larynxParams.breathGain : 0), now, 0.01);
+        if (Array.isArray(sourceOscillators) && sourceOscillators.length > 0) {
+            sourceOscillators.forEach((osc: OscillatorNode) => osc.frequency.setTargetAtTime(pitch, now, 0.01));
+        } else if (sNode instanceof OscillatorNode) {
+            sNode.frequency.setTargetAtTime(pitch, now, 0.01);
+        }
+        if (nG) nG.gain.setTargetAtTime(getValueAtTime('breath', playHeadPos) * (larynxParams.breathOn ? larynxParams.breathGain : 0) * BREATH_INTENSITY_SCALE, now, 0.01);
     }, [audioContext, getValueAtTime, playHeadPos, larynxParams.breathGain, larynxParams.breathOn]);
 
     const startLivePreview = useCallback(() => {
         if (!audioContext || liveAudioRef.current) return;
         let sNode: any;
         let nNode: any;
+        let sourceNode: AudioNode | null = null;
+        const sourceNodes: AudioScheduledSourceNode[] = [];
+        const sourceOscillators: OscillatorNode[] = [];
 
         if (tractSourceType === 'file' && tractSourceFileId) {
             const f = files.find(f => f.id === tractSourceFileId);
-            if (f?.buffer) { sNode = audioContext.createBufferSource(); sNode.buffer = f.buffer; sNode.loop = larynxParams.loopOn; }
-        }
-        if (!sNode) {
-            if (synthWaveform === 'noise') {
-                const bufferSize = audioContext.sampleRate * 2;
-                const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-                sNode = audioContext.createBufferSource(); sNode.buffer = buffer; sNode.loop = true;
-            } else {
-                sNode = audioContext.createOscillator();
-                sNode.type = synthWaveform as OscillatorType;
-                sNode.frequency.value = manualPitch;
+            if (f?.buffer) {
+                sNode = audioContext.createBufferSource(); sNode.buffer = f.buffer; sNode.loop = larynxParams.loopOn;
+                sourceNode = sNode;
+                sourceNodes.push(sNode);
             }
+        }
+        if (!sourceNode) {
+            const blend = getBlendForWaveform(synthWaveform, synthBlend);
+            const blendBus = audioContext.createGain();
+            blendBus.gain.value = 1;
+            const bufferSize = audioContext.sampleRate * 2;
+            (Object.keys(blend) as BlendWave[]).forEach(w => {
+                const weight = blend[w];
+                if (weight <= 0.0001) return;
+                const wg = audioContext.createGain();
+                wg.gain.value = weight;
+                if (w === 'noise') {
+                    const noiseBuffer = createNoiseBuffer(audioContext, bufferSize, larynxParams.noisePreset);
+                    const noiseSrc = audioContext.createBufferSource();
+                    noiseSrc.buffer = noiseBuffer;
+                    noiseSrc.loop = true;
+                    noiseSrc.connect(wg);
+                    sourceNodes.push(noiseSrc);
+                } else {
+                    const osc = audioContext.createOscillator();
+                    osc.type = w;
+                    osc.frequency.value = manualPitch;
+                    osc.connect(wg);
+                    sourceNodes.push(osc);
+                    sourceOscillators.push(osc);
+                }
+                wg.connect(blendBus);
+            });
+            sourceNode = blendBus;
+            sNode = sourceOscillators[0] ?? sourceNodes[0] ?? null;
         }
 
         if (larynxParams.noiseSourceType === 'file' && larynxParams.noiseSourceFileId) {
             const f = files.find(f => f.id === larynxParams.noiseSourceFileId);
             if (f?.buffer) { nNode = audioContext.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn; }
-        } else {
+        }
+        if (!nNode) {
             const bufferSize = audioContext.sampleRate * 2;
-            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-            const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-            nNode = audioContext.createBufferSource(); nNode.buffer = buffer; nNode.loop = true;
+            const noiseBuffer = createNoiseBuffer(audioContext, bufferSize, larynxParams.noisePreset);
+            nNode = audioContext.createBufferSource(); nNode.buffer = noiseBuffer; nNode.loop = true;
         }
 
         const g = audioContext.createGain();
         g.gain.value = 0.1; // Reduced from 0.5 to 0.1 for comfortable listening
-        const nG = audioContext.createGain(); nG.gain.value = getValueAtTime('breath', playHeadPos) * (larynxParams.breathOn ? larynxParams.breathGain : 0);
+        const nG = audioContext.createGain(); nG.gain.value = getValueAtTime('breath', playHeadPos) * (larynxParams.breathOn ? larynxParams.breathGain : 0) * BREATH_INTENSITY_SCALE;
 
         const f1 = audioContext.createBiquadFilter(); f1.type = 'peaking'; f1.Q.value = 4; f1.gain.value = 12 * simIntensity;
         const f2 = audioContext.createBiquadFilter(); f2.type = 'peaking'; f2.Q.value = 4; f2.gain.value = 12 * simIntensity;
@@ -570,7 +707,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             }
         });
 
-        sNode.connect(f1);
+        sourceNode?.connect(f1);
         nNode.connect(nG); nG.connect(f1);
 
         // 출력단: 필터 및 EQ 거친 후 -> 전체 Gain (g) -> 안전 Limiter -> Monitor Gain -> 스피커
@@ -589,13 +726,23 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         limiter.connect(monitorNode);
         monitorNode.connect(audioContext.destination);
 
-        sNode.start(); nNode.start();
-        liveAudioRef.current = { sNode, nNode, nG, f1, f2, f3, nasF };
-    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, synthWaveform, manualPitch, eqBands, getValueAtTime, playHeadPos, simIntensity, monitorGainValue]);
+        sourceNodes.forEach(node => node.start());
+        nNode.start();
+        liveAudioRef.current = { sNode, sourceOscillators, sourceNodes, nNode, nG, f1, f2, f3, nasF };
+    }, [audioContext, tractSourceType, tractSourceFileId, files, larynxParams, synthWaveform, synthBlend, manualPitch, eqBands, getValueAtTime, playHeadPos, simIntensity, monitorGainValue]);
 
     const stopLivePreview = useCallback(() => {
         if (liveAudioRef.current) {
-            try { liveAudioRef.current.sNode.stop(); if (liveAudioRef.current.nNode) liveAudioRef.current.nNode.stop(); } catch (e) { }
+            try {
+                if (Array.isArray(liveAudioRef.current.sourceNodes)) {
+                    liveAudioRef.current.sourceNodes.forEach((node: AudioScheduledSourceNode) => {
+                        try { node.stop(); } catch { }
+                    });
+                } else if (liveAudioRef.current.sNode) {
+                    liveAudioRef.current.sNode.stop();
+                }
+                if (liveAudioRef.current.nNode) liveAudioRef.current.nNode.stop();
+            } catch (e) { }
             liveAudioRef.current = null;
         }
     }, []);
@@ -635,33 +782,55 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const getV = (id: string, t: number) => getValueAtTime(id, t);
 
         let sNode: AudioNode;
+        const sourceNodes: AudioScheduledSourceNode[] = [];
+        const pitchOscillators: OscillatorNode[] = [];
         if (tractSourceType === 'file' && tractSourceFileId) {
             const f = files.find(f => f.id === tractSourceFileId);
             if (f?.buffer) {
                 const b = offline.createBufferSource(); b.buffer = f.buffer; b.loop = larynxParams.loopOn; sNode = b;
+                sourceNodes.push(b);
             } else {
                 const osc = offline.createOscillator(); osc.type = 'sawtooth'; sNode = osc;
+                sourceNodes.push(osc);
+                pitchOscillators.push(osc);
             }
         } else {
-            if (synthWaveform === 'noise') {
-                const bufferSize = sr * advDuration;
-                const buffer = offline.createBuffer(1, bufferSize, sr);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-                const noiseSrc = offline.createBufferSource(); noiseSrc.buffer = buffer; sNode = noiseSrc;
-            } else {
-                const osc = offline.createOscillator();
-                osc.type = synthWaveform as any;
-                const pitchTrack = advTracks.find(t => t.id === 'pitch');
-                if (pitchTrack && pitchTrack.points.length > 0) {
-                    const steps = 100;
-                    for (let i = 0; i <= steps; i++) {
-                        const t = i / steps;
-                        const val = getValueAtTime('pitch', t);
-                        osc.frequency.linearRampToValueAtTime(val, t * advDuration);
-                    }
+            const blend = getBlendForWaveform(synthWaveform, synthBlend);
+            const blendBus = offline.createGain();
+            blendBus.gain.value = 1;
+            const blendNoiseBuffer = createNoiseBuffer(offline, Math.max(1, Math.floor(sr * advDuration)), larynxParams.noisePreset);
+            (Object.keys(blend) as BlendWave[]).forEach(w => {
+                const weight = blend[w];
+                if (weight <= 0.0001) return;
+                const wg = offline.createGain();
+                wg.gain.value = weight;
+                if (w === 'noise') {
+                    const noiseSrc = offline.createBufferSource();
+                    noiseSrc.buffer = blendNoiseBuffer;
+                    noiseSrc.loop = true;
+                    noiseSrc.connect(wg);
+                    sourceNodes.push(noiseSrc);
+                } else {
+                    const osc = offline.createOscillator();
+                    osc.type = w;
+                    osc.connect(wg);
+                    sourceNodes.push(osc);
+                    pitchOscillators.push(osc);
                 }
-                sNode = osc;
+                wg.connect(blendBus);
+            });
+            sNode = blendBus;
+        }
+
+        if (pitchOscillators.length > 0) {
+            const pitchTrack = advTracks.find(t => t.id === 'pitch');
+            if (pitchTrack && pitchTrack.points.length > 0) {
+                const pitchSteps = 100;
+                for (let i = 0; i <= pitchSteps; i++) {
+                    const t = i / pitchSteps;
+                    const val = getValueAtTime('pitch', t);
+                    pitchOscillators.forEach(osc => osc.frequency.linearRampToValueAtTime(val, t * advDuration));
+                }
             }
         }
 
@@ -671,17 +840,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             if (f?.buffer) {
                 nNode = offline.createBufferSource(); nNode.buffer = f.buffer; nNode.loop = larynxParams.loopOn;
             } else {
-                const bufferSize = sr * advDuration;
-                const buffer = offline.createBuffer(1, bufferSize, sr);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                const buffer = createNoiseBuffer(offline, Math.max(1, Math.floor(sr * advDuration)), larynxParams.noisePreset);
                 nNode = offline.createBufferSource(); nNode.buffer = buffer; nNode.loop = true;
             }
         } else {
-            const bufferSize = sr * advDuration;
-            const buffer = offline.createBuffer(1, bufferSize, sr);
-            const data = buffer.getChannelData(0);
-            for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+            const buffer = createNoiseBuffer(offline, Math.max(1, Math.floor(sr * advDuration)), larynxParams.noisePreset);
             nNode = offline.createBufferSource(); nNode.buffer = buffer; nNode.loop = true;
         }
 
@@ -717,7 +880,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             f2.frequency.linearRampToValueAtTime((800 + x * 1400) * lF * lipF * gFactor, time);
             f3.frequency.linearRampToValueAtTime((2000 + l * 1500) * lF * gFactor, time);
             nasF.frequency.linearRampToValueAtTime(Math.max(400, 10000 - n * 9000) * gFactor, time);
-                        const breathV = getV('breath', t) * (larynxParams.breathOn ? larynxParams.breathGain : 0);
+                        const breathV = getV('breath', t) * (larynxParams.breathOn ? larynxParams.breathGain : 0) * BREATH_INTENSITY_SCALE;
                         nG.gain.linearRampToValueAtTime(breathV, time);
         }
 
@@ -735,14 +898,18 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         });
 
         lastNode.connect(offline.destination);
-        if ((sNode as any).start) (sNode as any).start(0);
+        if (sourceNodes.length > 0) {
+            sourceNodes.forEach(node => node.start(0));
+        } else if ((sNode as any).start) {
+            (sNode as any).start(0);
+        }
         nNode.start(0);
 
         const renderedBuffer = await offline.startRendering();
 
         lastRenderedRef.current = renderedBuffer;
         return renderedBuffer;
-    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, eqBands, getValueAtTime, simIntensity]);
+    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, synthBlend, eqBands, getValueAtTime, simIntensity]);
 
     useEffect(() => {
         if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current);
@@ -1006,7 +1173,49 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     </div>
                                     {tractSourceType === 'synth' && (
                                         <div className="space-y-2">
-                                            <div className="flex items-center justify-between"><span className="text-[10px] text-slate-500 uppercase font-black">{text.waveform}</span><select value={synthWaveform} onChange={e => setSynthWaveform(e.target.value)} className="text-[10px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"><option value="sawtooth">{text.waveSawtooth}</option><option value="sine">{text.waveSine}</option><option value="square">{text.waveSquare}</option><option value="noise">{text.waveNoise}</option></select></div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] text-slate-500 uppercase font-black">{text.waveform}</span>
+                                                <select value={synthWaveform} onChange={e => setSynthWaveform(e.target.value as any)} className="text-[10px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900">
+                                                    <option value="blend">{waveBlendLabel}</option>
+                                                    <option value="sawtooth">{text.waveSawtooth}</option>
+                                                    <option value="sine">{text.waveSine}</option>
+                                                    <option value="square">{text.waveSquare}</option>
+                                                    <option value="noise">{waveNoiseOnlyLabel}</option>
+                                                </select>
+                                            </div>
+                                            {synthWaveform === 'blend' && (
+                                                <div className="space-y-1.5 p-2 rounded-lg border border-slate-200 bg-white">
+                                                    <div className="flex items-center justify-between text-[10px] font-black text-slate-500 uppercase">
+                                                        <span>{waveMixRatioLabel}</span>
+                                                        <span className="text-slate-400">100%</span>
+                                                    </div>
+                                                    {([
+                                                        ['sawtooth', text.waveSawtooth],
+                                                        ['sine', text.waveSine],
+                                                        ['square', text.waveSquare],
+                                                        ['noise', text.waveNoise],
+                                                    ] as [BlendWave, string][]).map(([waveId, label]) => (
+                                                        <div key={waveId} className="space-y-0.5">
+                                                            <div className="flex justify-between text-[10px] font-black text-slate-500">
+                                                                <span>{label}</span>
+                                                                <span className="text-indigo-600">{Math.round(normalizedSynthBlend[waveId] * 100)}%</span>
+                                                            </div>
+                                                            <input
+                                                                type="range"
+                                                                min="0"
+                                                                max="1"
+                                                                step="0.01"
+                                                                value={synthBlend[waveId]}
+                                                                onChange={e => {
+                                                                    const next = Number(e.target.value);
+                                                                    setSynthBlend(prev => ({ ...prev, [waveId]: next }));
+                                                                }}
+                                                                className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                     {tractSourceType === 'file' && (
@@ -1022,11 +1231,33 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     <div className="h-px bg-slate-200 my-2" />
                                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Wind size={12} /> {text.noiseSource}</h3>
                                     <div className="flex gap-2 p-1 bg-slate-200 rounded-lg shadow-inner">
-                                        <button onClick={() => setLarynxParams({ ...larynxParams, noiseSourceType: 'generated' })} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType === 'generated' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{text.whiteNoise}</button>
+                                        <button onClick={() => setLarynxParams({ ...larynxParams, noiseSourceType: 'generated' })} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType === 'generated' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{generatedNoiseLabel}</button>
                                         <button onClick={() => setLarynxParams({ ...larynxParams, noiseSourceType: 'file' })} className={`flex-1 py-1.5 rounded text-[10px] font-black transition-all ${larynxParams.noiseSourceType === 'file' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{text.fileSource}</button>
                                     </div>
                                     {larynxParams.noiseSourceType === 'file' && (
                                         <select value={larynxParams.noiseSourceFileId} onChange={e => setLarynxParams({ ...larynxParams, noiseSourceFileId: e.target.value })} className="w-full p-2 border rounded-lg text-xs font-bold outline-none text-slate-900"><option value="">{text.noiseFilePlaceholder}</option>{files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
+                                    )}
+                                    {larynxParams.noiseSourceType === 'generated' && (
+                                        <div className="grid grid-cols-3 gap-1">
+                                            <button
+                                                onClick={() => setLarynxParams({ ...larynxParams, noisePreset: 'white' })}
+                                                className={`py-1 rounded text-[10px] font-black border transition-all ${larynxParams.noisePreset === 'white' ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                                            >
+                                                {text.whiteNoise}
+                                            </button>
+                                            <button
+                                                onClick={() => setLarynxParams({ ...larynxParams, noisePreset: 'pink' })}
+                                                className={`py-1 rounded text-[10px] font-black border transition-all ${larynxParams.noisePreset === 'pink' ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                                            >
+                                                {pinkNoiseLabel}
+                                            </button>
+                                            <button
+                                                onClick={() => setLarynxParams({ ...larynxParams, noisePreset: 'brown' })}
+                                                className={`py-1 rounded text-[10px] font-black border transition-all ${larynxParams.noisePreset === 'brown' ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                                            >
+                                                {brownNoiseLabel}
+                                            </button>
+                                        </div>
                                     )}
                                     <div className="space-y-1">
                                         <div className="flex justify-between text-[10px] font-black text-slate-500">
@@ -1036,7 +1267,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                         <input
                                             type="range"
                                             min="0"
-                                            max="1.5"
+                                            max="1.2"
                                             step="0.01"
                                             value={larynxParams.breathGain}
                                             onChange={e => setLarynxParams({ ...larynxParams, breathGain: Number(e.target.value) })}
