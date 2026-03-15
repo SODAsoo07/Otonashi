@@ -2,6 +2,7 @@
 import { Play, Save, Activity, Zap, Waves, Volume2, RefreshCw } from 'lucide-react';
 import { AudioFile } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
+import MultiSelectDropdown from './ui/MultiSelectDropdown';
 
 interface MiscTabProps {
     audioContext: AudioContext;
@@ -37,7 +38,6 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
     // Batch Processing State
     const [isBatchMode, setIsBatchMode] = useState(false);
     const [selectedBatchFiles, setSelectedBatchFiles] = useState<Set<string>>(new Set());
-    const [isBatchDropdownOpen, setIsBatchDropdownOpen] = useState(false);
 
     // Player State
     const [isPlaying, setIsPlaying] = useState(false);
@@ -58,7 +58,6 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         } else if (files.length === 0) {
             setSelectedFileId('');
             setSelectedBatchFiles(new Set());
-            setIsBatchDropdownOpen(false);
         }
 
         // Auto-update batch selection to ensure deleted files are removed
@@ -71,12 +70,6 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
         });
 
     }, [files, selectedFileId]);
-
-    useEffect(() => {
-        if (!isBatchMode) {
-            setIsBatchDropdownOpen(false);
-        }
-    }, [isBatchMode]);
 
     // Update monitor gain dynamically
     useEffect(() => {
@@ -390,48 +383,17 @@ const MiscTab: React.FC<MiscTabProps> = ({ audioContext, files, onAddToRack, isA
                 <div className="flex items-center justify-between w-full">
                     <div className="flex-[2] min-w-0">
                         {isBatchMode ? (
-                            <div className="relative w-full max-w-[360px]">
-                                <button
-                                    onClick={() => setIsBatchDropdownOpen(v => !v)}
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 text-left hover:border-indigo-300 hover:bg-indigo-50/40 transition-all"
-                                >
-                                    {selectedBatchFiles.size > 0
-                                        ? `${selectedBatchFiles.size}개 선택됨`
-                                        : (files.length === 0 ? '오디오 파일 없음' : '파일 선택')}
-                                </button>
-                                {isBatchDropdownOpen && (
-                                    <div className="absolute z-20 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-lg p-2">
-                                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
-                                            <button
-                                                onClick={() => setSelectedBatchFiles(new Set(files.map(f => f.id)))}
-                                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold whitespace-nowrap"
-                                            >전체 선택</button>
-                                            <button
-                                                onClick={() => setSelectedBatchFiles(new Set())}
-                                                className="px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-lg text-[11px] font-bold whitespace-nowrap"
-                                            >선택 해제</button>
-                                        </div>
-                                        <div className="max-h-48 overflow-y-auto custom-scrollbar py-2 space-y-1">
-                                            {files.map(f => (
-                                                <label key={f.id} className={`flex items-center gap-2 px-2 py-1.5 rounded-md border cursor-pointer transition-all ${selectedBatchFiles.has(f.id) ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedBatchFiles.has(f.id)}
-                                                        onChange={(e) => {
-                                                            const next = new Set(selectedBatchFiles);
-                                                            if (e.target.checked) next.add(f.id); else next.delete(f.id);
-                                                            setSelectedBatchFiles(next);
-                                                        }}
-                                                        className="accent-indigo-500"
-                                                    />
-                                                    <span className="text-xs font-bold truncate">{f.name}</span>
-                                                </label>
-                                            ))}
-                                            {files.length === 0 && <span className="block text-xs text-slate-400 py-2 text-center">보관함이 비어 있습니다.</span>}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+                            <MultiSelectDropdown
+                                className="w-full max-w-[360px]"
+                                options={files.map(f => ({ value: f.id, label: f.name }))}
+                                selectedValues={Array.from(selectedBatchFiles)}
+                                onChange={(next) => setSelectedBatchFiles(new Set(next))}
+                                placeholder={files.length === 0 ? '오디오 파일 없음' : '파일 선택'}
+                                summaryLabel={(count) => `${count}개 선택됨`}
+                                emptyLabel="보관함이 비어 있습니다."
+                                selectAllLabel="전체 선택"
+                                clearLabel="선택 해제"
+                            />
                         ) : (
                             <select
                                 value={selectedFileId}

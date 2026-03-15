@@ -9,6 +9,7 @@ import { AudioUtils, RULER_HEIGHT } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
 import FormantPad from './FormantPad';
 import RangeControl from './ui/RangeControl';
+import EditorModeBar from './ui/EditorModeBar';
 
 interface StudioTabProps {
     audioContext: AudioContext;
@@ -221,6 +222,8 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     // 노말라이제이션 (렌더링 버퍼에 peak normalization 적용)
     const [normalizationEnabled, setNormalizationEnabled] = useState(false);
+    const [autoLevelCompEnabled, setAutoLevelCompEnabled] = useState(true);
+    const [autoLevelCompDb, setAutoLevelCompDb] = useState(0);
 
     // Singer's Formant: 2.5~4kHz 대역 부스트 (성악 기법)
     const [singersFormantEnabled, setSingersFormantEnabled] = useState(false);
@@ -309,6 +312,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         : language === 'ja'
             ? 'Shift+\u30AF\u30EA\u30C3\u30AF\u3067\u8FFD\u52A0\u3001\u30C9\u30E9\u30C3\u30B0\u3067\u79FB\u52D5\u3001\u53F3\u30AF\u30EA\u30C3\u30AF\u3067\u524A\u9664'
             : 'Shift+Click add, drag move, right-click delete';
+    const autoLevelLabel = language === 'ko' ? '\uC790\uB3D9 \uB808\uBCA8' : language === 'ja' ? '\u81EA\u52D5\u30EC\u30D9\u30EB' : 'Auto Level';
+    const modeTitle = language === 'ko' ? '\uD3B8\uC9D1 \uC0C1\uD0DC' : language === 'ja' ? '\u7DE8\u96C6\u72B6\u614B' : 'Editor State';
+    const modeSelection = language === 'ko' ? '\uC120\uD0DD \uD3B8\uC9D1' : language === 'ja' ? '\u9078\u629E\u7DE8\u96C6' : 'Selection';
+    const modeGain = language === 'ko' ? '\uAC8C\uC778 \uADF8\uB798\uD504' : language === 'ja' ? '\u30B2\u30A4\u30F3\u30B0\u30E9\u30D5' : 'Gain Graph';
+    const modePlayback = language === 'ko' ? '\uC7AC\uC0DD' : language === 'ja' ? '\u518D\u751F' : 'Playback';
+    const modePaused = language === 'ko' ? '\uC77C\uC2DC\uC815\uC9C0' : language === 'ja' ? '\u4E00\u6642\u505C\u6B62' : 'Paused';
+    const modeStopped = language === 'ko' ? '\uC815\uC9C0' : language === 'ja' ? '\u505C\u6B62' : 'Stopped';
+    const modeRange = language === 'ko' ? '\uC120\uD0DD \uAD6C\uAC04' : language === 'ja' ? '\u9078\u629E\u7BC4\u56F2' : 'Range';
+    const modeComp = language === 'ko' ? '\uB808\uBCA8 \uBCF4\uC815' : language === 'ja' ? '\u30EC\u30D9\u30EB\u88DC\u6B63' : 'Comp';
+    const modeHint = language === 'ko' ? 'Space \uC7AC\uC0DD/\uC77C\uC2DC\uC815\uC9C0' : language === 'ja' ? 'Space \u518D\u751F/\u4E00\u6642\u505C\u6B62' : 'Space play/pause';
     const sectionOnLabel = language === 'ko' ? '켜짐' : language === 'ja' ? 'オン' : 'On';
     const sectionOffLabel = language === 'ko' ? '꺼짐' : language === 'ja' ? 'オフ' : 'Off';
 
@@ -515,6 +528,22 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
     }, [activeBuffer, audioContext, editTrim, activeFile, onAddToRack]);
 
+    const applyOutputLevelCompensation = useCallback((reference: AudioBuffer, processed: AudioBuffer, compareLength?: number) => {
+        let levelDb = 0;
+        let limiterDb = 0;
+
+        if (autoLevelCompEnabled) {
+            const matched = AudioUtils.matchOutputLevelInPlace(reference, processed, compareLength ?? reference.length, 12);
+            levelDb = matched.levelDb;
+            limiterDb = matched.limiterDb;
+        } else {
+            limiterDb = AudioUtils.applyPeakLimiterInPlace(processed);
+        }
+
+        const totalDb = levelDb + limiterDb;
+        setAutoLevelCompDb(prev => (Math.abs(prev - totalDb) > 0.05 ? totalDb : prev));
+    }, [autoLevelCompEnabled]);
+
     const renderFormantOnly = useCallback(async (buf: AudioBuffer) => {
         if (!buf || !audioContext) return null;
         const offline = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate);
@@ -557,40 +586,15 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         src.start(0);
         const rendered = await offline.startRendering();
 
-        // Prevent sudden loudness jumps after formant filtering:
-        // keep output peak below both original peak and safe headroom.
-        let inPeak = 0;
-        for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-            const data = buf.getChannelData(ch);
-            for (let i = 0; i < data.length; i++) {
-                const abs = Math.abs(data[i]);
-                if (abs > inPeak) inPeak = abs;
-            }
+        if (!bypassEffects && (effectsSectionEnabled || formantSectionEnabled)) {
+            applyOutputLevelCompensation(buf, rendered, buf.length);
+        } else {
+            setAutoLevelCompDb(0);
         }
-
-        let outPeak = 0;
-        for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
-            const data = rendered.getChannelData(ch);
-            for (let i = 0; i < data.length; i++) {
-                const abs = Math.abs(data[i]);
-                if (abs > outPeak) outPeak = abs;
-            }
-        }
-
-        if (outPeak > 0) {
-            let gain = 1;
-            if (inPeak > 0 && outPeak > inPeak) gain = Math.min(gain, inPeak / outPeak);
-            if (outPeak > 0.98) gain = Math.min(gain, 0.98 / outPeak);
-            if (gain < 1) {
-                for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
-                    const data = rendered.getChannelData(ch);
-                    for (let i = 0; i < data.length; i++) data[i] *= gain;
-                }
-            }
-        }
+        applyOutputLevelCompensation(buf, rendered, buf.length);
 
         return rendered;
-    }, [audioContext, formant, genderShift, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
+    }, [audioContext, formant, genderShift, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ, applyOutputLevelCompensation]);
 
     const applyFormantLabel = language === 'ko' ? '\uD3EC\uBA3C\uD2B8 \uC801\uC6A9' : language === 'ja' ? '\u30D5\u30A9\u30EB\u30DE\u30F3\u30C8\u9069\u7528' : 'Apply Formant';
     const applyFormantHint = language === 'ko'
@@ -665,6 +669,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
             formantFilterSectionEnabled ? 1 : 0,
             formantSectionEnabled ? 1 : 0,
             normalizationEnabled ? 1 : 0,
+            autoLevelCompEnabled ? 1 : 0,
             enableDelay ? 1 : 0,
             delayTime.toFixed(3),
             delayFeedback.toFixed(3),
@@ -840,7 +845,7 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
         }
         renderCacheRef.current = { source: buf, key: renderKey, rendered };
         return rendered;
-    }, [audioContext, pitchCents, genderShift, masterGain, bypassEffects, effectsSectionEnabled, formantFilterSectionEnabled, formantSectionEnabled, formant, eqBands, enableDelay, delayTime, delayFeedback, enableReverb, reverbMix, compThresh, compRatio, compAttack, compRelease, volumeKeyframes, normalizationEnabled, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ]);
+    }, [audioContext, pitchCents, genderShift, masterGain, bypassEffects, effectsSectionEnabled, formantFilterSectionEnabled, formantSectionEnabled, formant, eqBands, enableDelay, delayTime, delayFeedback, enableReverb, reverbMix, compThresh, compRatio, compAttack, compRelease, volumeKeyframes, normalizationEnabled, autoLevelCompEnabled, singersFormantEnabled, singersFormantFreq, singersFormantGain, singersFormantQ, applyOutputLevelCompensation]);
 
     const togglePlay = useCallback(async (mode: 'all' | 'selection') => {
         if (isPlaying) {
@@ -1106,6 +1111,16 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
 
     return (
         <div className="flex flex-col p-6 gap-6 animate-in fade-in font-sans font-bold h-full overflow-y-auto custom-scrollbar">
+            <EditorModeBar
+                title={modeTitle}
+                hint={modeHint}
+                items={[
+                    { label: 'Mode', value: showAutomation ? modeGain : modeSelection, tone: showAutomation ? 'emerald' : 'indigo' },
+                    { label: modeRange, value: `${(editTrim.start * 100).toFixed(1)}% ~ ${(editTrim.end * 100).toFixed(1)}%`, tone: 'sky' },
+                    { label: modePlayback, value: isPlaying ? text.play : isPaused ? modePaused : modeStopped, tone: isPlaying ? 'emerald' : 'neutral' },
+                    { label: modeComp, value: `${autoLevelCompDb >= 0 ? '+' : ''}${autoLevelCompDb.toFixed(1)} dB`, tone: autoLevelCompDb >= 0 ? 'amber' : 'rose' },
+                ]}
+            />
             <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
@@ -1233,6 +1248,14 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{text.masterOutput}</span>
                             <button
+                                onClick={() => setAutoLevelCompEnabled(!autoLevelCompEnabled)}
+                                className={`h-7 px-2 rounded-md border flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-tight transition-all ${autoLevelCompEnabled ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm' : 'bg-white text-slate-500 border-slate-200'}`}
+                                title={autoLevelLabel}
+                            >
+                                <Activity size={11} className={autoLevelCompEnabled ? "text-emerald-100" : ""} />
+                                {autoLevelLabel}
+                            </button>
+                            <button
                                 onClick={() => setNormalizationEnabled(!normalizationEnabled)}
                                 className={`h-7 px-2 rounded-md border flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-tight transition-all ${normalizationEnabled ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm' : 'bg-white text-slate-500 border-slate-200'}`}
                                 title={text.normalizeTitle}
@@ -1261,6 +1284,9 @@ const StudioTab: React.FC<StudioTabProps> = ({ audioContext, activeFile, files, 
                                 />
                                 <span className="text-[10px] font-black text-indigo-600 w-9 text-right">{(masterGain * 100).toFixed(0)}%</span>
                             </div>
+                            <span className={`text-[10px] font-black w-[62px] text-right ${autoLevelCompDb >= 0 ? 'text-amber-600' : 'text-rose-600'}`}>
+                                {autoLevelCompDb >= 0 ? '+' : ''}{autoLevelCompDb.toFixed(1)}dB
+                            </span>
                         </div>
                     </div>
 

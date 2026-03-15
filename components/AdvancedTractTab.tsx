@@ -9,6 +9,7 @@ import FormantAnalyzer from './FormantAnalyzer';
 import TractVisualizer from './TractVisualizer';
 import TimelineEditor from './TimelineEditor';
 import ParamInput from './ui/ParamInput';
+import EditorModeBar from './ui/EditorModeBar';
 
 interface AdvancedTractTabProps {
     audioContext: AudioContext;
@@ -860,6 +861,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     }, [commitChange, language, getValueAtTime]);
 
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
+    const selectedTrackName = advTracks.find(track => track.id === selectedTrackId)?.name || selectedTrackId;
+    const modeTitle = language === 'ko' ? '\uD3B8\uC9D1 \uC0C1\uD0DC' : language === 'ja' ? '\u7DE8\u96C6\u72B6\u614B' : 'Editor State';
+    const modeHint = language === 'ko' ? 'Tab \uBAA8\uB4DC \uC804\uD658 / Space \uC7AC\uC0DD' : language === 'ja' ? 'Tab \u5207\u66FF / Space \u518D\u751F' : 'Tab toggle / Space play';
+    const modeEditLabel = language === 'ko' ? '\uBAA8\uB4DC' : language === 'ja' ? '\u30E2\u30FC\u30C9' : 'Mode';
+    const modeTrackLabel = language === 'ko' ? '\uD2B8\uB799' : language === 'ja' ? '\u30C8\u30E9\u30C3\u30AF' : 'Track';
+    const modeGuideLabel = language === 'ko' ? '\uAC00\uC774\uB4DC' : language === 'ja' ? '\u30AC\u30A4\u30C9' : 'Guide';
 
     useEffect(() => {
         if (!isActive) return;
@@ -893,6 +900,16 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     return (
         <div className="flex-1 flex flex-col p-2 gap-2 animate-in fade-in overflow-hidden h-full">
             {showAnalyzer && <FormantAnalyzer files={files} audioContext={audioContext} onClose={() => setShowAnalyzer(false)} onApply={handleAnalyzerApply} />}
+            <EditorModeBar
+                title={modeTitle}
+                hint={modeHint}
+                className="mx-1"
+                items={[
+                    { label: modeEditLabel, value: isEditMode ? (language === 'ko' ? '키프레임 편집' : language === 'ja' ? 'キーフレーム編集' : 'Keyframe Edit') : (language === 'ko' ? '재생헤드 이동' : language === 'ja' ? '再生ヘッド移動' : 'Playhead Move'), tone: isEditMode ? 'amber' : 'indigo' },
+                    { label: modeTrackLabel, value: selectedTrackName, tone: 'sky' },
+                    { label: modeGuideLabel, value: showGhost ? (language === 'ko' ? '켜짐' : language === 'ja' ? 'オン' : 'On') : (language === 'ko' ? '꺼짐' : language === 'ja' ? 'オフ' : 'Off'), tone: showGhost ? 'emerald' : 'neutral' },
+                ]}
+            />
 
             {/* Top Section (Visualizer + Settings) */}
             <div className="flex-1 flex gap-0 shrink-0 min-h-0 flex-[3]">
