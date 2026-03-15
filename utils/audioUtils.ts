@@ -356,6 +356,86 @@ export const AudioUtils = {
       return spectrogram;
   },
 
+  measureBufferRmsDb: (buffer: AudioBuffer, startSample: number = 0, endSample?: number): number => {
+    const start = Math.max(0, Math.floor(startSample));
+    const end = Math.max(start + 1, Math.min(buffer.length, Math.floor(endSample ?? buffer.length)));
+    const frameCount = end - start;
+    let sumSq = 0;
+
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = start; i < end; i++) {
+        const s = data[i];
+        sumSq += s * s;
+      }
+    }
+
+    const denom = Math.max(1, frameCount * buffer.numberOfChannels);
+    const rms = Math.sqrt(sumSq / denom);
+    if (!Number.isFinite(rms) || rms <= 1e-12) return -120;
+    return 20 * Math.log10(rms);
+  },
+
+  measureBufferPeak: (buffer: AudioBuffer, startSample: number = 0, endSample?: number): number => {
+    const start = Math.max(0, Math.floor(startSample));
+    const end = Math.max(start + 1, Math.min(buffer.length, Math.floor(endSample ?? buffer.length)));
+    let peak = 0;
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = start; i < end; i++) {
+        const abs = Math.abs(data[i]);
+        if (abs > peak) peak = abs;
+      }
+    }
+    return peak;
+  },
+
+  applyGainInPlace: (buffer: AudioBuffer, gain: number, startSample: number = 0, endSample?: number): void => {
+    if (!Number.isFinite(gain)) return;
+    const start = Math.max(0, Math.floor(startSample));
+    const end = Math.max(start + 1, Math.min(buffer.length, Math.floor(endSample ?? buffer.length)));
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = start; i < end; i++) data[i] *= gain;
+    }
+  },
+
+  applyPeakLimiterInPlace: (buffer: AudioBuffer, ceilingLinear: number = 0.8912509381337456): number => {
+    const peak = AudioUtils.measureBufferPeak(buffer);
+    if (peak <= 0 || peak <= ceilingLinear) return 0;
+    const limiterGain = ceilingLinear / peak;
+    AudioUtils.applyGainInPlace(buffer, limiterGain);
+    return 20 * Math.log10(limiterGain);
+  },
+
+  matchOutputLevelInPlace: (
+    reference: AudioBuffer,
+    processed: AudioBuffer,
+    compareLength: number = reference.length,
+    maxCompensationDb: number = 12
+  ): { levelDb: number; limiterDb: number; totalDb: number } => {
+    const samples = Math.max(1, Math.min(compareLength, reference.length, processed.length));
+    const refDb = AudioUtils.measureBufferRmsDb(reference, 0, samples);
+    const outDb = AudioUtils.measureBufferRmsDb(processed, 0, samples);
+    let levelDb = 0;
+
+    if (Number.isFinite(refDb) && Number.isFinite(outDb)) {
+      const rawDelta = refDb - outDb;
+      levelDb = Math.max(-maxCompensationDb, Math.min(maxCompensationDb, rawDelta));
+      if (Math.abs(levelDb) > 0.01) {
+        const gain = Math.pow(10, levelDb / 20);
+        AudioUtils.applyGainInPlace(processed, gain);
+      }
+    }
+
+    const limiterDb = AudioUtils.applyPeakLimiterInPlace(processed);
+    return {
+      levelDb,
+      limiterDb,
+      totalDb: levelDb + limiterDb,
+    };
+  },
+
   bufferToWavBlob: (buffer: AudioBuffer): Blob => {
     const numberOfChannels = 1;
     const length = buffer.length * numberOfChannels * 2 + 44;

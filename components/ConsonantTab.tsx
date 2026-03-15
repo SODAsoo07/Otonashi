@@ -5,6 +5,8 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { AudioFile, KeyframePoint, EQBand } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
 import ParametricEQ from './ParametricEQ';
+import EditorModeBar from './ui/EditorModeBar';
+import MultiSelectDropdown from './ui/MultiSelectDropdown';
 
 interface ConsonantTabProps {
     audioContext: AudioContext;
@@ -224,6 +226,11 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         : language === 'ja'
             ? 'オフセットは波形ドラッグで調整'
             : 'Adjust offset by dragging waveform';
+    const modeTitle = language === 'ko' ? '\uD3B8\uC9D1 \uC0C1\uD0DC' : language === 'ja' ? '\u7DE8\u96C6\u72B6\u614B' : 'Editor State';
+    const modeHint = language === 'ko' ? 'Tab \uBAA8\uB4DC \uC804\uD658 / Space \uC7AC\uC0DD' : language === 'ja' ? 'Tab \u5207\u66FF / Space \u518D\u751F' : 'Tab toggle / Space play';
+    const modeEditLabel = language === 'ko' ? '\uBAA8\uB4DC' : language === 'ja' ? '\u30E2\u30FC\u30C9' : 'Mode';
+    const modeTrackLabel = language === 'ko' ? '\uB300\uC0C1' : language === 'ja' ? '\u5BFE\u8C61' : 'Track';
+    const modeCountLabel = language === 'ko' ? '\uC790\uC74C \uC218' : language === 'ja' ? '\u5B50\u97F3\u6570' : 'Consonants';
     const activeConsonantItem = consonantItems[Math.max(0, Math.min(activeConsonantIndex, consonantItems.length - 1))] || null;
 
     useEffect(() => {
@@ -662,6 +669,15 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
 
     return (
         <div className="flex-1 p-6 flex flex-col gap-6 animate-in fade-in overflow-hidden font-sans font-bold" onMouseUp={handleMouseUp}>
+            <EditorModeBar
+                title={modeTitle}
+                hint={modeHint}
+                items={[
+                    { label: modeEditLabel, value: editMode === 'move' ? text.move : text.volume, tone: editMode === 'move' ? 'indigo' : 'emerald' },
+                    { label: modeTrackLabel, value: selectedTrack === 'vowel' ? text.vowel : text.consonant, tone: selectedTrack === 'vowel' ? 'sky' : 'amber' },
+                    { label: modeCountLabel, value: `${consonantItems.length}`, tone: 'neutral' },
+                ]}
+            />
             <div className="bg-white/60 rounded-3xl border border-slate-300 p-8 flex flex-col gap-6 shadow-sm h-full overflow-y-auto custom-scrollbar">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-4 flex-shrink-0">
                     <div className="flex items-center gap-3"><div className="p-2 bg-indigo-500 rounded-xl text-white font-bold font-black"><Combine size={24} /></div><h2 className="text-xl text-slate-800 tracking-tight font-black">{text.title}</h2></div>
@@ -704,14 +720,16 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
 
                     <div className={`space-y-4 p-6 rounded-2xl border transition-all cursor-pointer ${selectedTrack === 'consonant' ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-100' : 'bg-white border-slate-200'}`} onClick={() => setSelectedTrack('consonant')}>
                         <label className="text-sm font-black text-slate-900 uppercase tracking-widest block">{text.consonant}</label>
-                        <select
-                            multiple
-                            value={pendingConsonantIds}
-                            onChange={e => setPendingConsonantIds(Array.from(e.target.selectedOptions).map(opt => opt.value))}
-                            className="w-full p-2.5 border rounded-lg font-black text-sm text-slate-900 min-h-[110px]"
-                        >
-                            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                        </select>
+                        <MultiSelectDropdown
+                            options={files.map(f => ({ value: f.id, label: f.name }))}
+                            selectedValues={pendingConsonantIds}
+                            onChange={setPendingConsonantIds}
+                            placeholder={text.selectFile}
+                            summaryLabel={(count) => `${count} selected`}
+                            emptyLabel={text.none}
+                            selectAllLabel={language === 'ko' ? '전체 선택' : language === 'ja' ? 'すべて選択' : 'Select all'}
+                            clearLabel={language === 'ko' ? '선택 해제' : language === 'ja' ? 'クリア' : 'Clear'}
+                        />
                         <div className="flex flex-wrap gap-2">
                             <button onClick={handleAddSelectedConsonants} disabled={pendingConsonantIds.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-black border border-orange-200 text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-40 disabled:hover:bg-orange-50 flex items-center gap-1.5"><Plus size={13} /> {addConsonantsLabel}</button>
                             <button onClick={handleCopyConsonants} disabled={consonantItems.length === 0} className="px-3 py-1.5 rounded-lg text-xs font-black border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white flex items-center gap-1.5"><Copy size={13} /> {copyLabel}</button>
