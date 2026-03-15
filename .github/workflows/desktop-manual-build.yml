@@ -23,8 +23,11 @@ on:
       fail_if_no_desktop_script:
         description: "Fail when desktop build script is missing"
         required: true
-        default: true
+        default: false
         type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build_windows:
@@ -33,7 +36,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
@@ -46,7 +49,7 @@ jobs:
           git log --oneline -n 1
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
@@ -102,7 +105,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
@@ -115,7 +118,7 @@ jobs:
           git log --oneline -n 1
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: "npm"
