@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Download, Edit2, FileAudio, FolderOpen, Plus, X } from 'lucide-react';
+import JSZip from 'jszip';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AudioFile } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
@@ -73,9 +74,12 @@ const FileRack: React.FC<FileRackProps> = ({
 }) => {
   const { language } = useLanguage();
   const text = FILE_RACK_TEXT[language];
+  const zipDownloadLabel = language === 'ko' ? 'ZIP 일괄 다운로드' : language === 'ja' ? 'ZIP 一括保存' : 'Download ZIP';
+  const zipPreparingLabel = language === 'ko' ? 'ZIP 생성 중...' : language === 'ja' ? 'ZIP を生成中...' : 'Preparing ZIP...';
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempName, setTempName] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [isZipExporting, setIsZipExporting] = useState(false);
 
   const submitRename = (id: string) => {
     if (tempName.trim()) {
@@ -95,6 +99,43 @@ const FileRack: React.FC<FileRackProps> = ({
     e.stopPropagation();
     const fileName = file.name.endsWith('.wav') ? file.name : `${file.name}.wav`;
     AudioUtils.downloadWav(file.buffer, fileName);
+  };
+
+  const handleDownloadAllZip = async () => {
+    if (files.length === 0 || isZipExporting) return;
+    setIsZipExporting(true);
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      const makeUniqueName = (rawName: string) => {
+        let candidate = rawName;
+        let index = 1;
+        while (usedNames.has(candidate)) {
+          const dot = rawName.lastIndexOf('.');
+          if (dot > 0) candidate = `${rawName.slice(0, dot)}_${index}${rawName.slice(dot)}`;
+          else candidate = `${rawName}_${index}`;
+          index += 1;
+        }
+        usedNames.add(candidate);
+        return candidate;
+      };
+
+      for (const file of files) {
+        const wavName = makeUniqueName(file.name.endsWith('.wav') ? file.name : `${file.name}.wav`);
+        const wavBlob = AudioUtils.bufferToWavBlob(file.buffer);
+        zip.file(wavName, await wavBlob.arrayBuffer());
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `otonashi_rack_${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsZipExporting(false);
+    }
   };
 
   const onDragOver = (e: React.DragEvent) => {
@@ -119,6 +160,14 @@ const FileRack: React.FC<FileRackProps> = ({
       <aside className="bg-white/60 border-r border-slate-300 flex flex-col shrink-0 items-center py-4 gap-4 transition-all duration-300 ease-in-out font-sans overflow-hidden" style={{ width: '48px' }}>
         <button onClick={toggleOpen} className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors mb-2" title={text.expand}>
           <ChevronRight size={20} />
+        </button>
+        <button
+          onClick={handleDownloadAllZip}
+          disabled={files.length === 0 || isZipExporting}
+          className="p-2 hover:bg-slate-200 rounded-lg transition text-slate-500 disabled:opacity-40"
+          title={isZipExporting ? zipPreparingLabel : zipDownloadLabel}
+        >
+          <Download size={20} />
         </button>
         <label className="cursor-pointer hover:bg-slate-200 p-2 rounded-lg transition text-[#209ad6]" title={text.upload}>
           <Plus size={20} />
@@ -147,6 +196,14 @@ const FileRack: React.FC<FileRackProps> = ({
     >
       <div className="p-4 border-b border-slate-300 flex justify-between items-center bg-slate-200/50 shrink-0">
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownloadAllZip}
+            disabled={files.length === 0 || isZipExporting}
+            className="p-1 hover:bg-slate-300 rounded transition text-slate-500 disabled:opacity-40"
+            title={isZipExporting ? zipPreparingLabel : zipDownloadLabel}
+          >
+            <Download size={16} />
+          </button>
           <button onClick={toggleOpen} className="p-1 hover:bg-slate-300 rounded transition text-slate-500" title={text.collapse}>
             <ChevronLeft size={16} />
           </button>

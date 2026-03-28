@@ -1,5 +1,6 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { Download, Activity, FileCheck2 } from 'lucide-react';
+import JSZip from 'jszip';
 import { AudioFile } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
 
@@ -17,23 +18,27 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
     const [isForcePitchOn, setIsForcePitchOn] = useState(false);
     const [forcePitch, setForcePitch] = useState<number>(261.6);
     const [isDraggingPitch, setIsDraggingPitch] = useState(false);
+    const [isBulkZipExporting, setIsBulkZipExporting] = useState(false);
     const dragStartY = useRef<number>(0);
     const dragStartPitch = useRef<number>(0);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    const buildFrqCurve = (file: AudioFile) => {
+        return AudioUtils.detectPitchCurve(file.buffer, 30, 256, isInterpolate, isForcePitchOn ? forcePitch : null);
+    };
 
     const handlePitchDragStart = (e: React.MouseEvent<HTMLInputElement>) => {
         if (!isForcePitchOn) return;
         setIsDraggingPitch(true);
         dragStartY.current = e.clientY;
         dragStartPitch.current = forcePitch;
-        e.preventDefault(); // Prevent text selection
+        e.preventDefault();
     };
 
     useEffect(() => {
         const handlePitchDrag = (e: MouseEvent) => {
             if (!isDraggingPitch) return;
             const deltaY = dragStartY.current - e.clientY;
-            // Adjust sensitivity (e.g., 1 pixel = 0.5 Hz)
             const newPitch = Math.max(50, Math.min(2000, dragStartPitch.current + deltaY * 0.5));
             setForcePitch(Number(newPitch.toFixed(1)));
         };
@@ -61,11 +66,9 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
             setDetectedF0(null);
             return;
         }
-        // Auto-analyze when file or interpolation option changes
         const pitch = AudioUtils.detectFundamentalPitch(activeFile.buffer);
         setDetectedF0(Math.round(pitch || 0));
-        const curve = AudioUtils.detectPitchCurve(activeFile.buffer, 30, 256, isInterpolate, isForcePitchOn ? forcePitch : null);
-        setF0Curve(curve);
+        setF0Curve(buildFrqCurve(activeFile));
     }, [activeFile, isInterpolate, isForcePitchOn, forcePitch]);
 
     useEffect(() => {
@@ -107,17 +110,62 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
 
     const handleDownloadFrq = () => {
         if (!activeFile || f0Curve.length === 0) return;
-        const stepSamples = 256; // Standard UTAU frq hop size
+        const stepSamples = 256;
         const frqBuffer = AudioUtils.generateFrqBuffer(f0Curve, stepSamples);
 
         const blob = new Blob([frqBuffer], { type: 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const baseName = activeFile.name.replace(/\.[^/.]+$/, "");
+        const baseName = activeFile.name.replace(/\.[^/.]+$/, '');
         a.download = `${baseName}_wav.frq`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadFrqZip = async () => {
+        if (files.length === 0 || isBulkZipExporting) return;
+        setIsBulkZipExporting(true);
+        try {
+            const zip = new JSZip();
+            const usedNames = new Set<string>();
+            const makeUniqueName = (rawName: string) => {
+                let candidate = rawName;
+                let index = 1;
+                while (usedNames.has(candidate)) {
+                    const dot = rawName.lastIndexOf('.');
+                    if (dot > 0) candidate = `${rawName.slice(0, dot)}_${index}${rawName.slice(dot)}`;
+                    else candidate = `${rawName}_${index}`;
+                    index += 1;
+                }
+                usedNames.add(candidate);
+                return candidate;
+            };
+
+            for (const file of files) {
+                const curve = buildFrqCurve(file);
+                if (curve.length === 0) continue;
+                const frqBuffer = AudioUtils.generateFrqBuffer(curve, 256);
+                const baseName = file.name.replace(/\.[^/.]+$/, '');
+                const frqName = makeUniqueName(`${baseName}_wav.frq`);
+                zip.file(frqName, frqBuffer);
+            }
+
+            if (Object.keys(zip.files).length === 0) {
+                alert('ZIP에 담을 FRQ 데이터가 없습니다.');
+                return;
+            }
+
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            const url = URL.createObjectURL(zipBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `otonashi_frq_${Date.now()}.zip`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } finally {
+            setIsBulkZipExporting(false);
+        }
     };
 
     return (
@@ -129,11 +177,16 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                     </h2>
                     <p className="text-xs font-bold text-slate-500 mt-1">UTAU 엔진과 완벽하게 호환되는 F0 및 진폭 바이너리 데이터를 생성하고 다운로드합니다.</p>
                 </div>
+                <button
+                    onClick={handleDownloadFrqZip}
+                    disabled={files.length === 0 || isBulkZipExporting}
+                    className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded-xl font-black flex items-center gap-2 active:scale-95 transition-all shadow-md"
+                >
+                    <Download size={16} /> {isBulkZipExporting ? 'FRQ ZIP 생성 중...' : '전체 .frq ZIP 다운로드'}
+                </button>
             </div>
 
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-6">
-
-                {/* File Selection */}
                 <div className="flex flex-col gap-2">
                     <label className="text-xs font-black text-slate-700 uppercase tracking-widest">대상 오디오 선택</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
@@ -155,7 +208,6 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                     </div>
                 </div>
 
-                {/* Analysis Result */}
                 {activeFile && (
                     <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4">
                         <div className="flex items-center gap-4">
@@ -210,7 +262,6 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                             </button>
                         </div>
 
-                        {/* Visualizer */}
                         <div className="bg-slate-900 h-64 rounded-2xl border border-slate-700 shadow-inner relative overflow-hidden">
                             <canvas ref={canvasRef} width={1200} height={256} className="w-full h-full object-cover" />
                         </div>
@@ -222,4 +273,3 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
 };
 
 export default FrqTab;
-
