@@ -1307,7 +1307,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         } else if ((sNode as any).start) {
             (sNode as any).start(0);
         }
-        if (consonantNoise) consonantNoise.start(0);
         nNode.start(0);
 
         const renderedBuffer = await offline.startRendering();
@@ -1328,6 +1327,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     }, [renderAdvancedAudio]);
 
     const handleSimulationPlay = useCallback(async () => {
+        if (!audioContext) return;
         if (isAdvPlaying) {
             if (simPlaySourceRef.current) {
                 try { simPlaySourceRef.current.stop(); } catch (e) { }
@@ -1339,37 +1339,51 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             setIsPaused(true);
             isAdvPlayingRef.current = false;
         } else {
-            if (audioContext.state === 'suspended') await audioContext.resume();
-            const res = lastRenderedRef.current || await renderAdvancedAudio();
-            if (!res) return;
-            const s = audioContext.createBufferSource();
-            s.buffer = res;
-            s.connect(audioContext.destination);
-            const offset = isPaused ? simPauseOffsetRef.current : 0;
-            let effectiveOffset = offset >= res.duration ? 0 : offset;
-            s.start(0, effectiveOffset);
-            simStartTimeRef.current = audioContext.currentTime - effectiveOffset;
-            simPlaySourceRef.current = s;
-            setIsAdvPlaying(true);
-            isAdvPlayingRef.current = true;
-            setIsPaused(false);
-            const animate = () => {
-                if (!isAdvPlayingRef.current) return;
-                const cur = audioContext.currentTime - simStartTimeRef.current;
-                const progress = Math.min(1, Math.max(0, cur / advDuration));
-                setPlayheadPos(progress);
-                syncVisualsToTime(progress);
-                if (cur < advDuration) {
-                    animRef.current = requestAnimationFrame(animate);
-                } else {
+            try {
+                if (audioContext.state === 'suspended') await audioContext.resume();
+                const res = lastRenderedRef.current || await renderAdvancedAudio();
+                if (!res) return;
+                const s = audioContext.createBufferSource();
+                s.buffer = res;
+                s.connect(audioContext.destination);
+                const offset = isPaused ? simPauseOffsetRef.current : 0;
+                const effectiveOffset = offset >= res.duration ? 0 : offset;
+                s.onended = () => {
+                    if (!isAdvPlayingRef.current) return;
+                    if (animRef.current) cancelAnimationFrame(animRef.current);
                     setIsAdvPlaying(false);
                     setPlayheadPos(0);
                     simPauseOffsetRef.current = 0;
                     syncVisualsToTime(0);
+                    simPlaySourceRef.current = null;
                     isAdvPlayingRef.current = false;
+                };
+                s.start(0, effectiveOffset);
+                simStartTimeRef.current = audioContext.currentTime - effectiveOffset;
+                simPlaySourceRef.current = s;
+                setIsAdvPlaying(true);
+                isAdvPlayingRef.current = true;
+                setIsPaused(false);
+                const animate = () => {
+                    if (!isAdvPlayingRef.current) return;
+                    const cur = audioContext.currentTime - simStartTimeRef.current;
+                    const progress = Math.min(1, Math.max(0, cur / advDuration));
+                    setPlayheadPos(progress);
+                    syncVisualsToTime(progress);
+                    animRef.current = requestAnimationFrame(animate);
+                };
+                animRef.current = requestAnimationFrame(animate);
+            } catch (err) {
+                console.error('[AdvancedTractTab] simulation play failed', err);
+                if (simPlaySourceRef.current) {
+                    try { simPlaySourceRef.current.stop(); } catch { }
+                    simPlaySourceRef.current = null;
                 }
-            };
-            animRef.current = requestAnimationFrame(animate);
+                if (animRef.current) cancelAnimationFrame(animRef.current);
+                setIsAdvPlaying(false);
+                setIsPaused(false);
+                isAdvPlayingRef.current = false;
+            }
         }
     }, [isAdvPlaying, isPaused, renderAdvancedAudio, audioContext, advDuration, syncVisualsToTime]);
 

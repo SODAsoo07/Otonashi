@@ -163,17 +163,19 @@ const jongParams: Record<string, { type: 'stop' | 'nasal' | 'liquid'; place: str
   'ㄹ': { type: 'liquid', place: 'alveolar', dur: 100 },
 };
 
+// Korean vowel preset targets tuned around the original reference ranges,
+// but shifted toward practical spoken centers for more natural playback.
 const vowelMap: Record<string, { f1: number; f2: number }> = {
-  'ㅏ': { f1: 900, f2: 1350 },
-  'ㅐ': { f1: 620, f2: 1800 },
-  'ㅓ': { f1: 560, f2: 1140 },
-  'ㅔ': { f1: 412, f2: 2150 },
-  'ㅗ': { f1: 380, f2: 690 },
-  'ㅜ': { f1: 275, f2: 600 },
-  'ㅡ': { f1: 275, f2: 1200 },
-  'ㅣ': { f1: 275, f2: 2400 },
-  'ㅚ': { f1: 400, f2: 1730 },
-  'ㅟ': { f1: 275, f2: 1860 },
+  'ㅏ': { f1: 860, f2: 1300 },
+  'ㅐ': { f1: 690, f2: 1720 },
+  'ㅓ': { f1: 540, f2: 1180 },
+  'ㅔ': { f1: 470, f2: 1950 },
+  'ㅗ': { f1: 470, f2: 860 },
+  'ㅜ': { f1: 330, f2: 760 },
+  'ㅡ': { f1: 350, f2: 1220 },
+  'ㅣ': { f1: 300, f2: 2250 },
+  'ㅚ': { f1: 430, f2: 1680 },
+  'ㅟ': { f1: 300, f2: 1820 },
 };
 
 const doubleVowels: Record<string, string[]> = {
@@ -270,11 +272,16 @@ const getTransitionMs = (consonant: Consonant | null) => {
   return 50;
 };
 
-const getCodaDurationMs = (jong: string | null) => {
+const TTS_CODA_DURATION_SCALE = 0.9;
+
+const getCodaDurationMs = (jong: string | null, scale: number = 1) => {
   if (!jong) return 0;
   const base = jongParams[jong]?.dur ?? 80;
-  if (jong === 'ㄱ' || jong === 'ㄷ' || jong === 'ㅂ') return Math.max(22, Math.round(base * 0.28));
-  return base;
+  if (jong === 'ㄱ' || jong === 'ㄷ' || jong === 'ㅂ') {
+    const raw = Math.max(22, Math.round(base * 0.28));
+    return Math.max(16, Math.round(raw * scale));
+  }
+  return Math.max(24, Math.round(base * scale));
 };
 
 const createNoiseBuffer = (ctx: AudioContext, durationSec: number, preset: NoisePreset) => {
@@ -850,20 +857,20 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     nodesRef.current.noiseBpf = undefined;
   };
 
-  const playCoda = (jong: string, onDone?: () => void) => {
+  const playCoda = (jong: string, onDone?: () => void, durationScale: number = 1) => {
     const p = jongParams[jong];
     if (!p || !nodesRef.current) { onDone?.(); return; }
+    const dur = getCodaDurationMs(jong, durationScale);
     if (p.type === 'stop') {
       nodesRef.current.f1.frequency.setTargetAtTime(300, audioContext.currentTime, 0.02);
       nodesRef.current.f2.frequency.setTargetAtTime(p.place === 'bilabial' ? 800 : 1800, audioContext.currentTime, 0.02);
       const isShortStop = jong === 'ㄱ' || jong === 'ㄷ' || jong === 'ㅂ';
-      const stopDur = getCodaDurationMs(jong);
       const fastTc = isShortStop ? 0.012 : 0.03;
       nodesRef.current.oscGain.gain.setTargetAtTime(0.001, audioContext.currentTime, fastTc);
       const t = window.setTimeout(() => {
         nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, isShortStop ? 0.006 : 0.01);
         onDone?.();
-      }, stopDur);
+      }, dur);
       timeoutIdsRef.current.push(t);
       return;
     }
@@ -874,7 +881,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       const t = window.setTimeout(() => {
         nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.03);
         onDone?.();
-      }, p.dur);
+      }, dur);
       timeoutIdsRef.current.push(t);
       return;
     }
@@ -883,7 +890,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     const t = window.setTimeout(() => {
       nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.03);
       onDone?.();
-    }, p.dur);
+    }, dur);
     timeoutIdsRef.current.push(t);
   };
 
@@ -1160,7 +1167,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 190, consonant: consonantName, coda: codaName });
       }
 
-      if (jong) events.push({ type: 'coda', jong, dur: getCodaDurationMs(jong) });
+      if (jong) events.push({ type: 'coda', jong, dur: getCodaDurationMs(jong, TTS_CODA_DURATION_SCALE) });
       events.push({ type: 'silence', dur: 45 });
     }
 
@@ -1231,7 +1238,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       } else if (ev.type === 'glide') {
         animateFormants(startF1, startF2, targetF1, targetF2, getTtsEaseDuration(ev));
       } else if (ev.type === 'coda' && ev.jong) {
-        playCoda(ev.jong);
+        playCoda(ev.jong, undefined, TTS_CODA_DURATION_SCALE);
       }
       const t = window.setTimeout(() => {
         idx += 1;
@@ -1695,74 +1702,76 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantPresetLabel}</div>
-              {consonantGroups.map(group => (
-                <div key={group.label} className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[9px] text-slate-400 min-w-[110px]">{group.label}</span>
-                  {group.items.map((item, idx) => {
-                    if (!item) return <span key={`${group.label}-${idx}`} className="w-6" />;
-                    const isSelected = selectedConsonantName === item || (!selectedConsonantName && item === 'ㅇ');
-                    return (
-                      <button
-                        key={`${group.label}-${item}`}
-                        onClick={() => {
-                          markPresetChange();
-                          const nextConsonant = item === 'ㅇ' ? null : item;
-                          setSelectedConsonantName(nextConsonant);
-                          const lastPreset = lastPresetVowelRef.current;
-                          if (lastPreset) {
-                            animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
-                          }
-                        }}
-                        className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                      >
-                        {item}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-            <div className="space-y-2">
-              <div className="text-[10px] font-black text-slate-500 uppercase">{text.codaPresetLabel}</div>
-              {jongGroups.map(group => (
-                <div key={group.label} className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[9px] text-slate-400 min-w-[70px]">{group.label}</span>
-                  {group.items.map(item => {
-                    const isSelected = selectedJongName === item;
-                    return (
-                      <button
-                        key={`${group.label}-${item}`}
-                        onClick={() => {
-                          markPresetChange();
-                          setSelectedJongName(item);
-                          const lastPreset = lastPresetVowelRef.current;
-                          if (lastPreset) {
-                            animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
-                          }
-                        }}
-                        className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                      >
-                        {item}
-                      </button>
-                    );
-                  })}
-                  <button
-                    onClick={() => {
-                      markPresetChange();
-                      setSelectedJongName(null);
-                      const lastPreset = lastPresetVowelRef.current;
-                      if (lastPreset && selectedConsonant) {
-                        animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
-                      }
-                    }}
-                    className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                  >
-                    없음
-                  </button>
-                </div>
-              ))}
+            <div className="flex flex-row flex-nowrap gap-4 items-start overflow-x-auto">
+              <div className="space-y-2 min-w-0 w-1/2 shrink-0">
+                <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantPresetLabel}</div>
+                {consonantGroups.map(group => (
+                  <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[9px] text-slate-400 min-w-[110px]">{group.label}</span>
+                    {group.items.map((item, idx) => {
+                      if (!item) return <span key={`${group.label}-${idx}`} className="w-6" />;
+                      const isSelected = selectedConsonantName === item || (!selectedConsonantName && item === 'ㅇ');
+                      return (
+                        <button
+                          key={`${group.label}-${item}`}
+                          onClick={() => {
+                            markPresetChange();
+                            const nextConsonant = item === 'ㅇ' ? null : item;
+                            setSelectedConsonantName(nextConsonant);
+                            const lastPreset = lastPresetVowelRef.current;
+                            if (lastPreset) {
+                              animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
+                            }
+                          }}
+                          className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                        >
+                          {item}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2 min-w-0 w-1/2 shrink-0">
+                <div className="text-[10px] font-black text-slate-500 uppercase">{text.codaPresetLabel}</div>
+                {jongGroups.map(group => (
+                  <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[9px] text-slate-400 min-w-[70px]">{group.label}</span>
+                    {group.items.map(item => {
+                      const isSelected = selectedJongName === item;
+                      return (
+                        <button
+                          key={`${group.label}-${item}`}
+                          onClick={() => {
+                            markPresetChange();
+                            setSelectedJongName(item);
+                            const lastPreset = lastPresetVowelRef.current;
+                            if (lastPreset) {
+                              animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
+                            }
+                          }}
+                          className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                        >
+                          {item}
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => {
+                        markPresetChange();
+                        setSelectedJongName(null);
+                        const lastPreset = lastPresetVowelRef.current;
+                        if (lastPreset && selectedConsonant) {
+                          animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
+                        }
+                      }}
+                      className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                    >
+                      없음
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button
