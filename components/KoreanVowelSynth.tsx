@@ -117,6 +117,12 @@ const vowels: VowelPoint[] = [
   { f1: 390, f2: 1170, label: 'ɤ', korean: 'ㅡ' },
   { f1: 275, f2: 1200, label: 'ɯ', korean: 'ㅡ' },
   { f1: 490, f2: 1350, label: 'ə', korean: 'ㅓ' },
+  { f1: 340, f2: 1400, label: 'ɵ' },
+  { f1: 700, f2: 1300, label: 'ɐ' },
+  { f1: 340, f2: 2020, label: 'ɪ', korean: 'ㅣ' },
+  { f1: 330, f2: 850, label: 'ʊ', korean: 'ㅜ' },
+  { f1: 760, f2: 1600, label: '(æ)', korean: 'ㅐ' },
+  { f1: 620, f2: 930, label: '(ɒ)' },
 ];
 
 const jongParams: Record<string, { type: 'stop' | 'nasal' | 'liquid'; place: string; dur: number; nasalFreq?: number }> = {
@@ -387,6 +393,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const formantAnimRef = useRef<number | null>(null);
   const currentF1Ref = useRef(currentF1);
   const currentF2Ref = useRef(currentF2);
+  const forceSnapshotRef = useRef(false);
 
   const chartW = 280;
   const chartH = 280;
@@ -521,6 +528,16 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       cancelAnimationFrame(formantAnimRef.current);
       formantAnimRef.current = null;
     }
+  };
+
+  const clearTtsCache = () => {
+    lastTtsFramesRef.current = null;
+    lastTtsDurationRef.current = 0;
+  };
+
+  const markPresetChange = () => {
+    forceSnapshotRef.current = true;
+    clearTtsCache();
   };
 
   const createVoiceChain = useCallback((): PlayNodes => {
@@ -717,7 +734,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (consonant.type === 'plosive') {
-      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.35);
+      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.45);
       const t1 = window.setTimeout(() => {
         if (consonant.aspirated && consonant.aspirDur && consonant.aspirDur > 0) {
           if (nodesRef.current?.noiseBpf) {
@@ -736,14 +753,14 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       }, consonant.burstDur || 15);
       timeoutIdsRef.current.push(t1);
     } else if (consonant.type === 'fricative') {
-      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.3);
+      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.4);
       const t1 = window.setTimeout(() => {
         stopNoise();
         startVowelTransition(consonant, f1Target, f2Target);
       }, consonant.fricDur || 120);
       timeoutIdsRef.current.push(t1);
     } else if (consonant.type === 'affricate') {
-      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.3);
+      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.45);
       const t1 = window.setTimeout(() => {
         if (nodesRef.current?.noiseBpf) {
           nodesRef.current.noiseBpf.frequency.setValueAtTime(consonant.fricFreq || 3500, audioContext.currentTime);
@@ -791,7 +808,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (consonant.type === 'plosive') {
-      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.35);
+      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.45);
       const t1 = window.setTimeout(() => {
         if (consonant.aspirated && consonant.aspirDur && consonant.aspirDur > 0) {
           if (nodesRef.current?.noiseBpf) {
@@ -813,7 +830,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (consonant.type === 'fricative') {
-      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.3);
+      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.4);
       const t1 = window.setTimeout(() => {
         stopNoise();
         startVowelTransition(consonant, f1Target, f2Target);
@@ -823,7 +840,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (consonant.type === 'affricate') {
-      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.3);
+      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.45);
       const t1 = window.setTimeout(() => {
         if (nodesRef.current?.noiseBpf) {
           nodesRef.current.noiseBpf.frequency.setValueAtTime(consonant.fricFreq || 3500, audioContext.currentTime);
@@ -865,6 +882,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   };
 
   const handlePointerDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    markPresetChange();
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.min(chartW, Math.max(0, e.clientX - rect.left));
     const y = Math.min(chartH, Math.max(0, e.clientY - rect.top));
@@ -910,6 +928,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       return;
     }
     if (!ttsText.trim()) return;
+    forceSnapshotRef.current = false;
     await ensureAudioContext();
     ttsPlayingRef.current = true;
     setTtsPlaying(true);
@@ -969,6 +988,25 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     nodesRef.current = createVoiceChain();
 
     let idx = 0;
+    const getTtsEaseDuration = (ev: { type: 'syllable' | 'glide' | 'coda' | 'silence'; consonant?: Consonant | null; dur: number }) => {
+      const base = ev.dur;
+      if (ev.type === 'silence' || ev.type === 'coda') return 0;
+      let eased = Math.min(base, 220);
+      if (ev.type === 'glide') {
+        eased = Math.min(base, Math.max(60, base * 0.6));
+      }
+      if (ev.type === 'syllable' && ev.consonant) {
+        if (['ㅁ', 'ㄹ', 'ㅇ', 'ㄴ'].includes(ev.consonant.name)) {
+          eased = Math.min(eased, Math.max(55, base * 0.45));
+        } else if (ev.consonant.type === 'nasal' || ev.consonant.type === 'liquid') {
+          eased = Math.min(eased, Math.max(65, base * 0.55));
+        } else {
+          eased = Math.min(eased, Math.max(80, base * 0.7));
+        }
+      }
+      return Math.max(50, Math.min(base, eased));
+    };
+
     const playNext = () => {
       if (!ttsPlayingRef.current || idx >= events.length) {
         ttsPlayingRef.current = false;
@@ -990,9 +1028,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         } else {
           startVowelTransition(ev.consonant || null, startF1, startF2);
         }
-        animateFormants(startF1, startF2, targetF1, targetF2, ev.dur);
+        animateFormants(startF1, startF2, targetF1, targetF2, getTtsEaseDuration(ev));
       } else if (ev.type === 'glide') {
-        animateFormants(startF1, startF2, targetF1, targetF2, ev.dur);
+        animateFormants(startF1, startF2, targetF1, targetF2, getTtsEaseDuration(ev));
       } else if (ev.type === 'coda' && ev.jong) {
         playCoda(ev.jong);
       }
@@ -1007,6 +1045,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
   const handleRecord = () => {
     if (ttsPlaying) return;
+    if (forceSnapshotRef.current) {
+      forceSnapshotRef.current = false;
+      onRecordSnapshot();
+      return;
+    }
     const frames = lastTtsFramesRef.current;
     const totalSec = lastTtsDurationRef.current;
     if (frames && frames.length > 0 && totalSec > 0) {
@@ -1043,6 +1086,40 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 2;
     ctx.strokeRect(margin, margin, chartW - 2 * margin, chartH - 2 * margin);
+
+    const vowelByLabel = (label: string) => vowels.find(v => v.label === label) || null;
+    const drawPair = (a: string, b: string) => {
+      const va = vowelByLabel(a);
+      const vb = vowelByLabel(b);
+      if (!va || !vb) return;
+      const ax = xFromF2(va.f2);
+      const ay = yFromF1(va.f1);
+      const bx = xFromF2(vb.f2);
+      const by = yFromF1(vb.f1);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    };
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    ctx.lineWidth = 2;
+    drawPair('i', 'e');
+    drawPair('e', 'ɛ');
+    drawPair('ɛ', 'a');
+    drawPair('ɑ', 'ɔ');
+    drawPair('ɔ', 'o');
+    drawPair('o', 'u');
+    drawPair('y', 'ø');
+    drawPair('ø', 'œ');
+    drawPair('ʌ', 'ɤ');
+    drawPair('ɤ', 'ɯ');
+    drawPair('i', 'y');
+    drawPair('e', 'ø');
+    drawPair('ɛ', 'œ');
+    drawPair('ʌ', 'ɔ');
+    drawPair('ɤ', 'o');
+    drawPair('ɯ', 'u');
 
     vowels.forEach(v => {
       const x = xFromF2(v.f2);
@@ -1149,6 +1226,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                   <button
                     key={vowel}
                     onClick={() => {
+                      markPresetChange();
                       const target = getVowelFormants(vowel);
                       animateFormants(currentF1Ref.current, currentF2Ref.current, target.f1, target.f2, 220);
                     }}
@@ -1170,7 +1248,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                     return (
                       <button
                         key={`${group.label}-${item}`}
-                        onClick={() => setSelectedConsonantName(item === 'ㅇ' ? null : item)}
+                        onClick={() => {
+                          markPresetChange();
+                          setSelectedConsonantName(item === 'ㅇ' ? null : item);
+                        }}
                         className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                       >
                         {item}
@@ -1190,7 +1271,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                     return (
                       <button
                         key={`${group.label}-${item}`}
-                        onClick={() => setSelectedJongName(item)}
+                        onClick={() => {
+                          markPresetChange();
+                          setSelectedJongName(item);
+                        }}
                         className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                       >
                         {item}
@@ -1198,7 +1282,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                     );
                   })}
                   <button
-                    onClick={() => setSelectedJongName(null)}
+                    onClick={() => {
+                      markPresetChange();
+                      setSelectedJongName(null);
+                    }}
                     className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                   >
                     없음

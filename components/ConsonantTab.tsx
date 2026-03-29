@@ -280,12 +280,14 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
         const v = getBuffer(vowelId);
         if (!v || !audioContext) return null;
 
-        const vRatio = vStretch / 100;
-        const cRatio = cStretch / 100;
+        const vStretchFactor = Math.max(0.1, vStretch / 100);
+        const cStretchFactor = Math.max(0.1, cStretch / 100);
+        const vRatio = 1 / vStretchFactor;
+        const cRatio = 1 / cStretchFactor;
 
         const vOffsetSec = vOffMs / 1000;
 
-        const vLen = v.duration / vRatio;
+        const vLen = v.duration * vStretchFactor;
         let totalDur = vOffsetSec + vLen;
 
         const loadedConsonants = consonantItems
@@ -293,7 +295,7 @@ const ConsonantTab: React.FC<ConsonantTabProps> = ({ audioContext, files, onAddT
             .filter((item): item is ConsonantItem & { buf: AudioBuffer } => !!item.buf);
 
         loadedConsonants.forEach(({ buf, offsetMs: itemOffsetMs }) => {
-            const cLen = buf.duration / cRatio;
+            const cLen = buf.duration * cStretchFactor;
             totalDur = Math.max(totalDur, (itemOffsetMs / 1000) + cLen);
         });
 
