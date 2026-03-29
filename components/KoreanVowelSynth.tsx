@@ -710,10 +710,23 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
   useEffect(() => { currentF1Ref.current = currentF1; }, [currentF1]);
   useEffect(() => { currentF2Ref.current = currentF2; }, [currentF2]);
+  const decodeAudioArrayBuffer = useCallback(async (arrayBuffer: ArrayBuffer) => {
+    const clone = arrayBuffer.slice(0);
+    if (audioContext.decodeAudioData.length <= 1) {
+      return await audioContext.decodeAudioData(clone);
+    }
+    return await new Promise<AudioBuffer>((resolve, reject) => {
+      audioContext.decodeAudioData(clone, resolve, reject);
+    });
+  }, [audioContext]);
   const hydratedVowelSourceKeyRef = useRef<string | null>(null);
+  const emittedVowelSourceKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!onVowelSourceStateChange) return;
+    const nextKey = `${baseVowelSourceType}:${customVowelName || ''}:${customVowelMimeType || ''}:${customVowelBase64 ? customVowelBase64.length : 0}`;
+    if (emittedVowelSourceKeyRef.current === nextKey) return;
+    emittedVowelSourceKeyRef.current = nextKey;
     onVowelSourceStateChange({
       sourceType: baseVowelSourceType,
       customVowelName: customVowelName || undefined,
@@ -730,6 +743,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     hydratedVowelSourceKeyRef.current = key;
 
     const hydrate = async () => {
+      if (state.sourceType !== 'custom' && !state.customVowelBase64) {
+        setBaseVowelSourceType('synth');
+        return;
+      }
       if (state.customVowelBase64) {
         try {
           const arr = base64ToArrayBuffer(state.customVowelBase64);
@@ -847,16 +864,6 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       await audioContext.resume();
     }
   };
-
-  const decodeAudioArrayBuffer = useCallback(async (arrayBuffer: ArrayBuffer) => {
-    const clone = arrayBuffer.slice(0);
-    if (audioContext.decodeAudioData.length <= 1) {
-      return await audioContext.decodeAudioData(clone);
-    }
-    return await new Promise<AudioBuffer>((resolve, reject) => {
-      audioContext.decodeAudioData(clone, resolve, reject);
-    });
-  }, [audioContext]);
 
   const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
     const bytes = new Uint8Array(buffer);

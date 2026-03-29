@@ -10,7 +10,8 @@ import TractVisualizer from './TractVisualizer';
 import TimelineEditor from './TimelineEditor';
 import ParamInput from './ui/ParamInput';
 import EditorModeBar from './ui/EditorModeBar';
-import KoreanVowelSynth, { VowelSynthFrame, CustomConsonantProfile, SavedVowelSourceState } from './KoreanVowelSynth';
+import KoreanVowelSynth from './KoreanVowelSynth';
+import type { VowelSynthFrame, CustomConsonantProfile, SavedVowelSourceState } from './KoreanVowelSynth';
 
 interface AdvancedTractTabProps {
     audioContext: AudioContext;
