@@ -9,5 +9,10 @@ if [ "$VERCEL_FORCE_BUILD" = "1" ] || [ "$VERCEL_MANUAL_BUILD" = "1" ]; then
   exit 1
 fi
 
-echo "Skipping deployment (set VERCEL_FORCE_BUILD=1 or VERCEL_MANUAL_BUILD=1 to deploy)"
+if [ "$VERCEL_GIT_COMMIT_REF" = "main" ]; then
+  echo "Proceeding with deployment (main branch)"
+  exit 1
+fi
+
+echo "Skipping deployment (manual override required for non-main branches)"
 exit 0
