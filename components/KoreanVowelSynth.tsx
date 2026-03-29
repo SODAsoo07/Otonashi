@@ -394,6 +394,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const currentF1Ref = useRef(currentF1);
   const currentF2Ref = useRef(currentF2);
   const forceSnapshotRef = useRef(false);
+  const lastPresetVowelRef = useRef<{ f1: number; f2: number } | null>(null);
 
   const chartW = 280;
   const chartH = 280;
@@ -718,16 +719,17 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     timeoutIdsRef.current.push(t);
   };
 
-  const playConsonantAndVowel = async (consonant: Consonant | null, f1Target: number, f2Target: number, applyJong: boolean) => {
+  const playConsonantAndVowel = async (consonant: Consonant | null, f1Target: number, f2Target: number, applyJong: boolean, jongOverride?: string | null) => {
     await ensureAudioContext();
     stopPlayback();
     nodesRef.current = createVoiceChain();
     playingRef.current = true;
+    const jongValue = jongOverride !== undefined ? jongOverride : selectedJong;
 
     if (!consonant || consonant.name === 'ㅇ') {
       startVowelTransition(consonant, f1Target, f2Target);
-      if (applyJong && selectedJong) {
-        const t = window.setTimeout(() => playCoda(selectedJong, stopPlayback), 240);
+      if (applyJong && jongValue) {
+        const t = window.setTimeout(() => playCoda(jongValue, stopPlayback), 240);
         timeoutIdsRef.current.push(t);
       }
       return;
@@ -795,8 +797,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       timeoutIdsRef.current.push(t1);
     }
 
-    if (applyJong && selectedJong) {
-      const t = window.setTimeout(() => playCoda(selectedJong, stopPlayback), 320);
+    if (applyJong && jongValue) {
+      const t = window.setTimeout(() => playCoda(jongValue, stopPlayback), 320);
       timeoutIdsRef.current.push(t);
     }
   };
@@ -1233,7 +1235,12 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                     onClick={() => {
                       markPresetChange();
                       const target = getVowelFormants(vowel);
+                      lastPresetVowelRef.current = target;
                       animateFormants(currentF1Ref.current, currentF2Ref.current, target.f1, target.f2, 220);
+                      if (selectedConsonantName || selectedJongName) {
+                        const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
+                        playConsonantAndVowel(consonantObj, target.f1, target.f2, true, selectedJongName);
+                      }
                     }}
                     className="px-3 py-1.5 rounded-lg border text-sm font-black bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 transition-all"
                   >
@@ -1255,7 +1262,14 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                         key={`${group.label}-${item}`}
                         onClick={() => {
                           markPresetChange();
-                          setSelectedConsonantName(item === 'ㅇ' ? null : item);
+                          const nextConsonant = item === 'ㅇ' ? null : item;
+                          setSelectedConsonantName(nextConsonant);
+                          const lastPreset = lastPresetVowelRef.current;
+                          if (lastPreset) {
+                            animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
+                            const consonantObj = nextConsonant ? findConsonantByName(nextConsonant) : null;
+                            playConsonantAndVowel(consonantObj, lastPreset.f1, lastPreset.f2, true, selectedJongName);
+                          }
                         }}
                         className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                       >
@@ -1279,6 +1293,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                         onClick={() => {
                           markPresetChange();
                           setSelectedJongName(item);
+                          const lastPreset = lastPresetVowelRef.current;
+                          if (lastPreset) {
+                            animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
+                            playConsonantAndVowel(selectedConsonant, lastPreset.f1, lastPreset.f2, true, item);
+                          }
                         }}
                         className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                       >
@@ -1290,6 +1309,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                     onClick={() => {
                       markPresetChange();
                       setSelectedJongName(null);
+                      const lastPreset = lastPresetVowelRef.current;
+                      if (lastPreset && selectedConsonant) {
+                        animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
+                        playConsonantAndVowel(selectedConsonant, lastPreset.f1, lastPreset.f2, true, null);
+                      }
                     }}
                     className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                   >
