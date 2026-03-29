@@ -1,5 +1,5 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Volume2 } from 'lucide-react';
+import { Play, Volume2 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { LiveTractState } from '../types';
 
@@ -1203,24 +1203,40 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-center gap-2 text-[10px] font-black flex-wrap">
+        <div className="flex items-center justify-between gap-2 text-[10px] font-black flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setPanelTab('formant')}
+              className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'formant' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+            >
+              {text.formantTab}
+            </button>
+            <button
+              onClick={() => setPanelTab('presets')}
+              className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'presets' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+            >
+              {text.consonantTab}
+            </button>
+            <button
+              onClick={() => setPanelTab('controls')}
+              className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'controls' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+            >
+              {text.controlsTab}
+            </button>
+          </div>
           <button
-            onClick={() => setPanelTab('formant')}
-            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'formant' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+            onClick={() => {
+              const preset = lastPresetVowelRef.current;
+              const f1 = preset ? preset.f1 : currentF1Ref.current;
+              const f2 = preset ? preset.f2 : currentF2Ref.current;
+              const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
+              playConsonantAndVowel(consonantObj, f1, f2, true, selectedJongName);
+            }}
+            className="px-2 py-1 rounded-full border border-slate-200 text-slate-600 bg-white hover:bg-slate-100 transition-all flex items-center gap-1"
+            title={language === 'ko' ? '미리보기 재생' : language === 'ja' ? 'プレビュー再生' : 'Preview play'}
           >
-            {text.formantTab}
-          </button>
-          <button
-            onClick={() => setPanelTab('presets')}
-            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'presets' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
-          >
-            {text.consonantTab}
-          </button>
-          <button
-            onClick={() => setPanelTab('controls')}
-            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'controls' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
-          >
-            {text.controlsTab}
+            <Play size={12} />
+            <span className="text-[10px] font-black">{language === 'ko' ? '미리보기' : language === 'ja' ? 'プレビュー' : 'Preview'}</span>
           </button>
         </div>
 
@@ -1237,10 +1253,6 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                       const target = getVowelFormants(vowel);
                       lastPresetVowelRef.current = target;
                       animateFormants(currentF1Ref.current, currentF2Ref.current, target.f1, target.f2, 220);
-                      if (selectedConsonantName || selectedJongName) {
-                        const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
-                        playConsonantAndVowel(consonantObj, target.f1, target.f2, true, selectedJongName);
-                      }
                     }}
                     className="px-3 py-1.5 rounded-lg border text-sm font-black bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 transition-all"
                   >
@@ -1267,8 +1279,6 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                           const lastPreset = lastPresetVowelRef.current;
                           if (lastPreset) {
                             animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
-                            const consonantObj = nextConsonant ? findConsonantByName(nextConsonant) : null;
-                            playConsonantAndVowel(consonantObj, lastPreset.f1, lastPreset.f2, true, selectedJongName);
                           }
                         }}
                         className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
@@ -1296,7 +1306,6 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                           const lastPreset = lastPresetVowelRef.current;
                           if (lastPreset) {
                             animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
-                            playConsonantAndVowel(selectedConsonant, lastPreset.f1, lastPreset.f2, true, item);
                           }
                         }}
                         className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
@@ -1312,7 +1321,6 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                       const lastPreset = lastPresetVowelRef.current;
                       if (lastPreset && selectedConsonant) {
                         animateFormants(currentF1Ref.current, currentF2Ref.current, lastPreset.f1, lastPreset.f2, 200);
-                        playConsonantAndVowel(selectedConsonant, lastPreset.f1, lastPreset.f2, true, null);
                       }
                     }}
                     className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
