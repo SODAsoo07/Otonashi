@@ -473,8 +473,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
     const getCurrentState = useCallback(() => ({
         larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration,
-        isEditMode, selectedTrackId, playHeadPos
-    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos]);
+        isEditMode, selectedTrackId, playHeadPos,
+        selectedVowelConsonant, selectedVowelCoda,
+    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos, selectedVowelConsonant, selectedVowelCoda]);
 
     const commitChange = useCallback((label: string = 'Update') => {
         const state = getCurrentState();
@@ -504,6 +505,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setLiveTract(state.liveTract);
         setAdvTracks(localizeTracks(state.advTracks));
         setManualPitch(state.manualPitch || 220); setManualGender(state.manualGender || 1.0); if (state.eqBands) setEqBands(state.eqBands);
+        if (typeof state.selectedVowelConsonant === 'string' || state.selectedVowelConsonant === null) {
+            setSelectedVowelConsonant(state.selectedVowelConsonant ?? null);
+        }
+        if (typeof state.selectedVowelCoda === 'string' || state.selectedVowelCoda === null) {
+            setSelectedVowelCoda(state.selectedVowelCoda ?? null);
+        }
         setSimIntensity(state.simIntensity !== undefined ? state.simIntensity : 1.0);
         setAdvDuration(state.advDuration !== undefined ? state.advDuration : 2.0);
         if (typeof state.isEditMode === 'boolean') setIsEditMode(state.isEditMode);
@@ -587,6 +594,35 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setRedoStack(prev => prev.slice(0, -1));
         restoreState(nextState);
     }, [redoStack, getCurrentState, restoreState]);
+
+    const isSimpleConstantTrack = useCallback((track: AdvTrack) => {
+        const pts = [...track.points].sort((a, b) => a.t - b.t);
+        if (pts.length === 0) return true;
+        if (pts.length === 1) return true;
+        if (pts.length !== 2) return false;
+        const [p0, p1] = pts;
+        const eps = 0.0005;
+        if (Math.abs(p0.t) > eps || Math.abs(p1.t - 1) > eps) return false;
+        return Math.abs(p0.v - p1.v) <= 0.001;
+    }, []);
+
+    const syncPitchTrackIfDefault = useCallback((nextPitch: number) => {
+        setAdvTracks(prev => {
+            const track = prev.find(tr => tr.id === 'pitch');
+            if (!track) return prev;
+            if (!isSimpleConstantTrack(track)) return prev;
+            const nextPoints = [{ t: 0, v: nextPitch }, { t: 1, v: nextPitch }];
+            return prev.map(tr => (tr.id === 'pitch' ? { ...tr, points: nextPoints } : tr));
+        });
+    }, [isSimpleConstantTrack]);
+
+    const handleManualPitchChange = useCallback((value: React.SetStateAction<number>) => {
+        setManualPitch(prev => {
+            const next = typeof value === 'function' ? value(prev) : value;
+            syncPitchTrackIfDefault(next);
+            return next;
+        });
+    }, [syncPitchTrackIfDefault]);
 
     const getValueAtTime = useCallback((trackId: string, t: number, tracks: AdvTrack[] = advTracks) => {
         const track = tracks.find(tr => tr.id === trackId);
@@ -1224,15 +1260,15 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         />
                     </div>
                     <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
-                    <KoreanVowelSynth
-                        audioContext={audioContext}
-                        liveTract={liveTract}
-                        manualPitch={manualPitch}
-                        setManualPitch={setManualPitch}
-                        synthWaveform={synthWaveform}
-                        setSynthWaveform={setSynthWaveform}
-                        synthBlend={synthBlend}
-                        setSynthBlend={setSynthBlend}
+                        <KoreanVowelSynth
+                            audioContext={audioContext}
+                            liveTract={liveTract}
+                            manualPitch={manualPitch}
+                            setManualPitch={handleManualPitchChange}
+                            synthWaveform={synthWaveform}
+                            setSynthWaveform={setSynthWaveform}
+                            synthBlend={synthBlend}
+                            setSynthBlend={setSynthBlend}
                         noisePreset={larynxParams.noisePreset}
                         setNoisePreset={(preset) => setLarynxParams({ ...larynxParams, noisePreset: preset })}
                         onFormantChange={handleVowelFormantChange}
@@ -1447,8 +1483,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                     </div>
                                 </div>
                                 <div className="space-y-4">
-                                    <ParamInput label={text.duration} value={advDuration} min={0.5} max={30} step={0.1} onChange={setAdvDuration} colorClass="text-slate-500" />
-                                    <ParamInput label={text.pitch} value={manualPitch} min={50} max={600} step={1} onChange={setManualPitch} colorClass="text-amber-500" />
+                                <ParamInput label={text.duration} value={advDuration} min={0.5} max={30} step={0.1} onChange={setAdvDuration} colorClass="text-slate-500" />
+                                    <ParamInput label={text.pitch} value={manualPitch} min={50} max={600} step={1} onChange={handleManualPitchChange} colorClass="text-amber-500" />
                                     <ParamInput label={text.gender} value={manualGender} min={0.5} max={2.0} step={0.01} onChange={setManualGender} colorClass="text-pink-500" />
                                     <div className="h-px bg-slate-200 my-1" />
                                     {[['lips', text.lips, 'text-pink-400'], ['lipLen', text.lipLen, 'text-pink-600'], ['throat', text.throat, 'text-purple-400'], ['nasal', text.nasal, 'text-orange-400']].map(([id, l, c]) => (
@@ -1463,7 +1499,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 audioContext={audioContext}
                                 liveTract={liveTract}
                                 manualPitch={manualPitch}
-                                setManualPitch={setManualPitch}
+                                setManualPitch={handleManualPitchChange}
                                 synthWaveform={synthWaveform}
                                 setSynthWaveform={setSynthWaveform}
                                 synthBlend={synthBlend}
