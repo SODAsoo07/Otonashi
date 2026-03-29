@@ -28,6 +28,8 @@ interface TimelineEditorProps {
     getValueAtTime: (id: string, t: number, tracks?: AdvTrack[]) => number;
     simPauseOffsetRef: React.MutableRefObject<number>;
     advDuration: number;
+    consonantLabels?: string[];
+    codaLabels?: string[];
     onResetAllKeyframes: () => void;
     onUndo: () => void;
     onRedo: () => void;
@@ -84,7 +86,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     playHeadPos, setPlayheadPos, syncVisualsToTime, handleSimulationPlay, isAdvPlaying,
     commitChange, isEditMode, setIsEditMode, showGhost, setShowGhost, ghostTracks,
     showSpectrogram, spectrogramCanvas, previewBuffer, getCurrentValue, getValueAtTime,
-    simPauseOffsetRef, advDuration, onResetAllKeyframes,
+    simPauseOffsetRef, advDuration, consonantLabels, codaLabels, onResetAllKeyframes,
     onUndo, onRedo, undoStackLength, redoStackLength
 }) => {
     const { language } = useLanguage();
@@ -450,9 +452,25 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 ctx.arc(x, y, 6, 0, Math.PI*2); 
                 ctx.fill(); 
             }); 
+
+            const labelList = track.id === 'consonant' ? consonantLabels : track.id === 'coda' ? codaLabels : null;
+            if (labelList && labelList.length > 0) {
+                ctx.fillStyle = '#111827';
+                ctx.font = 'bold 11px "KoddiUD OnGothic", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                track.points.forEach((p) => {
+                    const idx = Math.max(0, Math.min(Math.round(p.v), labelList.length - 1));
+                    const label = labelList[idx] || '';
+                    if (!label || label === '(none)') return;
+                    const x = p.t * w;
+                    const y = valueToY(p.v, track.min, track.max);
+                    ctx.fillText(label, x, Math.max(RULER_HEIGHT + 10, y - 8));
+                });
+            }
         }
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
-    }, [canvasSize, selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks, spectrogramCanvas, overlayTrackIds]);
+    }, [canvasSize, selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks, spectrogramCanvas, overlayTrackIds, consonantLabels, codaLabels]);
 
     const currentTrack = advTracks.find(t => t.id === selectedTrackId);
     
