@@ -3,6 +3,7 @@ import { Download, Activity, FileCheck2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { AudioFile } from '../types';
 import { AudioUtils } from '../utils/audioUtils';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface FrqTabProps {
     audioContext: AudioContext;
@@ -11,6 +12,7 @@ interface FrqTabProps {
 }
 
 const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
+    const { language } = useLanguage();
     const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
     const [f0Curve, setF0Curve] = useState<{ t: number, f0: number, amp: number }[]>([]);
     const [detectedF0, setDetectedF0] = useState<number | null>(null);
@@ -26,6 +28,57 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
     const frqWorkerMsgIdRef = useRef(0);
     const frqWorkerPendingRef = useRef<Map<number, { resolve: (buffer: ArrayBuffer | null) => void; reject: (err: Error) => void }>>(new Map());
     const frqCacheRef = useRef<Map<string, ArrayBuffer>>(new Map());
+    const text = React.useMemo(() => {
+        if (language === 'ja') {
+            return {
+                title: 'FRQ 解析 / 書き出し',
+                subtitle: 'UTAU 互換の FRQ(F0) データを生成して保存します。',
+                bulkZipBusy: 'FRQ ZIP 生成中...',
+                bulkZipDownload: '全体 .frq ZIP 保存',
+                fileSelectLabel: '解析対象ファイル',
+                noFiles: '解析できるファイルがありません。',
+                noZipData: 'ZIP に含める FRQ データがありません。',
+                detectedF0Label: '検出 F0',
+                notDetected: '未検出',
+                interpolateLabel: 'F0 補間を有効化 (Interpolation)',
+                interpolateHint: '無声音/息成分区間を補間して滑らかにします。',
+                forcePitchLabel: '強制ピッチ適用',
+                singleDownload: 'UTAU .frq 保存',
+            };
+        }
+        if (language === 'en') {
+            return {
+                title: 'FRQ Analyze / Export',
+                subtitle: 'Generate and save UTAU-compatible FRQ (F0) data.',
+                bulkZipBusy: 'Building FRQ ZIP...',
+                bulkZipDownload: 'Download all .frq as ZIP',
+                fileSelectLabel: 'Target Files',
+                noFiles: 'No files available for analysis.',
+                noZipData: 'No FRQ data to include in ZIP.',
+                detectedF0Label: 'Detected F0',
+                notDetected: 'Not detected',
+                interpolateLabel: 'Enable F0 interpolation (Interpolation)',
+                interpolateHint: 'Smooths unvoiced/breathy sections by interpolation.',
+                forcePitchLabel: 'Force pitch override',
+                singleDownload: 'Save UTAU .frq',
+            };
+        }
+        return {
+            title: 'FRQ 분석 / 저장',
+            subtitle: 'UTAU 호환 FRQ(F0) 데이터를 생성하고 저장합니다.',
+            bulkZipBusy: 'FRQ ZIP 생성 중...',
+            bulkZipDownload: '전체 .frq ZIP 저장',
+            fileSelectLabel: '분석 대상 파일',
+            noFiles: '분석할 파일이 없습니다.',
+            noZipData: 'ZIP에 담을 FRQ 데이터가 없습니다.',
+            detectedF0Label: '검출 F0',
+            notDetected: '미검출',
+            interpolateLabel: 'F0 보간 사용 (Interpolation)',
+            interpolateHint: '무성/호흡 구간을 보간해 더 부드럽게 만듭니다.',
+            forcePitchLabel: '강제 피치 적용',
+            singleDownload: 'UTAU .frq 저장',
+        };
+    }, [language]);
 
     const buildFrqCurve = (file: AudioFile) => {
         return AudioUtils.detectPitchCurve(file.buffer, 30, 256, isInterpolate, isForcePitchOn ? forcePitch : null);
@@ -174,7 +227,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
         URL.revokeObjectURL(url);
     };
 
-    const handleDownloadFrqZip = async () => {
+    const handleDownloadFrqZip = useCallback(async () => {
         if (files.length === 0 || isBulkZipExporting) return;
         setIsBulkZipExporting(true);
         try {
@@ -219,7 +272,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
             }
 
             if (Object.keys(zip.files).length === 0) {
-                alert('ZIP에 담을 FRQ 데이터가 없습니다.');
+                alert(text.noZipData);
                 return;
             }
 
@@ -233,29 +286,29 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
         } finally {
             setIsBulkZipExporting(false);
         }
-    };
+    }, [files, isBulkZipExporting, getFrqCacheKey, requestFrqBuffer, text.noZipData]);
 
     return (
         <div className="flex-1 flex flex-col p-6 gap-6 bg-slate-50 overflow-y-auto w-full">
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                        <Activity size={24} className="text-pink-500" /> FRQ ??? ? ???
+                        <Activity size={24} className="text-pink-500" /> {text.title}
                     </h2>
-                    <p className="text-xs font-bold text-slate-500 mt-1">UTAU ??? ???? ???? F0 ? ?? ???? ???? ???? ???????.</p>
+                    <p className="text-xs font-bold text-slate-500 mt-1">{text.subtitle}</p>
                 </div>
                 <button
                     onClick={handleDownloadFrqZip}
                     disabled={files.length === 0 || isBulkZipExporting}
                     className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded-xl font-black flex items-center gap-2 active:scale-95 transition-all shadow-md"
                 >
-                    <Download size={16} /> {isBulkZipExporting ? 'FRQ ZIP ?? ?...' : '?? .frq ZIP ????'}
+                    <Download size={16} /> {isBulkZipExporting ? text.bulkZipBusy : text.bulkZipDownload}
                 </button>
             </div>
 
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-6">
                 <div className="flex flex-col gap-2">
-                    <label className="text-xs font-black text-slate-700 uppercase tracking-widest">?? ??? ??</label>
+                    <label className="text-xs font-black text-slate-700 uppercase tracking-widest">{text.fileSelectLabel}</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                         {files.map(f => (
                             <button
@@ -269,7 +322,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                         ))}
                         {files.length === 0 && (
                             <div className="col-span-full py-8 text-center text-slate-400 text-sm font-bold bg-slate-100 rounded-xl border border-dashed border-slate-300">
-                                ???? ??? ??? ????.
+                                {text.noFiles}
                             </div>
                         )}
                     </div>
@@ -279,8 +332,8 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                     <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4">
                         <div className="flex items-center gap-4">
                             <div className="bg-slate-800 text-white px-4 py-2 rounded-xl text-lg font-black min-w-[140px] text-center border border-slate-700 shadow-inner flex flex-col">
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">?? ?? F0</span>
-                                {detectedF0 ? `${detectedF0} Hz` : '?? ??'}
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{text.detectedF0Label}</span>
+                                {detectedF0 ? `${detectedF0} Hz` : text.notDetected}
                             </div>
                             <div className="flex flex-col gap-1 ml-4 justify-center">
                                 <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-700">
@@ -291,9 +344,9 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                                         disabled={isForcePitchOn}
                                         className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500 disabled:opacity-50"
                                     />
-                                    <span className={isForcePitchOn ? 'opacity-50' : ''}>F0 ?? ?? (Interpolation)</span>
+                                    <span className={isForcePitchOn ? 'opacity-50' : ''}>{text.interpolateLabel}</span>
                                 </label>
-                                <span className={`text-[10px] font-bold ${isForcePitchOn ? 'text-slate-300' : 'text-slate-400'}`}>??/??? ??? ??? ??? ????.</span>
+                                <span className={`text-[10px] font-bold ${isForcePitchOn ? 'text-slate-300' : 'text-slate-400'}`}>{text.interpolateHint}</span>
                             </div>
 
                             <div className="flex flex-col gap-1 ml-4 justify-center border-l-2 border-slate-200 pl-4">
@@ -304,7 +357,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                                         onChange={(e) => setIsForcePitchOn(e.target.checked)}
                                         className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500"
                                     />
-                                    ?? ?? ?? ????
+                                    {text.forcePitchLabel}
                                 </label>
                                 <div className="flex items-center gap-2 mt-1">
                                     <input
@@ -325,7 +378,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                                 disabled={f0Curve.length === 0}
                                 className="px-6 py-3 bg-pink-500 hover:bg-pink-600 disabled:bg-slate-300 text-white rounded-xl font-black flex items-center gap-2 active:scale-95 transition-all shadow-md ml-auto"
                             >
-                                <Download size={18} /> UTAU? .frq ?? ????
+                                <Download size={18} /> {text.singleDownload}
                             </button>
                         </div>
 
