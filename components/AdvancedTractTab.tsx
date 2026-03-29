@@ -1193,8 +1193,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
             {/* Top Section (Visualizer + Settings) */}
             {isVowelPage ? (
-                <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[3] overflow-y-auto p-4 gap-4">
-                    <div className="bg-white/40 dynamic-radius border border-slate-300 shadow-sm overflow-hidden" style={{ height: 220 }}>
+                <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[3] p-4 gap-4">
+                    <div className="flex-1 min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 shadow-sm overflow-hidden">
                         <TractVisualizer
                             liveTract={liveTract}
                             manualPitch={manualPitch}
@@ -1211,27 +1211,29 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             onMouseDown={handleSimulationMouseDown}
                         />
                     </div>
-                    <KoreanVowelSynth
-                        audioContext={audioContext}
-                        liveTract={liveTract}
-                        manualPitch={manualPitch}
-                        setManualPitch={setManualPitch}
-                        synthWaveform={synthWaveform}
-                        setSynthWaveform={setSynthWaveform}
-                        synthBlend={synthBlend}
-                        setSynthBlend={setSynthBlend}
-                        noisePreset={larynxParams.noisePreset}
-                        setNoisePreset={(preset) => setLarynxParams({ ...larynxParams, noisePreset: preset })}
-                        onFormantChange={handleVowelFormantChange}
-                        onRecordSnapshot={recordSnapshot}
-                        onRecordTts={recordTtsKeyframes}
-                        autoExtendDuration={autoExtendAdvDuration}
-                        setAutoExtendDuration={setAutoExtendAdvDuration}
-                        selectedConsonantName={selectedVowelConsonant}
-                        setSelectedConsonantName={setSelectedVowelConsonant}
-                        selectedJongName={selectedVowelCoda}
-                        setSelectedJongName={setSelectedVowelCoda}
-                    />
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                        <KoreanVowelSynth
+                            audioContext={audioContext}
+                            liveTract={liveTract}
+                            manualPitch={manualPitch}
+                            setManualPitch={setManualPitch}
+                            synthWaveform={synthWaveform}
+                            setSynthWaveform={setSynthWaveform}
+                            synthBlend={synthBlend}
+                            setSynthBlend={setSynthBlend}
+                            noisePreset={larynxParams.noisePreset}
+                            setNoisePreset={(preset) => setLarynxParams({ ...larynxParams, noisePreset: preset })}
+                            onFormantChange={handleVowelFormantChange}
+                            onRecordSnapshot={recordSnapshot}
+                            onRecordTts={recordTtsKeyframes}
+                            autoExtendDuration={autoExtendAdvDuration}
+                            setAutoExtendDuration={setAutoExtendAdvDuration}
+                            selectedConsonantName={selectedVowelConsonant}
+                            setSelectedConsonantName={setSelectedVowelConsonant}
+                            selectedJongName={selectedVowelCoda}
+                            setSelectedJongName={setSelectedVowelCoda}
+                        />
+                    </div>
                 </div>
             ) : (
                 <div className="flex-1 flex gap-0 shrink-0 min-h-0 flex-[3]">

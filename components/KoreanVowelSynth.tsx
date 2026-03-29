@@ -360,9 +360,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const ttsPlayingRef = useRef(false);
   const [panelTab, setPanelTab] = useState<'formant' | 'consonant'>('formant');
 
-  const chartW = 440;
-  const chartH = 300;
-  const margin = 28;
+  const chartW = 360;
+  const chartH = 240;
+  const margin = 24;
 
   const normalizedBlend = useMemo(() => {
     const sum = synthBlend.sawtooth + synthBlend.sine + synthBlend.square + synthBlend.noise;
@@ -941,6 +941,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   };
 
   useEffect(() => {
+    if (panelTab !== 'formant') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -987,7 +988,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     ctx.beginPath();
     ctx.arc(cx, cy, 6, 0, Math.PI * 2);
     ctx.stroke();
-  }, [currentF1, currentF2, language]);
+  }, [currentF1, currentF2, language, panelTab]);
 
   useEffect(() => {
     const nearest = findNearestVowel(currentF1, currentF2);
@@ -1104,7 +1105,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               onMouseMove={handlePointerMove}
               onMouseUp={handlePointerUp}
               onMouseLeave={handlePointerUp}
-              className="w-full rounded-xl border border-slate-200 bg-white cursor-crosshair"
+              className="w-full h-[240px] max-h-[240px] rounded-xl border border-slate-200 bg-white cursor-crosshair"
             />
             <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
               <span>F1: {Math.round(currentF1)} Hz</span>
