@@ -292,6 +292,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         pinkNoise: 'ピンク',
         brownNoise: 'ブラウン',
         autoExtend: '再生長さに合わせて延長',
+        formantTab: '母音フォルマント',
+        consonantTab: '子音/終声',
       };
     }
     if (language === 'en') {
@@ -313,6 +315,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         pinkNoise: 'Pink',
         brownNoise: 'Brown',
         autoExtend: 'Auto-extend duration',
+        formantTab: 'Vowel formant',
+        consonantTab: 'Consonant/coda',
       };
     }
     return {
@@ -333,6 +337,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       pinkNoise: '핑크',
       brownNoise: '브라운',
       autoExtend: '재생 길이에 맞춰 자동 연장',
+      formantTab: '모음 포먼트',
+      consonantTab: '자음/받침',
     };
   }, [language]);
 
@@ -352,6 +358,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [nearestSyllable, setNearestSyllable] = useState('');
   const ttsPlayingRef = useRef(false);
+  const [panelTab, setPanelTab] = useState<'formant' | 'consonant'>('formant');
 
   const chartW = 440;
   const chartH = 300;
@@ -1020,75 +1027,92 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantTitle}</div>
-            {consonantGroups.map(group => (
-              <div key={group.label} className="flex items-center gap-2 flex-wrap">
-                <span className="text-[9px] text-slate-400 min-w-[110px]">{group.label}</span>
-                {group.items.map((item, idx) => {
-                  if (!item) return <span key={`${group.label}-${idx}`} className="w-6" />;
-                  const isSelected = selectedConsonantName === item || (!selectedConsonantName && item === 'ㅇ');
-                  return (
-                    <button
-                      key={`${group.label}-${item}`}
-                      onClick={() => setSelectedConsonantName(item === 'ㅇ' ? null : item)}
-                      className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                    >
-                      {item}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-[10px] font-black text-slate-500 uppercase">{text.jongTitle}</div>
-            {jongGroups.map(group => (
-              <div key={group.label} className="flex items-center gap-2 flex-wrap">
-                <span className="text-[9px] text-slate-400 min-w-[70px]">{group.label}</span>
-                {group.items.map(item => {
-                  const isSelected = selectedJongName === item;
-                  return (
-                    <button
-                      key={`${group.label}-${item}`}
-                      onClick={() => setSelectedJongName(item)}
-                      className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                    >
-                      {item}
-                    </button>
-                  );
-                })}
-                <button
-                  onClick={() => setSelectedJongName(null)}
-                  className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
-                >
-                  없음
-                </button>
-              </div>
-            ))}
-          </div>
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-[10px] font-black">
+          <button
+            onClick={() => setPanelTab('formant')}
+            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'formant' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+          >
+            {text.formantTab}
+          </button>
+          <button
+            onClick={() => setPanelTab('consonant')}
+            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'consonant' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+          >
+            {text.consonantTab}
+          </button>
         </div>
 
-        <div className="space-y-3">
-          <canvas
-            ref={canvasRef}
-            width={chartW}
-            height={chartH}
-            onMouseDown={handlePointerDown}
-            onMouseMove={handlePointerMove}
-            onMouseUp={handlePointerUp}
-            onMouseLeave={handlePointerUp}
-            className="w-full rounded-xl border border-slate-200 bg-white cursor-crosshair"
-          />
-          <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
-            <span>F1: {Math.round(currentF1)} Hz</span>
-            <span>F2: {Math.round(currentF2)} Hz</span>
-            <span className="text-slate-900">{nearestSyllable}</span>
+        {panelTab === 'consonant' ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantTitle}</div>
+              {consonantGroups.map(group => (
+                <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] text-slate-400 min-w-[110px]">{group.label}</span>
+                  {group.items.map((item, idx) => {
+                    if (!item) return <span key={`${group.label}-${idx}`} className="w-6" />;
+                    const isSelected = selectedConsonantName === item || (!selectedConsonantName && item === 'ㅇ');
+                    return (
+                      <button
+                        key={`${group.label}-${item}`}
+                        onClick={() => setSelectedConsonantName(item === 'ㅇ' ? null : item)}
+                        className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] font-black text-slate-500 uppercase">{text.jongTitle}</div>
+              {jongGroups.map(group => (
+                <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] text-slate-400 min-w-[70px]">{group.label}</span>
+                  {group.items.map(item => {
+                    const isSelected = selectedJongName === item;
+                    return (
+                      <button
+                        key={`${group.label}-${item}`}
+                        onClick={() => setSelectedJongName(item)}
+                        className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setSelectedJongName(null)}
+                    className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                  >
+                    없음
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-3">
+            <canvas
+              ref={canvasRef}
+              width={chartW}
+              height={chartH}
+              onMouseDown={handlePointerDown}
+              onMouseMove={handlePointerMove}
+              onMouseUp={handlePointerUp}
+              onMouseLeave={handlePointerUp}
+              className="w-full rounded-xl border border-slate-200 bg-white cursor-crosshair"
+            />
+            <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+              <span>F1: {Math.round(currentF1)} Hz</span>
+              <span>F2: {Math.round(currentF2)} Hz</span>
+              <span className="text-slate-900">{nearestSyllable}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

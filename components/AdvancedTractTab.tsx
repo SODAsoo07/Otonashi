@@ -1193,7 +1193,24 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
             {/* Top Section (Visualizer + Settings) */}
             {isVowelPage ? (
-                <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[3] overflow-y-auto p-4">
+                <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[3] overflow-y-auto p-4 gap-4">
+                    <div className="bg-white/40 dynamic-radius border border-slate-300 shadow-sm overflow-hidden" style={{ height: 220 }}>
+                        <TractVisualizer
+                            liveTract={liveTract}
+                            manualPitch={manualPitch}
+                            manualGender={manualGender}
+                            isAdvPlaying={isAdvPlaying}
+                            undoStackLength={undoStack.length}
+                            redoStackLength={redoStack.length}
+                            onUndo={handleUndo}
+                            onRedo={handleRedo}
+                            onRecordSnapshot={recordSnapshot}
+                            onPlayToggle={handleSimulationPlay}
+                            onDownload={handleDownloadResult}
+                            onSaveToRack={handleSaveToRack}
+                            onMouseDown={handleSimulationMouseDown}
+                        />
+                    </div>
                     <KoreanVowelSynth
                         audioContext={audioContext}
                         liveTract={liveTract}
