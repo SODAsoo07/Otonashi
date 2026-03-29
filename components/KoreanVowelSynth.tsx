@@ -1,9 +1,30 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Volume2 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { LiveTractState } from '../types';
+
+type NoisePreset = 'white' | 'pink' | 'brown';
+type BlendWave = 'sawtooth' | 'sine' | 'square' | 'noise';
+type SynthBlend = Record<BlendWave, number>;
+
+export type VowelSynthFrame = { f1: number; f2: number; durMs: number };
 
 interface KoreanVowelSynthProps {
   audioContext: AudioContext;
+  liveTract: LiveTractState;
+  manualPitch: number;
+  setManualPitch: React.Dispatch<React.SetStateAction<number>>;
+  synthWaveform: 'blend' | 'noise' | 'sawtooth' | 'sine' | 'square';
+  setSynthWaveform: React.Dispatch<React.SetStateAction<'blend' | 'noise' | 'sawtooth' | 'sine' | 'square'>>;
+  synthBlend: SynthBlend;
+  setSynthBlend: React.Dispatch<React.SetStateAction<SynthBlend>>;
+  noisePreset: NoisePreset;
+  setNoisePreset: (v: NoisePreset) => void;
+  onFormantChange: (f1: number, f2: number) => void;
+  onRecordSnapshot: () => void;
+  onRecordTts: (frames: VowelSynthFrame[], totalDurationSec: number) => void;
+  autoExtendDuration: boolean;
+  setAutoExtendDuration: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 type ConsonantType = 'plosive' | 'fricative' | 'affricate' | 'nasal' | 'liquid';
@@ -34,7 +55,8 @@ type VowelPoint = {
 };
 
 type PlayNodes = {
-  osc: OscillatorNode;
+  oscillators: OscillatorNode[];
+  noiseVoice?: AudioBufferSourceNode;
   oscGain: GainNode;
   f1: BiquadFilterNode;
   f2: BiquadFilterNode;
@@ -186,15 +208,61 @@ const getF2Locus = (consonant: Consonant | null) => {
   }
 };
 
-const createNoiseBuffer = (ctx: AudioContext, durationSec: number) => {
+const createNoiseBuffer = (ctx: AudioContext, durationSec: number, preset: NoisePreset) => {
   const length = Math.max(1, Math.floor(ctx.sampleRate * durationSec));
   const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
   const data = buffer.getChannelData(0);
-  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+
+  if (preset === 'pink') {
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      const pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+      b6 = white * 0.115926;
+      data[i] = Math.max(-1, Math.min(1, pink * 0.11));
+    }
+    return buffer;
+  }
+
+  if (preset === 'brown') {
+    let last = 0;
+    for (let i = 0; i < length; i++) {
+      const white = Math.random() * 2 - 1;
+      last = (last + 0.02 * white) / 1.02;
+      data[i] = Math.max(-1, Math.min(1, last * 3.5));
+    }
+    return buffer;
+  }
+
+  for (let i = 0; i < length; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
   return buffer;
 };
 
-const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => {
+const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
+  audioContext,
+  liveTract,
+  manualPitch,
+  setManualPitch,
+  synthWaveform,
+  setSynthWaveform,
+  synthBlend,
+  setSynthBlend,
+  noisePreset,
+  setNoisePreset,
+  onFormantChange,
+  onRecordSnapshot,
+  onRecordTts,
+  autoExtendDuration,
+  setAutoExtendDuration,
+}) => {
   const { language } = useLanguage();
   const text = useMemo(() => {
     if (language === 'ja') {
@@ -207,6 +275,15 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
         ttsPlaceholder: '韓国語入力...',
         play: '再生',
         stop: '停止',
+        record: '記録',
+        pitch: '周波数',
+        waveform: '波形',
+        waveBlend: '波形ブレンド',
+        noisePreset: 'ノイズ種別',
+        whiteNoise: 'ホワイト',
+        pinkNoise: 'ピンク',
+        brownNoise: 'ブラウン',
+        autoExtend: '再生長さに合わせて延長',
       };
     }
     if (language === 'en') {
@@ -219,6 +296,15 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
         ttsPlaceholder: 'Enter Korean text...',
         play: 'Play',
         stop: 'Stop',
+        record: 'Record',
+        pitch: 'Pitch',
+        waveform: 'Waveform',
+        waveBlend: 'Wave Blend',
+        noisePreset: 'Noise Preset',
+        whiteNoise: 'White',
+        pinkNoise: 'Pink',
+        brownNoise: 'Brown',
+        autoExtend: 'Auto-extend duration',
       };
     }
     return {
@@ -230,6 +316,15 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
       ttsPlaceholder: '한글 입력...',
       play: '재생',
       stop: '정지',
+      record: '기록',
+      pitch: '주파수',
+      waveform: '파형',
+      waveBlend: '파형 블렌드',
+      noisePreset: '노이즈 프리셋',
+      whiteNoise: '화이트',
+      pinkNoise: '핑크',
+      brownNoise: '브라운',
+      autoExtend: '재생 길이에 맞춰 자동 연장',
     };
   }, [language]);
 
@@ -237,6 +332,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
   const playingRef = useRef(false);
   const nodesRef = useRef<PlayNodes | null>(null);
   const timeoutIdsRef = useRef<number[]>([]);
+  const lastTtsFramesRef = useRef<VowelSynthFrame[] | null>(null);
+  const lastTtsDurationRef = useRef(0);
 
   const [selectedConsonant, setSelectedConsonant] = useState<Consonant | null>(null);
   const [selectedJong, setSelectedJong] = useState<string | null>(null);
@@ -250,6 +347,31 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
   const chartW = 440;
   const chartH = 300;
   const margin = 28;
+
+  const normalizedBlend = useMemo(() => {
+    const sum = synthBlend.sawtooth + synthBlend.sine + synthBlend.square + synthBlend.noise;
+    if (sum <= 0.0001) return { sawtooth: 1, sine: 0, square: 0, noise: 0 };
+    return {
+      sawtooth: synthBlend.sawtooth / sum,
+      sine: synthBlend.sine / sum,
+      square: synthBlend.square / sum,
+      noise: synthBlend.noise / sum,
+    };
+  }, [synthBlend]);
+
+  const resolvedWaveform = useMemo(() => {
+    if (synthWaveform !== 'blend') return synthWaveform;
+    let best: BlendWave = 'sawtooth';
+    let bestVal = -1;
+    (Object.keys(normalizedBlend) as BlendWave[]).forEach((key) => {
+      const val = normalizedBlend[key];
+      if (val > bestVal) {
+        bestVal = val;
+        best = key;
+      }
+    });
+    return best;
+  }, [normalizedBlend, synthWaveform]);
 
   const xFromF2 = (f2: number) => {
     const x = (Math.log(f2) - Math.log(f2min)) / (Math.log(f2max) - Math.log(f2min));
@@ -267,6 +389,17 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
     const t = (y - margin) / (chartH - 2 * margin);
     return Math.exp(Math.log(f1min) + t * (Math.log(f1max) - Math.log(f1min)));
   };
+
+  const tractToFormants = useCallback((state: LiveTractState) => {
+    const lF = 1.0 - (state.lipLen * 0.3);
+    const liF = 0.5 + (state.lips * 0.5);
+    const fr1 = (200 + (1 - state.y) * 600 - (state.throat * 50)) * lF * liF;
+    const fr2 = (800 + state.x * 1400) * lF * liF;
+    return {
+      f1: Math.max(f1min, Math.min(f1max, fr1)),
+      f2: Math.max(f2min, Math.min(f2max, fr2)),
+    };
+  }, []);
 
   const findNearestVowel = useCallback((f1: number, f2: number) => {
     let minDist = Infinity;
@@ -293,10 +426,15 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
     clearTimeouts();
     playingRef.current = false;
     if (nodesRef.current) {
-      const { osc, oscGain, noiseSrc, noiseGain } = nodesRef.current;
+      const { oscillators, oscGain, noiseSrc, noiseGain, noiseVoice } = nodesRef.current;
       try { oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.02); } catch { }
       try { noiseGain?.gain.setTargetAtTime(0, audioContext.currentTime, 0.02); } catch { }
-      try { osc.stop(audioContext.currentTime + 0.05); } catch { }
+      oscillators.forEach(osc => {
+        try { osc.stop(audioContext.currentTime + 0.05); } catch { }
+      });
+      if (noiseVoice) {
+        try { noiseVoice.stop(audioContext.currentTime + 0.05); } catch { }
+      }
       try { noiseSrc?.stop(audioContext.currentTime + 0.05); } catch { }
     }
     nodesRef.current = null;
@@ -304,13 +442,47 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
 
   useEffect(() => () => stopPlayback(), [stopPlayback]);
 
-  const createVoiceChain = useCallback((): PlayNodes => {
-    const osc = audioContext.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.value = basePitch;
+  useEffect(() => {
+    if (!nodesRef.current) return;
+    const now = audioContext.currentTime;
+    nodesRef.current.oscillators.forEach(osc => {
+      try { osc.frequency.setTargetAtTime(manualPitch || basePitch, now, 0.02); } catch { }
+    });
+  }, [audioContext, manualPitch]);
 
+  useEffect(() => {
+    if (isPointerDown || ttsPlaying) return;
+    const mapped = tractToFormants(liveTract);
+    setCurrentF1(mapped.f1);
+    setCurrentF2(mapped.f2);
+  }, [isPointerDown, liveTract, tractToFormants, ttsPlaying]);
+
+  useEffect(() => {
+    lastTtsFramesRef.current = null;
+    lastTtsDurationRef.current = 0;
+  }, [ttsText]);
+
+  const createVoiceChain = useCallback((): PlayNodes => {
     const oscGain = audioContext.createGain();
     oscGain.gain.value = 0;
+
+    const oscillators: OscillatorNode[] = [];
+    let noiseVoice: AudioBufferSourceNode | undefined;
+    if (resolvedWaveform === 'noise') {
+      const noiseBuf = createNoiseBuffer(audioContext, 1.5, noisePreset);
+      noiseVoice = audioContext.createBufferSource();
+      noiseVoice.buffer = noiseBuf;
+      noiseVoice.loop = true;
+      noiseVoice.connect(oscGain);
+      noiseVoice.start();
+    } else {
+      const osc = audioContext.createOscillator();
+      osc.type = resolvedWaveform === 'sine' ? 'sine' : resolvedWaveform === 'square' ? 'square' : 'sawtooth';
+      osc.frequency.value = manualPitch || basePitch;
+      osc.connect(oscGain);
+      osc.start();
+      oscillators.push(osc);
+    }
 
     const f1 = audioContext.createBiquadFilter();
     f1.type = 'peaking';
@@ -331,7 +503,6 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
     lpf.type = 'lowpass';
     lpf.frequency.value = cutoff; lpf.Q.value = 0.001;
 
-    osc.connect(oscGain);
     oscGain.connect(bef);
     oscGain.connect(lpf);
     oscGain.connect(f1);
@@ -346,10 +517,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
     bef.connect(audioContext.destination);
     lpf.connect(audioContext.destination);
 
-    osc.start();
-
-    return { osc, oscGain, f1, f2, f3, f4, lpf, bef };
-  }, [audioContext]);
+    return { oscillators, noiseVoice, oscGain, f1, f2, f3, f4, lpf, bef };
+  }, [audioContext, manualPitch, noisePreset, resolvedWaveform]);
 
   const ensureAudioContext = async () => {
     if (audioContext.state === 'suspended') {
@@ -382,7 +551,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
 
   const setupNoise = (freq: number, bw: number, amp: number) => {
     if (!nodesRef.current) return;
-    const noiseBuffer = createNoiseBuffer(audioContext, 0.5);
+    const noiseBuffer = createNoiseBuffer(audioContext, 0.5, noisePreset);
     const noiseSrc = audioContext.createBufferSource();
     noiseSrc.buffer = noiseBuffer;
     noiseSrc.loop = true;
@@ -534,6 +703,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
     const f2 = f2FromX(x);
     setCurrentF1(f1);
     setCurrentF2(f2);
+    onFormantChange(f1, f2);
     const nearest = findNearestVowel(f1, f2);
     if (nearest) {
       const cho = selectedConsonant ? selectedConsonant.name : 'ㅇ';
@@ -553,6 +723,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
     const f2 = f2FromX(x);
     setCurrentF1(f1);
     setCurrentF2(f2);
+    onFormantChange(f1, f2);
     updateFormants(f1, f2);
   };
 
@@ -571,6 +742,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
     setTtsPlaying(true);
 
     const events: Array<{ type: 'syllable' | 'glide' | 'coda' | 'silence'; consonant?: Consonant | null; jong?: string | null; f1?: number; f2?: number; dur: number; }> = [];
+    const frames: VowelSynthFrame[] = [];
     for (const char of ttsText.trim()) {
       const decomp = decomposeHangul(char);
       if (!decomp) continue;
@@ -592,8 +764,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
         const v1 = getVowelFormants(vowelSeq[1]);
         events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 100 });
         events.push({ type: 'glide', f1: v1.f1, f2: v1.f2, dur: 120 });
+        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 100 });
+        frames.push({ f1: v1.f1, f2: v1.f2, durMs: 120 });
       } else {
         events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 200 });
+        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 200 });
       }
 
       if (jong) events.push({ type: 'coda', jong, dur: 80 });
@@ -604,6 +779,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
       setTtsPlaying(false);
       return;
     }
+
+    const totalMs = events.reduce((sum, ev) => sum + ev.dur, 0);
+    lastTtsFramesRef.current = frames;
+    lastTtsDurationRef.current = totalMs / 1000;
 
     stopPlayback();
     nodesRef.current = createVoiceChain();
@@ -618,12 +797,14 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
       const ev = events[idx];
       if (ev.type === 'syllable') {
         startVowelTransition(ev.consonant || null, ev.f1 || currentF1, ev.f2 || currentF2);
+        onFormantChange(ev.f1 || currentF1, ev.f2 || currentF2);
         if (ev.consonant) {
           // Play consonant overlay first
           playConsonantAndVowel(ev.consonant, ev.f1 || currentF1, ev.f2 || currentF2, false);
         }
       } else if (ev.type === 'glide') {
         updateFormants(ev.f1 || currentF1, ev.f2 || currentF2);
+        onFormantChange(ev.f1 || currentF1, ev.f2 || currentF2);
       } else if (ev.type === 'coda' && ev.jong) {
         playCoda(ev.jong);
       }
@@ -634,6 +815,17 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
       timeoutIdsRef.current.push(t);
     };
     playNext();
+  };
+
+  const handleRecord = () => {
+    if (ttsPlaying) return;
+    const frames = lastTtsFramesRef.current;
+    const totalSec = lastTtsDurationRef.current;
+    if (frames && frames.length > 0 && totalSec > 0) {
+      onRecordTts(frames, totalSec);
+      return;
+    }
+    onRecordSnapshot();
   };
 
   useEffect(() => {
@@ -719,7 +911,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
           <p className="text-[11px] text-slate-500 font-medium mt-1">{text.subtitle}</p>
         </div>
         <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
-          <Volume2 size={14} /> {Math.round(basePitch)}Hz
+          <Volume2 size={14} /> {Math.round(manualPitch)}Hz
         </div>
       </div>
 
@@ -794,6 +986,94 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
         </div>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className="flex justify-between text-[10px] font-black text-slate-500">
+            <span>{text.pitch}</span>
+            <span className="text-indigo-600">{Math.round(manualPitch)}Hz</span>
+          </div>
+          <input
+            type="range"
+            min="50"
+            max="600"
+            step="1"
+            value={manualPitch}
+            onChange={e => setManualPitch(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+          />
+        </div>
+        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-slate-500 uppercase">{text.waveform}</span>
+            <select
+              value={synthWaveform}
+              onChange={e => setSynthWaveform(e.target.value as any)}
+              className="text-[10px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"
+            >
+              <option value="blend">{text.waveBlend}</option>
+              <option value="sawtooth">Sawtooth</option>
+              <option value="sine">Sine</option>
+              <option value="square">Square</option>
+              <option value="noise">Noise</option>
+            </select>
+          </div>
+          {synthWaveform === 'blend' && (
+            <div className="space-y-1.5">
+              {([
+                ['sawtooth', 'Sawtooth'],
+                ['sine', 'Sine'],
+                ['square', 'Square'],
+                ['noise', 'Noise'],
+              ] as [BlendWave, string][]).map(([waveId, label]) => (
+                <div key={waveId} className="space-y-0.5">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500">
+                    <span>{label}</span>
+                    <span className="text-indigo-600">{Math.round(normalizedBlend[waveId] * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={synthBlend[waveId]}
+                    onChange={e => setSynthBlend({ ...synthBlend, [waveId]: Number(e.target.value) })}
+                    className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className="text-[10px] font-black text-slate-500 uppercase">{text.noisePreset}</div>
+          <div className="grid grid-cols-3 gap-1">
+            {([
+              ['white', text.whiteNoise],
+              ['pink', text.pinkNoise],
+              ['brown', text.brownNoise],
+            ] as [NoisePreset, string][]).map(([preset, label]) => (
+              <button
+                key={preset}
+                onClick={() => setNoisePreset(preset)}
+                className={`py-1 rounded text-[10px] font-black border transition-all ${noisePreset === preset ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+        <input
+          type="checkbox"
+          checked={autoExtendDuration}
+          onChange={e => setAutoExtendDuration(e.target.checked)}
+          className="w-4 h-4 accent-indigo-500"
+        />
+        <span>{text.autoExtend}</span>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[10px] font-black text-slate-500 uppercase">{text.ttsLabel}</span>
         <input
@@ -807,6 +1087,12 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => 
           className={`px-4 py-2 rounded-lg text-xs font-black ${ttsPlaying ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}`}
         >
           {ttsPlaying ? text.stop : text.play}
+        </button>
+        <button
+          onClick={handleRecord}
+          className="px-4 py-2 rounded-lg text-xs font-black bg-emerald-500 text-white"
+        >
+          {text.record}
         </button>
       </div>
     </div>
