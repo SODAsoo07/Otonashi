@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves, Download, Upload } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -17,7 +17,7 @@ interface AdvancedTractTabProps {
     files: AudioFile[];
     onAddToRack: (buffer: AudioBuffer, name: string) => void;
     isActive: boolean;
-    monitorGainValue?: number;  // 0~1.0 (재생 시만)
+    monitorGainValue?: number;  // 0~1.0 (monitor)
     onSendToStudio?: (buffer: AudioBuffer, name: string) => void;
     onSendToVocoder?: (buffer: AudioBuffer, name: string) => void;
     preferredSidebarTab?: 'settings' | 'eq' | 'vowel';
@@ -35,14 +35,14 @@ const ADVANCED_TRACT_TEXT = {
         sensitivity: '민감도',
         selectFile: '파일 선택',
         duration: '길이 (초)',
-        extractPitch: '피치 추출 및 적용',
+        extractPitch: '피치 추출 후 적용',
         glottisSource: '성문 소스',
         waveform: '파형',
         waveSawtooth: '톱니파',
         waveSine: '사인파',
-        waveSquare: '사각파',
+        waveSquare: '구형파',
         waveNoise: '노이즈',
-        synth: '신디사이저',
+        synth: '합성',
         file: '파일',
         simulationIntensity: '시뮬레이션 강도',
         spectrogram: '스펙트로그램',
@@ -52,15 +52,15 @@ const ADVANCED_TRACT_TEXT = {
         noiseFilePlaceholder: '노이즈 파일 선택',
         pitch: '피치',
         gender: '성별',
-        lips: '입술 열기',
+        lips: '입술 열림',
         lipLen: '입술 길이',
-        throat: '목 조임',
-        nasal: '비성',
-        sendLabel: '렌더 후 전송 →',
-        sendStudio: '→ 스튜디오',
-        sendVocoder: '→ 보코더',
-        sendStudioTitle: '현재 시뮬레이션을 렌더링하여 스튜디오 탭으로 보냅니다',
-        sendVocoderTitle: '현재 시뮬레이션을 렌더링하여 보코더 탭으로 보냅니다',
+        throat: '목',
+        nasal: '비강',
+        sendLabel: '렌더 후 보내기',
+        sendStudio: '스튜디오로',
+        sendVocoder: '보코더로',
+        sendStudioTitle: '현재 시뮬레이션을 렌더링해 스튜디오 탭으로 전송',
+        sendVocoderTitle: '현재 시뮬레이션을 렌더링해 보코더 탭으로 전송',
     },
     en: {
         settings: 'Settings',
@@ -94,9 +94,9 @@ const ADVANCED_TRACT_TEXT = {
         lipLen: 'Lip Length',
         throat: 'Throat',
         nasal: 'Nasal',
-        sendLabel: 'Send after render →',
-        sendStudio: '→ Studio',
-        sendVocoder: '→ Vocoder',
+        sendLabel: 'Send after render',
+        sendStudio: 'To Studio',
+        sendVocoder: 'To Vocoder',
         sendStudioTitle: 'Render the current simulation and send it to the Studio tab',
         sendVocoderTitle: 'Render the current simulation and send it to the Vocoder tab',
     },
@@ -111,18 +111,18 @@ const ADVANCED_TRACT_TEXT = {
         sensitivity: '感度',
         selectFile: 'ファイルを選択',
         duration: '長さ (秒)',
-        extractPitch: 'ピッチを抽出して適用',
+        extractPitch: 'ピッチ抽出して適用',
         glottisSource: '声門ソース',
         waveform: '波形',
-        waveSawtooth: 'ノコギリ波',
-        waveSine: 'サイン波',
+        waveSawtooth: 'のこぎり波',
+        waveSine: '正弦波',
         waveSquare: '矩形波',
         waveNoise: 'ノイズ',
-        synth: 'シンセ',
+        synth: '合成',
         file: 'ファイル',
         simulationIntensity: 'シミュレーション強度',
         spectrogram: 'スペクトログラム',
-        noiseSource: 'ノイズソース (息)',
+        noiseSource: 'ノイズソース(息)',
         whiteNoise: 'ホワイトノイズ',
         fileSource: 'ファイルソース',
         noiseFilePlaceholder: 'ノイズファイルを選択',
@@ -130,13 +130,13 @@ const ADVANCED_TRACT_TEXT = {
         gender: '性別',
         lips: '唇の開き',
         lipLen: '唇の長さ',
-        throat: '喉の締め',
-        nasal: '鼻音',
-        sendLabel: 'レンダー後に送る →',
-        sendStudio: '→ スタジオ',
-        sendVocoder: '→ ボコーダー',
-        sendStudioTitle: '現在のシミュレーションをレンダーしてスタジオタブへ送ります',
-        sendVocoderTitle: '現在のシミュレーションをレンダーしてボコーダータブへ送ります',
+        throat: '喉',
+        nasal: '鼻腔',
+        sendLabel: 'レンダー後に送信',
+        sendStudio: 'スタジオへ',
+        sendVocoder: 'ボコーダーへ',
+        sendStudioTitle: '現在のシミュレーションをレンダーしてスタジオタブに送信',
+        sendVocoderTitle: '現在のシミュレーションをレンダーしてボコーダータブに送信',
     },
 } as const;
 
@@ -144,14 +144,16 @@ const ADVANCED_TRACT_TRACK_NAMES = {
     ko: {
         tongueX: '혀 위치 (X)',
         tongueY: '혀 높이 (Y)',
-        lips: '입술 열기',
+        lips: '입술 열림',
         lipLen: '입술 길이',
-        throat: '목 조임',
-        nasal: '연구개 (Velum)',
-        pitch: '피치 (Hz)',
-        gender: '성별 (Shift)',
-        gain: '게인 (Vol)',
+        throat: '목',
+        nasal: '비강(연구개)',
+        pitch: '피치(Hz)',
+        gender: '성별(Shift)',
+        gain: '게인(Vol)',
         breath: '숨소리',
+        consonant: '초성(자음)',
+        coda: '종성(받침)',
     },
     en: {
         tongueX: 'Tongue Position (X)',
@@ -164,18 +166,22 @@ const ADVANCED_TRACT_TRACK_NAMES = {
         gender: 'Gender (Shift)',
         gain: 'Gain (Vol)',
         breath: 'Breath',
+        consonant: 'Onset (Consonant)',
+        coda: 'Coda',
     },
     ja: {
-        tongueX: '舌の位置 (X)',
-        tongueY: '舌の高さ (Y)',
+        tongueX: '舌位置 (X)',
+        tongueY: '舌高さ (Y)',
         lips: '唇の開き',
         lipLen: '唇の長さ',
-        throat: '喉の締め',
-        nasal: '軟口蓋 (Velum)',
-        pitch: 'ピッチ (Hz)',
-        gender: '性別 (Shift)',
-        gain: 'ゲイン (Vol)',
-        breath: '息成分',
+        throat: '喉',
+        nasal: '鼻腔(軟口蓋)',
+        consonant: '子音(語頭)',
+        coda: '終声',
+        pitch: 'ピッチ(Hz)',
+        gender: '性別(Shift)',
+        gain: 'ゲイン(Vol)',
+        breath: '息',
     },
 } as const;
 
@@ -198,6 +204,9 @@ const DEFAULT_LARYNX_PARAMS: LarynxParams = {
     noiseSourceFileId: '',
     loopOn: true,
 };
+
+const VOWEL_CONSONANT_LIST = ['(none)', 'ㄱ', 'ㅋ', 'ㄴ', 'ㄷ', 'ㅌ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅍ', 'ㅅ', 'ㅈ', 'ㅊ', 'ㅎ'] as const;
+const VOWEL_CODA_LIST = ['(none)', 'ㄱ', 'ㄷ', 'ㅂ', 'ㄴ', 'ㅁ', 'ㅇ', 'ㄹ'] as const;
 
 const normalizeSynthBlend = (blend: Partial<SynthBlend> | null | undefined): SynthBlend => {
     const raw: SynthBlend = {
@@ -278,6 +287,8 @@ const createDefaultAdvTracks = (language: keyof typeof ADVANCED_TRACT_TRACK_NAME
         { id: 'gender', name: labels.gender, group: 'edit', color: '#ec4899', points: [{ t: 0, v: 1 }, { t: 1, v: 1 }], min: 0.5, max: 2.0, interpolation: 'curve' },
         { id: 'gain', name: labels.gain, group: 'edit', color: '#ef4444', points: [{ t: 0, v: 0 }, { t: 0.1, v: 1 }, { t: 0.9, v: 1 }, { t: 1, v: 0 }], min: 0, max: 1.5, interpolation: 'linear' },
         { id: 'breath', name: labels.breath, group: 'edit', color: '#22d3ee', points: [{ t: 0, v: 0 }, { t: 1, v: 0 }], min: 0, max: 0.3, interpolation: 'linear' },
+        { id: 'consonant', name: labels.consonant, group: 'edit', color: '#38bdf8', points: [{ t: 0, v: 0 }], min: 0, max: VOWEL_CONSONANT_LIST.length - 1, interpolation: 'linear' },
+        { id: 'coda', name: labels.coda, group: 'edit', color: '#0ea5e9', points: [{ t: 0, v: 0 }], min: 0, max: VOWEL_CODA_LIST.length - 1, interpolation: 'linear' },
     ];
 };
 
@@ -293,9 +304,9 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0, onSendToStudio, onSendToVocoder, preferredSidebarTab }) => {
     const { language } = useLanguage();
     const text = ADVANCED_TRACT_TEXT[language];
-    const vowelSynthTabLabel = language === 'ja' ? '韓国語 フォルマント 合成' : language === 'en' ? 'Korean Formant Synth' : '한글 모음/자음 합성';
+    const vowelSynthTabLabel = language === 'ja' ? '韓国語フォルマント合成' : language === 'en' ? 'Korean Formant Synth' : '성도 자음/모음 생성';
     const waveBlendLabel = language === 'ko' ? '파형 블렌드' : language === 'ja' ? '波形ブレンド' : 'Wave Blend';
-    const waveNoiseOnlyLabel = language === 'ko' ? '노이즈 단독' : language === 'ja' ? 'ノイズ単体' : 'Noise Only';
+    const waveNoiseOnlyLabel = language === 'ko' ? '노이즈 단독' : language === 'ja' ? 'ノイズのみ' : 'Noise Only';
     const waveMixRatioLabel = language === 'ko' ? '파형 비율' : language === 'ja' ? '波形比率' : 'Wave Ratio';
     const generatedNoiseLabel = language === 'ko' ? '노이즈 프리셋' : language === 'ja' ? 'ノイズプリセット' : 'Noise Preset';
     const pinkNoiseLabel = language === 'ko' ? '핑크 노이즈' : language === 'ja' ? 'ピンクノイズ' : 'Pink Noise';
@@ -314,6 +325,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [playHeadPos, setPlayheadPos] = useState(0);
     const [liveTract, setLiveTract] = useState<LiveTractState>({ x: 0.5, y: 0.4, lips: 0.7, lipLen: 0.5, throat: 0.5, nasal: 0.2 });
     const [manualPitch, setManualPitch] = useState(220);
+    const [selectedVowelConsonant, setSelectedVowelConsonant] = useState<string | null>(null);
+    const [selectedVowelCoda, setSelectedVowelCoda] = useState<string | null>(null);
     const [manualGender, setManualGender] = useState(1.0);
     const [simIndex, setSimIndex] = useState(1);
     const [simIntensity, setSimIntensity] = useState(1.0);
@@ -325,7 +338,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [isResizing, setIsResizing] = useState(false);
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq' | 'vowel'>('settings');
-    const lastNonVowelTabRef = useRef<'settings' | 'eq'>('settings');
+    const [isTimelineOpen, setIsTimelineOpen] = useState(true);
     const [autoExtendAdvDuration, setAutoExtendAdvDuration] = useState(false);
     const [showAnalyzer, setShowAnalyzer] = useState(false);
 
@@ -336,20 +349,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [showGhost, setShowGhost] = useState(true);
     const spectrogramCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const tractStateInputRef = useRef<HTMLInputElement | null>(null);
-
-    useEffect(() => {
-        if (sidebarTab !== 'vowel') {
-            lastNonVowelTabRef.current = sidebarTab;
-        }
-    }, [sidebarTab]);
-
-    useEffect(() => {
-        if (preferredSidebarTab === 'vowel') {
-            setSidebarTab('vowel');
-        } else if (!preferredSidebarTab) {
-            setSidebarTab(lastNonVowelTabRef.current);
-        }
-    }, [preferredSidebarTab]);
+    const isVowelPage = preferredSidebarTab === 'vowel';
 
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },
@@ -388,7 +388,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const p = presets[v];
         setLiveTract({ ...liveTract, ...p });
         updateLiveAudio(p.x, p.y, p.lips, p.throat, p.lipLen, p.nasal, manualPitch, manualGender);
-        commitChange(`${v} 프리셋 적용`);
+        commitChange(`${v} 모음 프리셋 적용`);
     };
 
     const handleAnalyzerApply = (data: { tongueX?: any[], tongueY?: any[], lips?: any[], lipLen?: any[], throat?: any[], nasal?: any[] }) => {
@@ -405,7 +405,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setAdvTracks(newTracks);
         setGhostTracks(newTracks);
         setShowGhost(true);
-        commitChange("AI 발음 분석 적용");
+        commitChange('AI 발음 분석 적용');
     };
 
     const handlePitchExtraction = () => {
@@ -419,7 +419,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             if (t.id === 'pitch') return { ...t, points: normalizedPts, interpolation: 'curve' };
             return t;
         }));
-        commitChange("피치 추출 적용");
+        commitChange('피치 추출 적용');
     };
 
     useEffect(() => {
@@ -476,7 +476,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         isEditMode, selectedTrackId, playHeadPos
     }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos]);
 
-    const commitChange = useCallback((label: string = "변경") => {
+    const commitChange = useCallback((label: string = 'Update') => {
         const state = getCurrentState();
         setUndoStack(prev => [...prev.slice(-19), state]);
         setRedoStack([]);
@@ -513,11 +513,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         simPauseOffsetRef.current = restoredPlayhead * (state.advDuration !== undefined ? state.advDuration : advDuration);
     }, [localizeTracks, playHeadPos, advDuration]);
 
-    const simStateSaveLabel = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uC800\uC7A5' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u3092\u4FDD\u5B58' : 'Save Sim State';
-    const simStateLoadLabel = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uBD88\uB7EC\uC624\uAE30' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u3092\u8AAD\u307F\u8FBC\u307F' : 'Load Sim State';
-    const simStateSectionTitle = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uD504\uB9AC\uC14B' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u30D7\u30EA\u30BB\u30C3\u30C8' : 'Sim State Preset';
-    const simStateImportError = language === 'ko' ? '\uC131\uB3C4 \uC0C1\uD0DC \uD30C\uC77C\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.' : language === 'ja' ? '\u58F0\u9053\u72B6\u614B\u30D5\u30A1\u30A4\u30EB\u306E\u8AAD\u307F\u8FBC\u307F\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002' : 'Failed to load sim state file.';
-    const simStateInvalidFile = language === 'ko' ? '\uC720\uD6A8\uD55C \uC131\uB3C4 \uC0C1\uD0DC \uD30C\uC77C\uC774 \uC544\uB2D9\uB2C8\uB2E4.' : language === 'ja' ? '\u6709\u52B9\u306A\u58F0\u9053\u72B6\u614B\u30D5\u30A1\u30A4\u30EB\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002' : 'Invalid sim state file.';
+    const simStateSaveLabel = language === 'ko' ? '성도 상태 저장' : language === 'ja' ? '声道状態を保存' : 'Save Sim State';
+    const simStateLoadLabel = language === 'ko' ? '성도 상태 불러오기' : language === 'ja' ? '声道状態を読み込み' : 'Load Sim State';
+    const simStateSectionTitle = language === 'ko' ? '성도 상태 프리셋' : language === 'ja' ? '声道状態プリセット' : 'Sim State Preset';
+    const simStateImportError = language === 'ko' ? '성도 상태 파일을 불러오지 못했습니다.' : language === 'ja' ? '声道状態ファイルの読み込みに失敗しました。' : 'Failed to load sim state file.';
+    const simStateInvalidFile = language === 'ko' ? '유효한 성도 상태 파일이 아닙니다.' : language === 'ja' ? '有効な声道状態ファイルではありません。' : 'Invalid sim state file.';
 
     const handleExportSimState = useCallback(() => {
         const payload = {
@@ -630,6 +630,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         });
         setManualPitch(getValueAtTime('pitch', t));
         setManualGender(getValueAtTime('gender', t));
+        const consonantIdx = Math.round(getValueAtTime('consonant', t));
+        const codaIdx = Math.round(getValueAtTime('coda', t));
+        const consonantName = VOWEL_CONSONANT_LIST[Math.max(0, Math.min(consonantIdx, VOWEL_CONSONANT_LIST.length - 1))];
+        const codaName = VOWEL_CODA_LIST[Math.max(0, Math.min(codaIdx, VOWEL_CODA_LIST.length - 1))];
+        setSelectedVowelConsonant(consonantName === '(none)' ? null : consonantName);
+        setSelectedVowelCoda(codaName === '(none)' ? null : codaName);
     }, [getValueAtTime]);
 
     const updateLiveAudio = useCallback((x: number, y: number, l: number, t: number, len: number, n: number, pitch: number, gender: number) => {
@@ -688,6 +694,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
         const newX: { t: number; v: number }[] = [];
         const newY: { t: number; v: number }[] = [];
+        const newConsonant: { t: number; v: number }[] = [];
+        const newCoda: { t: number; v: number }[] = [];
 
         frames.forEach(frame => {
             const t = playHeadPos + (elapsed * scale) / targetDuration;
@@ -697,6 +705,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             const mapped = formantToTract(frame.f1, frame.f2, lips, lipLen, throat);
             newX.push({ t: clamp01(t), v: mapped.x });
             newY.push({ t: clamp01(t), v: mapped.y });
+            const consonantIdx = Math.max(0, VOWEL_CONSONANT_LIST.indexOf(frame.consonant ?? '(none)'));
+            const codaIdx = Math.max(0, VOWEL_CODA_LIST.indexOf(frame.coda ?? '(none)'));
+            newConsonant.push({ t: clamp01(t), v: consonantIdx });
+            newCoda.push({ t: clamp01(t), v: codaIdx });
             elapsed += frame.durMs / 1000;
         });
 
@@ -710,6 +722,10 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             const mapped = formantToTract(lastFrame.f1, lastFrame.f2, lips, lipLen, throat);
             newX.push({ t: clamp01(endT), v: mapped.x });
             newY.push({ t: clamp01(endT), v: mapped.y });
+            const consonantIdx = Math.max(0, VOWEL_CONSONANT_LIST.indexOf(lastFrame.consonant ?? '(none)'));
+            const codaIdx = Math.max(0, VOWEL_CODA_LIST.indexOf(lastFrame.coda ?? '(none)'));
+            newConsonant.push({ t: clamp01(endT), v: consonantIdx });
+            newCoda.push({ t: clamp01(endT), v: codaIdx });
         }
 
         const mergePoints = (base: { t: number; v: number }[], incoming: { t: number; v: number }[]) => {
@@ -720,6 +736,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setAdvTracks(prev => prev.map(tr => {
             if (tr.id === 'tongueX') return { ...tr, points: mergePoints(tr.points, newX) };
             if (tr.id === 'tongueY') return { ...tr, points: mergePoints(tr.points, newY) };
+            if (tr.id === 'consonant') return { ...tr, points: mergePoints(tr.points, newConsonant) };
+            if (tr.id === 'coda') return { ...tr, points: mergePoints(tr.points, newCoda) };
             return tr;
         }));
 
@@ -803,9 +821,9 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         sourceNode?.connect(f1);
         nNode.connect(nG); nG.connect(f1);
 
-        // 출력단: 필터 및 EQ 거친 후 -> 전체 Gain (g) -> 안전 Limiter -> Monitor Gain -> 스피커
+        // ・罹･・ｨ: 﨑・┣ ・・EQ ・ｰ・・弡・-> ・・ｲｴ Gain (g) -> ・溢・Limiter -> Monitor Gain -> ・､嵓ｼ・､
         const limiter = audioContext.createDynamicsCompressor();
-        limiter.threshold.value = -3.0; // 강한 피크 방지용
+        limiter.threshold.value = -3.0; // ・倣復 嵓ｼ增ｬ ・ｩ・・ｩ
         limiter.ratio.value = 20.0;
         limiter.attack.value = 0.005;
         limiter.release.value = 0.05;
@@ -1093,12 +1111,12 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const recordSnapshot = () => {
         const t = playHeadPos;
         setAdvTracks(prev => prev.map(tr => {
-            if (tr.group !== 'adj' && tr.id !== 'pitch' && tr.id !== 'gender') return tr;
+            if (tr.group !== 'adj' && tr.id !== 'pitch' && tr.id !== 'gender' && tr.id !== 'consonant' && tr.id !== 'coda') return tr;
             let val = 0;
-            if (tr.id === 'tongueX') val = liveTract.x; else if (tr.id === 'tongueY') val = liveTract.y; else if (tr.id === 'lips') val = liveTract.lips; else if (tr.id === 'lipLen') val = liveTract.lipLen; else if (tr.id === 'throat') val = liveTract.throat; else if (tr.id === 'nasal') val = liveTract.nasal; else if (tr.id === 'pitch') val = manualPitch; else if (tr.id === 'gender') val = manualGender;
+            if (tr.id === 'tongueX') val = liveTract.x; else if (tr.id === 'tongueY') val = liveTract.y; else if (tr.id === 'lips') val = liveTract.lips; else if (tr.id === 'lipLen') val = liveTract.lipLen; else if (tr.id === 'throat') val = liveTract.throat; else if (tr.id === 'nasal') val = liveTract.nasal; else if (tr.id === 'pitch') val = manualPitch; else if (tr.id === 'gender') val = manualGender; else if (tr.id === 'consonant') val = Math.max(0, VOWEL_CONSONANT_LIST.indexOf(selectedVowelConsonant ?? '(none)')); else if (tr.id === 'coda') val = Math.max(0, VOWEL_CODA_LIST.indexOf(selectedVowelCoda ?? '(none)'));
             return { ...tr, points: [...tr.points.filter(p => Math.abs(p.t - t) > 0.005), { t, v: val }].sort((a, b) => a.t - b.t) };
         }));
-        commitChange("기록");
+        commitChange('Record snapshot');
     }
 
     const handleResetAllKeyframes = useCallback(() => {
@@ -1118,15 +1136,17 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         });
         setManualPitch(getValueAtTime('pitch', 0, defaultTracks));
         setManualGender(getValueAtTime('gender', 0, defaultTracks));
+        setSelectedVowelConsonant(null);
+        setSelectedVowelCoda(null);
     }, [commitChange, language, getValueAtTime]);
 
     const getCurrentValue = (trackId: string) => getValueAtTime(trackId, playHeadPos);
     const selectedTrackName = advTracks.find(track => track.id === selectedTrackId)?.name || selectedTrackId;
-    const modeTitle = language === 'ko' ? '\uD3B8\uC9D1 \uC0C1\uD0DC' : language === 'ja' ? '\u7DE8\u96C6\u72B6\u614B' : 'Editor State';
-    const modeHint = language === 'ko' ? 'Tab \uBAA8\uB4DC \uC804\uD658 / Space \uC7AC\uC0DD' : language === 'ja' ? 'Tab \u5207\u66FF / Space \u518D\u751F' : 'Tab toggle / Space play';
-    const modeEditLabel = language === 'ko' ? '\uBAA8\uB4DC' : language === 'ja' ? '\u30E2\u30FC\u30C9' : 'Mode';
-    const modeTrackLabel = language === 'ko' ? '\uD2B8\uB799' : language === 'ja' ? '\u30C8\u30E9\u30C3\u30AF' : 'Track';
-    const modeGuideLabel = language === 'ko' ? '\uAC00\uC774\uB4DC' : language === 'ja' ? '\u30AC\u30A4\u30C9' : 'Guide';
+    const modeTitle = language === 'ko' ? '편집 상태' : language === 'ja' ? '編集状態' : 'Editor State';
+    const modeHint = language === 'ko' ? 'Tab 모드 전환 / Space 재생' : language === 'ja' ? 'Tab 切替 / Space 再生' : 'Tab toggle / Space play';
+    const modeEditLabel = language === 'ko' ? '모드' : language === 'ja' ? 'モード' : 'Mode';
+    const modeTrackLabel = language === 'ko' ? '트랙' : language === 'ja' ? 'トラック' : 'Track';
+    const modeGuideLabel = language === 'ko' ? '가이드' : language === 'ja' ? 'ガイド' : 'Guide';
 
     useEffect(() => {
         if (!isActive) return;
@@ -1165,14 +1185,39 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 hint={modeHint}
                 className="mx-1"
                 items={[
-                    { label: modeEditLabel, value: isEditMode ? (language === 'ko' ? '키프레임 편집' : language === 'ja' ? 'キーフレーム編集' : 'Keyframe Edit') : (language === 'ko' ? '재생헤드 이동' : language === 'ja' ? '再生ヘッド移動' : 'Playhead Move'), tone: isEditMode ? 'amber' : 'indigo' },
+                    { label: modeEditLabel, value: isEditMode ? (language === 'ko' ? '키프레임 편집' : language === 'ja' ? 'キーフレーム編集' : 'Keyframe Edit') : (language === 'ko' ? '플레이헤드 이동' : language === 'ja' ? '再生ヘッド移動' : 'Playhead Move'), tone: isEditMode ? 'amber' : 'indigo' },
                     { label: modeTrackLabel, value: selectedTrackName, tone: 'sky' },
-                    { label: modeGuideLabel, value: showGhost ? (language === 'ko' ? '켜짐' : language === 'ja' ? 'オン' : 'On') : (language === 'ko' ? '꺼짐' : language === 'ja' ? 'オフ' : 'Off'), tone: showGhost ? 'emerald' : 'neutral' },
+                    { label: modeGuideLabel, value: showGhost ? (language === 'ko' ? '켬' : language === 'ja' ? 'オン' : 'On') : (language === 'ko' ? '끔' : language === 'ja' ? 'オフ' : 'Off'), tone: showGhost ? 'emerald' : 'neutral' },
                 ]}
             />
 
             {/* Top Section (Visualizer + Settings) */}
-            <div className="flex-1 flex gap-0 shrink-0 min-h-0 flex-[3]">
+            {isVowelPage ? (
+                <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[3] overflow-y-auto p-4">
+                    <KoreanVowelSynth
+                        audioContext={audioContext}
+                        liveTract={liveTract}
+                        manualPitch={manualPitch}
+                        setManualPitch={setManualPitch}
+                        synthWaveform={synthWaveform}
+                        setSynthWaveform={setSynthWaveform}
+                        synthBlend={synthBlend}
+                        setSynthBlend={setSynthBlend}
+                        noisePreset={larynxParams.noisePreset}
+                        setNoisePreset={(preset) => setLarynxParams({ ...larynxParams, noisePreset: preset })}
+                        onFormantChange={handleVowelFormantChange}
+                        onRecordSnapshot={recordSnapshot}
+                        onRecordTts={recordTtsKeyframes}
+                        autoExtendDuration={autoExtendAdvDuration}
+                        setAutoExtendDuration={setAutoExtendAdvDuration}
+                        selectedConsonantName={selectedVowelConsonant}
+                        setSelectedConsonantName={setSelectedVowelConsonant}
+                        selectedJongName={selectedVowelCoda}
+                        setSelectedJongName={setSelectedVowelCoda}
+                    />
+                </div>
+            ) : (
+                <div className="flex-1 flex gap-0 shrink-0 min-h-0 flex-[3]">
                 {/* Responsive Visualizer */}
                 <TractVisualizer
                     liveTract={liveTract}
@@ -1398,15 +1443,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 onRecordTts={recordTtsKeyframes}
                                 autoExtendDuration={autoExtendAdvDuration}
                                 setAutoExtendDuration={setAutoExtendAdvDuration}
+                        selectedConsonantName={selectedVowelConsonant}
+                        setSelectedConsonantName={setSelectedVowelConsonant}
+                        selectedJongName={selectedVowelCoda}
+                        setSelectedJongName={setSelectedVowelCoda}
                             />
                         )}
                     </div>
                 </div>
             </div>
 
+            )}
             {/* Bottom Section (Timeline Editor) - Responsive Flex */}
-            <div className="flex-1 flex flex-col shrink-0 min-h-0 flex-[2]">
-                {/* 스튜디오 / 보코더 전송 버튼 바 */}
+            <div className={`flex flex-col shrink-0 min-h-0 ${isTimelineOpen ? 'flex-[2]' : 'flex-none'}`}>
+                {/* ・､孖罹粕・､ / ・ｴ・罷鵠 ・・・ ・・款 ・・*/}
                 {(onSendToStudio || onSendToVocoder) && (
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">{text.sendLabel}</span>
@@ -1430,6 +1480,15 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         )}
                     </div>
                 )}
+                <div className="flex items-center justify-end px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0">
+                    <button
+                        onClick={() => setIsTimelineOpen(v => !v)}
+                        className="px-2 py-1 rounded-lg text-[10px] font-black bg-slate-200 text-slate-700 hover:bg-slate-300 transition-all"
+                    >
+                        {language === 'ko' ? (isTimelineOpen ? '키프레임 닫기' : '키프레임 열기') : language === 'ja' ? (isTimelineOpen ? 'キーフレームを隠す' : 'キーフレームを表示') : (isTimelineOpen ? 'Hide keyframes' : 'Show keyframes')}
+                    </button>
+                </div>
+                {isTimelineOpen && (
                 <TimelineEditor
                     advTracks={advTracks}
                     setAdvTracks={setAdvTracks}
@@ -1459,9 +1518,19 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     undoStackLength={undoStack.length}
                     redoStackLength={redoStack.length}
                 />
+                )}
             </div>
         </div>
     );
 };
 
 export default AdvancedTractTab;
+
+
+
+
+
+
+
+
+

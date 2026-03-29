@@ -7,7 +7,7 @@ type NoisePreset = 'white' | 'pink' | 'brown';
 type BlendWave = 'sawtooth' | 'sine' | 'square' | 'noise';
 type SynthBlend = Record<BlendWave, number>;
 
-export type VowelSynthFrame = { f1: number; f2: number; durMs: number };
+export type VowelSynthFrame = { f1: number; f2: number; durMs: number; consonant?: string | null; coda?: string | null };
 
 interface KoreanVowelSynthProps {
   audioContext: AudioContext;
@@ -25,6 +25,10 @@ interface KoreanVowelSynthProps {
   onRecordTts: (frames: VowelSynthFrame[], totalDurationSec: number) => void;
   autoExtendDuration: boolean;
   setAutoExtendDuration: React.Dispatch<React.SetStateAction<boolean>>;
+  selectedConsonantName: string | null;
+  setSelectedConsonantName: React.Dispatch<React.SetStateAction<string | null>>;
+  selectedJongName: string | null;
+  setSelectedJongName: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 type ConsonantType = 'plosive' | 'fricative' | 'affricate' | 'nasal' | 'liquid';
@@ -262,6 +266,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   onRecordTts,
   autoExtendDuration,
   setAutoExtendDuration,
+  selectedConsonantName,
+  setSelectedConsonantName,
+  selectedJongName,
+  setSelectedJongName,
 }) => {
   const { language } = useLanguage();
   const text = useMemo(() => {
@@ -335,14 +343,15 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const lastTtsFramesRef = useRef<VowelSynthFrame[] | null>(null);
   const lastTtsDurationRef = useRef(0);
 
-  const [selectedConsonant, setSelectedConsonant] = useState<Consonant | null>(null);
-  const [selectedJong, setSelectedJong] = useState<string | null>(null);
+  const selectedConsonant = useMemo(() => (selectedConsonantName ? findConsonantByName(selectedConsonantName) : null), [selectedConsonantName]);
+  const selectedJong = selectedJongName;
   const [isPointerDown, setIsPointerDown] = useState(false);
   const [currentF1, setCurrentF1] = useState(490);
   const [currentF2, setCurrentF2] = useState(1350);
   const [ttsText, setTtsText] = useState('안녕하세요');
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [nearestSyllable, setNearestSyllable] = useState('');
+  const ttsPlayingRef = useRef(false);
 
   const chartW = 440;
   const chartH = 300;
@@ -460,6 +469,12 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   useEffect(() => {
     lastTtsFramesRef.current = null;
     lastTtsDurationRef.current = 0;
+    if (ttsPlayingRef.current) {
+      ttsPlayingRef.current = false;
+      setTtsPlaying(false);
+      stopPlayback();
+    }
+    setNearestSyllable('');
   }, [ttsText]);
 
   const createVoiceChain = useCallback((): PlayNodes => {
@@ -815,12 +830,14 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
   const handleTtsToggle = async () => {
     if (ttsPlaying) {
+      ttsPlayingRef.current = false;
       setTtsPlaying(false);
       stopPlayback();
       return;
     }
     if (!ttsText.trim()) return;
     await ensureAudioContext();
+    ttsPlayingRef.current = true;
     setTtsPlaying(true);
 
     const events: Array<{ type: 'syllable' | 'glide' | 'coda' | 'silence'; consonant?: Consonant | null; jong?: string | null; f1?: number; f2?: number; dur: number; }> = [];
@@ -831,6 +848,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       const consonant = findConsonantByName(decomp.cho);
       const vowelSeq = decomposeVowel(decomp.jung);
       const jong = decomp.jong || null;
+      const consonantName = consonant ? consonant.name : null;
+      const codaName = jong || null;
 
       let onsetDur = 0;
       if (consonant) {
@@ -846,11 +865,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         const v1 = getVowelFormants(vowelSeq[1]);
         events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 100 });
         events.push({ type: 'glide', f1: v1.f1, f2: v1.f2, dur: 120 });
-        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 100 });
-        frames.push({ f1: v1.f1, f2: v1.f2, durMs: 120 });
+        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 100, consonant: consonantName, coda: codaName });
+        frames.push({ f1: v1.f1, f2: v1.f2, durMs: 120, consonant: consonantName, coda: codaName });
       } else {
         events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 200 });
-        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 200 });
+        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 200, consonant: consonantName, coda: codaName });
       }
 
       if (jong) events.push({ type: 'coda', jong, dur: 80 });
@@ -858,6 +877,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (events.length === 0) {
+      ttsPlayingRef.current = false;
       setTtsPlaying(false);
       return;
     }
@@ -871,13 +891,16 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
     let idx = 0;
     const playNext = () => {
-      if (!ttsPlaying || idx >= events.length) {
+      if (!ttsPlayingRef.current || idx >= events.length) {
+        ttsPlayingRef.current = false;
         setTtsPlaying(false);
         stopPlayback();
         return;
       }
       const ev = events[idx];
       if (ev.type === 'syllable') {
+        setSelectedConsonantName(ev.consonant ? ev.consonant.name : null);
+        setSelectedJongName(ev.jong || null);
         if (ev.consonant) {
           playConsonantOnChain(ev.consonant, ev.f1 || currentF1, ev.f2 || currentF2);
         } else {
@@ -1006,11 +1029,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                 <span className="text-[9px] text-slate-400 min-w-[110px]">{group.label}</span>
                 {group.items.map((item, idx) => {
                   if (!item) return <span key={`${group.label}-${idx}`} className="w-6" />;
-                  const isSelected = selectedConsonant?.name === item || (!selectedConsonant && item === 'ㅇ');
+                  const isSelected = selectedConsonantName === item || (!selectedConsonantName && item === 'ㅇ');
                   return (
                     <button
                       key={`${group.label}-${item}`}
-                      onClick={() => setSelectedConsonant(item === 'ㅇ' ? null : findConsonantByName(item))}
+                      onClick={() => setSelectedConsonantName(item === 'ㅇ' ? null : item)}
                       className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                     >
                       {item}
@@ -1027,11 +1050,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               <div key={group.label} className="flex items-center gap-2 flex-wrap">
                 <span className="text-[9px] text-slate-400 min-w-[70px]">{group.label}</span>
                 {group.items.map(item => {
-                  const isSelected = selectedJong === item;
+                  const isSelected = selectedJongName === item;
                   return (
                     <button
                       key={`${group.label}-${item}`}
-                      onClick={() => setSelectedJong(item)}
+                      onClick={() => setSelectedJongName(item)}
                       className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                     >
                       {item}
@@ -1039,8 +1062,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                   );
                 })}
                 <button
-                  onClick={() => setSelectedJong(null)}
-                  className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJong === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                  onClick={() => setSelectedJongName(null)}
+                  className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
                 >
                   없음
                 </button>
