@@ -1206,7 +1206,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             {/* Top Section (Visualizer + Settings) */}
             {isVowelPage ? (
                 <div className="flex-1 flex shrink-0 min-h-0 flex-[3] p-4 gap-4 min-w-0">
-                    <div className="flex-1 min-w-0 min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 shadow-sm overflow-hidden aspect-[4/3]">
+                    <div className="flex-1 min-w-0 min-h-[220px] bg-white/40 dynamic-radius border border-slate-300 shadow-sm overflow-hidden aspect-[4/3] flex items-stretch">
                         <TractVisualizer
                             liveTract={liveTract}
                             manualPitch={manualPitch}

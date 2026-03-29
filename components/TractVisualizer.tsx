@@ -60,9 +60,9 @@ const TractVisualizer: React.FC<TractVisualizerProps> = ({
     const nasalVelumAngle = liveTract.nasal * 40;
 
     return (
-        <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm min-h-[200px]">
+        <div className="w-full h-full bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm min-h-0">
             <div className="flex-1 relative flex items-center justify-center overflow-hidden py-[3px]">
-                <div className="w-[42%] h-[42%] max-w-[360px] max-h-[260px] min-w-[140px] min-h-[120px] flex items-center justify-center">
+                <div className="w-[34%] h-[34%] max-w-[300px] max-h-[220px] min-w-[120px] min-h-[100px] flex items-center justify-center">
                     <svg viewBox="100 50 280 340" className="w-full h-full drop-shadow-lg select-none transition-all duration-300 p-2" preserveAspectRatio="xMidYMid meet">
                     <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                     <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
@@ -78,7 +78,7 @@ const TractVisualizer: React.FC<TractVisualizerProps> = ({
                 </div>
             </div>
 
-            <div className="p-2 px-4 bg-white/80 border-t flex justify-between items-center shrink-0 shadow-inner">
+            <div className="mt-auto p-2 px-4 bg-white/80 border-t flex justify-between items-center shrink-0 shadow-inner">
                 <div className="flex gap-2">
                     <button onClick={onUndo} disabled={undoStackLength === 0} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 disabled:opacity-20 transition-all shadow-sm">
                         <Undo2 size={16} />
