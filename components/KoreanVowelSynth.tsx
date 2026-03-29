@@ -1097,17 +1097,19 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="w-full aspect-square">
-              <canvas
-                ref={canvasRef}
-                width={chartW}
-                height={chartH}
-                onMouseDown={handlePointerDown}
-                onMouseMove={handlePointerMove}
-                onMouseUp={handlePointerUp}
-                onMouseLeave={handlePointerUp}
-                className="w-full h-full rounded-xl border border-slate-200 bg-white cursor-crosshair"
-              />
+            <div className="w-full flex justify-center">
+              <div className="w-[60%] min-w-[180px] max-w-[240px] aspect-square">
+                <canvas
+                  ref={canvasRef}
+                  width={chartW}
+                  height={chartH}
+                  onMouseDown={handlePointerDown}
+                  onMouseMove={handlePointerMove}
+                  onMouseUp={handlePointerUp}
+                  onMouseLeave={handlePointerUp}
+                  className="w-full h-full rounded-xl border border-slate-200 bg-white cursor-crosshair"
+                />
+              </div>
             </div>
             <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
               <span>F1: {Math.round(currentF1)} Hz</span>
@@ -1120,7 +1122,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-          <div className="flex justify-between text-[10px] font-black text-slate-500">
+          <div className="flex justify-between text-[11px] font-black text-slate-500">
             <span>{text.pitch}</span>
             <span className="text-indigo-600">{Math.round(manualPitch)}Hz</span>
           </div>
@@ -1136,11 +1138,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         </div>
         <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-slate-500 uppercase">{text.waveform}</span>
+            <span className="text-[11px] font-black text-slate-500 uppercase">{text.waveform}</span>
             <select
               value={synthWaveform}
               onChange={e => setSynthWaveform(e.target.value as any)}
-              className="text-[10px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"
+              className="text-[11px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"
             >
               <option value="blend">{text.waveBlend}</option>
               <option value="sawtooth">Sawtooth</option>
@@ -1158,7 +1160,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                 ['noise', 'Noise'],
               ] as [BlendWave, string][]).map(([waveId, label]) => (
                 <div key={waveId} className="space-y-0.5">
-                  <div className="flex justify-between text-[10px] font-black text-slate-500">
+                  <div className="flex justify-between text-[11px] font-black text-slate-500">
                     <span>{label}</span>
                     <span className="text-indigo-600">{Math.round(normalizedBlend[waveId] * 100)}%</span>
                   </div>
@@ -1177,7 +1179,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
           )}
         </div>
         <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-          <div className="text-[10px] font-black text-slate-500 uppercase">{text.noisePreset}</div>
+          <div className="text-[11px] font-black text-slate-500 uppercase">{text.noisePreset}</div>
           <div className="grid grid-cols-3 gap-1">
             {([
               ['white', text.whiteNoise],
@@ -1187,7 +1189,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               <button
                 key={preset}
                 onClick={() => setNoisePreset(preset)}
-                className={`py-1 rounded text-[10px] font-black border transition-all ${noisePreset === preset ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                className={`py-1 rounded text-[11px] font-black border transition-all ${noisePreset === preset ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
               >
                 {label}
               </button>
