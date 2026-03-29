@@ -1340,7 +1340,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               max="600"
               step="1"
               value={manualPitch}
-              onChange={e => setManualPitch(Number(e.target.value))}
+              onChange={e => {
+                markPresetChange();
+                setManualPitch(Number(e.target.value));
+              }}
               className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
             />
           </div>
@@ -1349,7 +1352,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               <span className="text-[11px] font-black text-slate-500 uppercase">{text.waveform}</span>
               <select
                 value={synthWaveform}
-                onChange={e => setSynthWaveform(e.target.value as any)}
+                onChange={e => {
+                  markPresetChange();
+                  setSynthWaveform(e.target.value as any);
+                }}
                 className="text-[11px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"
               >
                 <option value="blend">{text.waveBlend}</option>
@@ -1378,7 +1384,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                       max="1"
                       step="0.01"
                       value={synthBlend[waveId]}
-                      onChange={e => setSynthBlend({ ...synthBlend, [waveId]: Number(e.target.value) })}
+                      onChange={e => {
+                        markPresetChange();
+                        setSynthBlend({ ...synthBlend, [waveId]: Number(e.target.value) });
+                      }}
                       className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
                     />
                   </div>
@@ -1396,7 +1405,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               ] as [NoisePreset, string][]).map(([preset, label]) => (
                 <button
                   key={preset}
-                  onClick={() => setNoisePreset(preset)}
+                  onClick={() => {
+                    markPresetChange();
+                    setNoisePreset(preset);
+                  }}
                   className={`py-1 rounded text-[11px] font-black border transition-all ${noisePreset === preset ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
                 >
                   {label}
