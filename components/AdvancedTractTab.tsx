@@ -304,7 +304,6 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0, onSendToStudio, onSendToVocoder, preferredSidebarTab }) => {
     const { language } = useLanguage();
     const text = ADVANCED_TRACT_TEXT[language];
-    const vowelSynthTabLabel = language === 'ja' ? '韓国語フォルマント合成' : language === 'en' ? 'Korean Formant Synth' : '성도 자음/모음 생성';
     const waveBlendLabel = language === 'ko' ? '파형 블렌드' : language === 'ja' ? '波形ブレンド' : 'Wave Blend';
     const waveNoiseOnlyLabel = language === 'ko' ? '노이즈 단독' : language === 'ja' ? 'ノイズのみ' : 'Noise Only';
     const waveMixRatioLabel = language === 'ko' ? '파형 비율' : language === 'ja' ? '波形比率' : 'Wave Ratio';
@@ -337,7 +336,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [sidebarWidth, setSidebarWidth] = useState(420);
     const [isResizing, setIsResizing] = useState(false);
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
-    const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq' | 'vowel'>('settings');
+    const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
     const [isTimelineOpen, setIsTimelineOpen] = useState(true);
     const [autoExtendAdvDuration, setAutoExtendAdvDuration] = useState(false);
     const [showAnalyzer, setShowAnalyzer] = useState(false);
@@ -1248,6 +1247,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             manualPitch={manualPitch}
                             manualGender={manualGender}
                             isAdvPlaying={isAdvPlaying}
+                            size="compact"
                             undoStackLength={undoStack.length}
                             redoStackLength={redoStack.length}
                             onUndo={handleUndo}
@@ -1292,6 +1292,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     manualPitch={manualPitch}
                     manualGender={manualGender}
                     isAdvPlaying={isAdvPlaying}
+                    size="default"
                     undoStackLength={undoStack.length}
                     redoStackLength={redoStack.length}
                     onUndo={handleUndo}
@@ -1311,7 +1312,6 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     <div className="flex border-b border-slate-300 bg-white/40">
                         <button onClick={() => setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab === 'settings' ? 'bg-white dynamic-primary-text border-b-2 dynamic-primary-border shadow-sm' : 'text-slate-500'}`}><Settings2 size={14} className="inline mr-1" /> {text.settings}</button>
                         <button onClick={() => setSidebarTab('eq')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab === 'eq' ? 'bg-white text-pink-600 border-b-2 border-pink-500 shadow-sm' : 'text-slate-500'}`}><AudioLines size={14} className="inline mr-1" /> {text.eq}</button>
-                        <button onClick={() => setSidebarTab('vowel')} className={`flex-1 py-3 text-[10px] font-black transition-all ${sidebarTab === 'vowel' ? 'bg-white text-indigo-600 border-b-2 border-indigo-500 shadow-sm' : 'text-slate-500'}`}>{vowelSynthTabLabel}</button>
                     </div>
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 font-bold">
                         {sidebarTab === 'settings' ? (
@@ -1494,30 +1494,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             </div>
                         ) : sidebarTab === 'eq' ? (
                             <div className="h-[300px]"><ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={simPlaySourceRef.current} /></div>
-                        ) : (
-                            <KoreanVowelSynth
-                                audioContext={audioContext}
-                                liveTract={liveTract}
-                                manualPitch={manualPitch}
-                                setManualPitch={handleManualPitchChange}
-                                synthWaveform={synthWaveform}
-                                setSynthWaveform={setSynthWaveform}
-                                synthBlend={synthBlend}
-                                setSynthBlend={setSynthBlend}
-                                noisePreset={larynxParams.noisePreset}
-                                setNoisePreset={(preset) => setLarynxParams({ ...larynxParams, noisePreset: preset })}
-                                onFormantChange={handleVowelFormantChange}
-                                onRecordSnapshot={recordSnapshot}
-                                onRecordTts={recordTtsKeyframes}
-                                onRecordConsonant={recordConsonantKeyframe}
-                                autoExtendDuration={autoExtendAdvDuration}
-                                setAutoExtendDuration={setAutoExtendAdvDuration}
-                        selectedConsonantName={selectedVowelConsonant}
-                        setSelectedConsonantName={setSelectedVowelConsonant}
-                        selectedJongName={selectedVowelCoda}
-                        setSelectedJongName={setSelectedVowelCoda}
-                            />
-                        )}
+                        ) : null}
                     </div>
                 </div>
             </div>
