@@ -10,7 +10,7 @@ import TractVisualizer from './TractVisualizer';
 import TimelineEditor from './TimelineEditor';
 import ParamInput from './ui/ParamInput';
 import EditorModeBar from './ui/EditorModeBar';
-import KoreanVowelSynth, { VowelSynthFrame, CustomConsonantProfile } from './KoreanVowelSynth';
+import KoreanVowelSynth, { VowelSynthFrame, CustomConsonantProfile, SavedVowelSourceState } from './KoreanVowelSynth';
 
 interface AdvancedTractTabProps {
     audioContext: AudioContext;
@@ -422,6 +422,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [autoExtendAdvDuration, setAutoExtendAdvDuration] = useState(false);
     const [showAnalyzer, setShowAnalyzer] = useState(false);
     const [customConsonantProfiles, setCustomConsonantProfiles] = useState<CustomConsonantProfile[]>([]);
+    const [savedVowelSourceState, setSavedVowelSourceState] = useState<SavedVowelSourceState | null>(null);
 
     const [showSpectrogram, setShowSpectrogram] = useState(false);
     const [pitchFileId, setPitchFileId] = useState("");
@@ -601,7 +602,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         isEditMode, selectedTrackId, playHeadPos,
         selectedVowelConsonant, selectedVowelCoda,
         consonantBoostOn,
-    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos, selectedVowelConsonant, selectedVowelCoda, consonantBoostOn]);
+        savedVowelSourceState,
+    }), [larynxParams, tractSourceType, tractSourceFileId, synthWaveform, synthBlend, pulseWidth, liveTract, advTracks, manualPitch, manualGender, eqBands, simIntensity, advDuration, isEditMode, selectedTrackId, playHeadPos, selectedVowelConsonant, selectedVowelCoda, consonantBoostOn, savedVowelSourceState]);
 
     const commitChange = useCallback((label: string = 'Update') => {
         const state = getCurrentState();
@@ -639,6 +641,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         }
         setSimIntensity(state.simIntensity !== undefined ? state.simIntensity : 1.0);
         setConsonantBoostOn(state.consonantBoostOn !== undefined ? state.consonantBoostOn : false);
+        if (state.savedVowelSourceState && typeof state.savedVowelSourceState === 'object') {
+            setSavedVowelSourceState(state.savedVowelSourceState as SavedVowelSourceState);
+        } else {
+            setSavedVowelSourceState(null);
+        }
         setAdvDuration(state.advDuration !== undefined ? state.advDuration : 2.0);
         if (typeof state.isEditMode === 'boolean') setIsEditMode(state.isEditMode);
         if (typeof state.selectedTrackId === 'string') setSelectedTrackId(state.selectedTrackId);
@@ -1587,6 +1594,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         setSelectedJongName={setSelectedVowelCoda}
                             onPreviewPlayingChange={setIsVowelPreviewPlaying}
                             onCustomConsonantsChange={setCustomConsonantProfiles}
+                            savedVowelSourceState={savedVowelSourceState}
+                            onVowelSourceStateChange={setSavedVowelSourceState}
                     />
                     </div>
                 </div>

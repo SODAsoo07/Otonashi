@@ -18,6 +18,12 @@ export type CustomConsonantProfile = {
   customNoiseName?: string;
   customNoiseBuffer?: AudioBuffer;
 };
+export type SavedVowelSourceState = {
+  sourceType: 'synth' | 'custom';
+  customVowelName?: string;
+  customVowelMimeType?: string;
+  customVowelBase64?: string;
+};
 
 interface KoreanVowelSynthProps {
   audioContext: AudioContext;
@@ -44,6 +50,8 @@ interface KoreanVowelSynthProps {
   selectedJongName: string | null;
   setSelectedJongName: React.Dispatch<React.SetStateAction<string | null>>;
   onPreviewPlayingChange?: (isPlaying: boolean) => void;
+  savedVowelSourceState?: SavedVowelSourceState | null;
+  onVowelSourceStateChange?: (state: SavedVowelSourceState) => void;
 }
 
 type ConsonantType = 'plosive' | 'fricative' | 'affricate' | 'nasal' | 'liquid';
@@ -347,6 +355,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   selectedJongName,
   setSelectedJongName,
   onPreviewPlayingChange,
+  savedVowelSourceState,
+  onVowelSourceStateChange,
 }) => {
   const { language } = useLanguage();
   const text = useMemo(() => {
@@ -387,6 +397,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         ampScale: '強度',
         customFile: 'カスタム音声',
         clearFile: '解除',
+        baseVowelSource: '母音ベース音源',
+        synthSource: '基本シンセ',
+        customSource: 'カスタムファイル',
+        customVowelFile: '母音ファイル',
         addCustom: '登録',
         removeCustom: '削除',
         duplicateName: '同じ子音名がすでにあります。',
@@ -431,6 +445,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         ampScale: 'Intensity',
         customFile: 'Custom audio',
         clearFile: 'Clear',
+        baseVowelSource: 'Base vowel source',
+        synthSource: 'Default synth',
+        customSource: 'Custom file',
+        customVowelFile: 'Vowel file',
         addCustom: 'Add',
         removeCustom: 'Delete',
         duplicateName: 'This consonant name already exists.',
@@ -474,6 +492,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       ampScale: '강도',
       customFile: '커스텀 음성',
       clearFile: '해제',
+      baseVowelSource: '베이스 모음 소스',
+      synthSource: '기본 신스',
+      customSource: '커스텀 파일',
+      customVowelFile: '모음 파일',
       addCustom: '등록',
       removeCustom: '삭제',
       duplicateName: '이미 존재하는 자음 이름입니다.',
@@ -491,6 +513,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const [customConsonants, setCustomConsonants] = useState<CustomConsonantEntry[]>([]);
   const [customNoiseBuffer, setCustomNoiseBuffer] = useState<AudioBuffer | null>(null);
   const [customNoiseName, setCustomNoiseName] = useState('');
+  const [baseVowelSourceType, setBaseVowelSourceType] = useState<'synth' | 'custom'>('synth');
+  const [customVowelBuffer, setCustomVowelBuffer] = useState<AudioBuffer | null>(null);
+  const [customVowelName, setCustomVowelName] = useState('');
+  const [customVowelMimeType, setCustomVowelMimeType] = useState('');
+  const [customVowelBase64, setCustomVowelBase64] = useState('');
   const [customDraft, setCustomDraft] = useState<CustomConsonantDraft>({
     name: '',
     baseName: 'ㄱ',
@@ -683,6 +710,54 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
   useEffect(() => { currentF1Ref.current = currentF1; }, [currentF1]);
   useEffect(() => { currentF2Ref.current = currentF2; }, [currentF2]);
+  const hydratedVowelSourceKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!onVowelSourceStateChange) return;
+    onVowelSourceStateChange({
+      sourceType: baseVowelSourceType,
+      customVowelName: customVowelName || undefined,
+      customVowelMimeType: customVowelMimeType || undefined,
+      customVowelBase64: customVowelBase64 || undefined,
+    });
+  }, [onVowelSourceStateChange, baseVowelSourceType, customVowelName, customVowelMimeType, customVowelBase64]);
+
+  useEffect(() => {
+    const state = savedVowelSourceState;
+    if (!state) return;
+    const key = `${state.sourceType || 'synth'}:${state.customVowelName || ''}:${state.customVowelBase64 ? state.customVowelBase64.length : 0}`;
+    if (hydratedVowelSourceKeyRef.current === key) return;
+    hydratedVowelSourceKeyRef.current = key;
+
+    const hydrate = async () => {
+      if (state.customVowelBase64) {
+        try {
+          const arr = base64ToArrayBuffer(state.customVowelBase64);
+          const decoded = await decodeAudioArrayBuffer(arr);
+          setCustomVowelBuffer(decoded);
+          setCustomVowelName(state.customVowelName || '');
+          setCustomVowelMimeType(state.customVowelMimeType || '');
+          setCustomVowelBase64(state.customVowelBase64);
+          setBaseVowelSourceType(state.sourceType === 'custom' ? 'custom' : 'synth');
+          return;
+        } catch {
+          setCustomVowelBuffer(null);
+          setCustomVowelName('');
+          setCustomVowelMimeType('');
+          setCustomVowelBase64('');
+          setBaseVowelSourceType('synth');
+          return;
+        }
+      }
+      setCustomVowelBuffer(null);
+      setCustomVowelName('');
+      setCustomVowelMimeType('');
+      setCustomVowelBase64('');
+      setBaseVowelSourceType('synth');
+    };
+
+    void hydrate();
+  }, [savedVowelSourceState, decodeAudioArrayBuffer]);
 
   const stopFormantAnimation = () => {
     if (formantAnimRef.current !== null) {
@@ -707,7 +782,15 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
     const oscillators: OscillatorNode[] = [];
     let noiseVoice: AudioBufferSourceNode | undefined;
-    if (resolvedWaveform === 'noise') {
+    if (baseVowelSourceType === 'custom' && customVowelBuffer) {
+      const src = audioContext.createBufferSource();
+      src.buffer = customVowelBuffer;
+      src.loop = true;
+      src.playbackRate.value = Math.max(0.25, Math.min(4, (manualPitch || basePitch) / basePitch));
+      src.connect(oscGain);
+      src.start();
+      noiseVoice = src;
+    } else if (resolvedWaveform === 'noise') {
       const noiseBuf = createNoiseBuffer(audioContext, 1.5, noisePreset);
       noiseVoice = audioContext.createBufferSource();
       noiseVoice.buffer = noiseBuf;
@@ -757,7 +840,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     lpf.connect(audioContext.destination);
 
     return { oscillators, noiseVoice, oscGain, f1, f2, f3, f4, lpf, bef };
-  }, [audioContext, manualPitch, noisePreset, resolvedWaveform]);
+  }, [audioContext, manualPitch, noisePreset, resolvedWaveform, baseVowelSourceType, customVowelBuffer]);
 
   const ensureAudioContext = async () => {
     if (audioContext.state === 'suspended') {
@@ -774,6 +857,24 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       audioContext.decodeAudioData(clone, resolve, reject);
     });
   }, [audioContext]);
+
+  const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      const sub = bytes.subarray(i, Math.min(i + chunk, bytes.length));
+      binary += String.fromCharCode(...sub);
+    }
+    return btoa(binary);
+  };
+
+  const base64ToArrayBuffer = (base64: string) => {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  };
 
   const updateFormants = (f1Target: number, f2Target: number) => {
     if (!nodesRef.current) return;
@@ -1525,6 +1626,30 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
   }, [decodeAudioArrayBuffer, language]);
 
+  const handleCustomVowelFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const arr = await file.arrayBuffer();
+      const decoded = await decodeAudioArrayBuffer(arr);
+      setCustomVowelBuffer(decoded);
+      setCustomVowelName(file.name);
+      setCustomVowelMimeType(file.type || '');
+      setCustomVowelBase64(arrayBufferToBase64(arr));
+      setBaseVowelSourceType('custom');
+      markPresetChange();
+    } catch {
+      setCustomVowelBuffer(null);
+      setCustomVowelName('');
+      setCustomVowelMimeType('');
+      setCustomVowelBase64('');
+      if (typeof window !== 'undefined') {
+        window.alert(language === 'ko' ? '오디오 파일을 읽지 못했습니다.' : language === 'ja' ? '音声ファイルを読み込めませんでした。' : 'Failed to read audio file.');
+      }
+    }
+  }, [decodeAudioArrayBuffer, language]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
       <div className="flex items-start justify-between gap-4">
@@ -1834,6 +1959,55 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
             />
           </div>
           <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="space-y-1.5 pb-2 border-b border-slate-200">
+              <div className="text-[11px] font-black text-slate-500 uppercase">{text.baseVowelSource}</div>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => {
+                    markPresetChange();
+                    setBaseVowelSourceType('synth');
+                  }}
+                  className={`px-2 py-1 rounded text-[11px] font-black border transition-all ${baseVowelSourceType === 'synth' ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                >
+                  {text.synthSource}
+                </button>
+                <button
+                  onClick={() => {
+                    if (!customVowelBuffer) return;
+                    markPresetChange();
+                    setBaseVowelSourceType('custom');
+                  }}
+                  disabled={!customVowelBuffer}
+                  className={`px-2 py-1 rounded text-[11px] font-black border transition-all ${baseVowelSourceType === 'custom' ? 'bg-white text-indigo-700 border-indigo-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'} disabled:opacity-50`}
+                >
+                  {text.customSource}
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="px-2 py-1 rounded text-[11px] font-black border bg-white text-slate-700 border-slate-200 hover:bg-slate-100 cursor-pointer transition-all">
+                  {text.customVowelFile}
+                  <input type="file" accept="audio/*,.wav,.mp3,.flac,.ogg" className="hidden" onChange={handleCustomVowelFile} />
+                </label>
+                {customVowelBuffer && (
+                  <button
+                    onClick={() => {
+                      markPresetChange();
+                      setCustomVowelBuffer(null);
+                      setCustomVowelName('');
+                      setCustomVowelMimeType('');
+                      setCustomVowelBase64('');
+                      setBaseVowelSourceType('synth');
+                    }}
+                    className="px-2 py-1 rounded text-[11px] font-black border bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200 transition-all"
+                  >
+                    {text.clearFile}
+                  </button>
+                )}
+              </div>
+              {customVowelName && (
+                <div className="text-[10px] font-bold text-slate-500 truncate">{customVowelName}</div>
+              )}
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black text-slate-500 uppercase">{text.waveform}</span>
               <select
