@@ -10,6 +10,7 @@ import TractVisualizer from './TractVisualizer';
 import TimelineEditor from './TimelineEditor';
 import ParamInput from './ui/ParamInput';
 import EditorModeBar from './ui/EditorModeBar';
+import KoreanVowelSynth from './KoreanVowelSynth';
 
 interface AdvancedTractTabProps {
     audioContext: AudioContext;
@@ -291,6 +292,8 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
 const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0, onSendToStudio, onSendToVocoder }) => {
     const { language } = useLanguage();
     const text = ADVANCED_TRACT_TEXT[language];
+    const vowelSynthTabLabel = language === 'ja' ? '韓国語 フォルマント 合成' : language === 'en' ? 'Korean Formant Synth' : '한글 모음/자음 합성';
+    const closeLabel = language === 'ja' ? '閉じる' : language === 'en' ? 'Close' : '닫기';
     const waveBlendLabel = language === 'ko' ? '파형 블렌드' : language === 'ja' ? '波形ブレンド' : 'Wave Blend';
     const waveNoiseOnlyLabel = language === 'ko' ? '노이즈 단독' : language === 'ja' ? 'ノイズ単体' : 'Noise Only';
     const waveMixRatioLabel = language === 'ko' ? '파형 비율' : language === 'ja' ? '波形比率' : 'Wave Ratio';
@@ -322,6 +325,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [isResizing, setIsResizing] = useState(false);
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq'>('settings');
+    const [showVowelSynth, setShowVowelSynth] = useState(false);
     const [showAnalyzer, setShowAnalyzer] = useState(false);
 
     const [showSpectrogram, setShowSpectrogram] = useState(false);
@@ -1101,10 +1105,16 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 <div className={`w-1.5 hover:bg-blue-400/50 cursor-col-resize transition-colors ${isResizing ? 'dynamic-primary' : ''}`} onMouseDown={(e) => { setIsResizing(true); e.preventDefault(); }} />
 
                 {/* Sidebar (Settings/EQ) */}
-                <div className="bg-white/40 dynamic-radius border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm" style={{ width: `${sidebarWidth}px` }}>
-                    <div className="flex border-b border-slate-300 bg-white/40">
+                <div className="bg-white/40 dynamic-radius border border-slate-300 flex flex-col overflow-hidden shrink-0 shadow-sm relative" style={{ width: `${sidebarWidth}px` }}>
+                    <div className="flex border-b border-slate-300 bg-white/40 relative">
                         <button onClick={() => setSidebarTab('settings')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab === 'settings' ? 'bg-white dynamic-primary-text border-b-2 dynamic-primary-border shadow-sm' : 'text-slate-500'}`}><Settings2 size={14} className="inline mr-1" /> {text.settings}</button>
                         <button onClick={() => setSidebarTab('eq')} className={`flex-1 py-3 text-xs font-black transition-all ${sidebarTab === 'eq' ? 'bg-white text-pink-600 border-b-2 border-pink-500 shadow-sm' : 'text-slate-500'}`}><AudioLines size={14} className="inline mr-1" /> {text.eq}</button>
+                        <button
+                            onClick={() => setShowVowelSynth(true)}
+                            className={`absolute right-2 top-2 px-2 py-1 text-[9px] font-black rounded-lg border transition-all ${showVowelSynth ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'}`}
+                        >
+                            {vowelSynthTabLabel}
+                        </button>
                     </div>
                     <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6 font-bold">
                         {sidebarTab === 'settings' ? (
@@ -1289,6 +1299,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             <div className="h-[300px]"><ParametricEQ bands={eqBands} onChange={setEqBands} audioContext={audioContext} playingSource={simPlaySourceRef.current} /></div>
                         )}
                     </div>
+                    {showVowelSynth && (
+                        <div className="absolute inset-0 z-30 bg-white/95 backdrop-blur-sm p-4 overflow-y-auto">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{vowelSynthTabLabel}</span>
+                                <button
+                                    onClick={() => setShowVowelSynth(false)}
+                                    className="px-2 py-1 text-[10px] font-black rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300 transition-all"
+                                >
+                                    {closeLabel}
+                                </button>
+                            </div>
+                            <KoreanVowelSynth audioContext={audioContext} />
+                        </div>
+                    )}
                 </div>
             </div>
 

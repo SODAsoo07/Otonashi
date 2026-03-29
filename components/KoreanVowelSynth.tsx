@@ -1,0 +1,816 @@
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Volume2 } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
+
+interface KoreanVowelSynthProps {
+  audioContext: AudioContext;
+}
+
+type ConsonantType = 'plosive' | 'fricative' | 'affricate' | 'nasal' | 'liquid';
+
+type Consonant = {
+  name: string;
+  type: ConsonantType;
+  place: 'velar' | 'alveolar' | 'bilabial' | 'palatal' | 'glottal';
+  aspirated: boolean;
+  burstFreq?: number;
+  burstBW?: number;
+  burstDur?: number;
+  aspirDur?: number;
+  fricFreq?: number;
+  fricBW?: number;
+  fricDur?: number;
+  nasalFreq?: number;
+  nasalDur?: number;
+  tapDur?: number;
+  silenceDur?: number;
+};
+
+type VowelPoint = {
+  f1: number;
+  f2: number;
+  label: string;
+  korean?: string | null;
+};
+
+type PlayNodes = {
+  osc: OscillatorNode;
+  oscGain: GainNode;
+  f1: BiquadFilterNode;
+  f2: BiquadFilterNode;
+  f3: BiquadFilterNode;
+  f4: BiquadFilterNode;
+  lpf: BiquadFilterNode;
+  bef: BiquadFilterNode;
+  noiseSrc?: AudioBufferSourceNode;
+  noiseGain?: GainNode;
+  noiseBpf?: BiquadFilterNode;
+};
+
+const f1min = 250;
+const f1max = 1000;
+const f2min = 540;
+const f2max = 2600;
+const f3 = 2500;
+const f4 = 3500;
+const antiF = 5000;
+const cutoff = 7250;
+const basePitch = 131;
+
+const consonants: Consonant[] = [
+  { name: 'ㄱ', type: 'plosive', place: 'velar', aspirated: false, burstFreq: 1800, burstBW: 600, burstDur: 15, aspirDur: 0 },
+  { name: 'ㅋ', type: 'plosive', place: 'velar', aspirated: true, burstFreq: 1800, burstBW: 600, burstDur: 15, aspirDur: 80 },
+  { name: 'ㅇ', type: 'nasal', place: 'velar', aspirated: false, nasalFreq: 250, nasalDur: 80 },
+  { name: 'ㄴ', type: 'nasal', place: 'alveolar', aspirated: false, nasalFreq: 250, nasalDur: 80 },
+  { name: 'ㄷ', type: 'plosive', place: 'alveolar', aspirated: false, burstFreq: 3500, burstBW: 1200, burstDur: 15, aspirDur: 0 },
+  { name: 'ㅌ', type: 'plosive', place: 'alveolar', aspirated: true, burstFreq: 3500, burstBW: 1200, burstDur: 15, aspirDur: 80 },
+  { name: 'ㄹ', type: 'liquid', place: 'alveolar', aspirated: false, tapDur: 20, silenceDur: 10 },
+  { name: 'ㅁ', type: 'nasal', place: 'bilabial', aspirated: false, nasalFreq: 250, nasalDur: 80 },
+  { name: 'ㅂ', type: 'plosive', place: 'bilabial', aspirated: false, burstFreq: 600, burstBW: 800, burstDur: 12, aspirDur: 0 },
+  { name: 'ㅍ', type: 'plosive', place: 'bilabial', aspirated: true, burstFreq: 600, burstBW: 800, burstDur: 12, aspirDur: 80 },
+  { name: 'ㅅ', type: 'fricative', place: 'alveolar', aspirated: false, fricFreq: 6500, fricBW: 2600, fricDur: 120 },
+  { name: 'ㅈ', type: 'affricate', place: 'palatal', aspirated: false, burstFreq: 4200, burstBW: 1680, burstDur: 20, fricDur: 60, aspirDur: 0 },
+  { name: 'ㅊ', type: 'affricate', place: 'palatal', aspirated: true, burstFreq: 4200, burstBW: 1680, burstDur: 20, fricDur: 80, aspirDur: 60 },
+  { name: 'ㅎ', type: 'fricative', place: 'glottal', aspirated: false, fricFreq: 2000, fricBW: 2000, fricDur: 130 },
+];
+
+const vowels: VowelPoint[] = [
+  { f1: 275, f2: 2400, label: 'i', korean: 'ㅣ' },
+  { f1: 412, f2: 2150, label: 'e', korean: 'ㅔ' },
+  { f1: 620, f2: 1800, label: 'ɛ', korean: 'ㅐ' },
+  { f1: 900, f2: 1350, label: 'a', korean: 'ㅏ' },
+  { f1: 710, f2: 1050, label: 'ɑ', korean: 'ㅏ' },
+  { f1: 530, f2: 830, label: 'ɔ', korean: 'ㅗ' },
+  { f1: 380, f2: 690, label: 'o', korean: 'ㅗ' },
+  { f1: 275, f2: 600, label: 'u', korean: 'ㅜ' },
+  { f1: 275, f2: 1860, label: 'y', korean: 'ㅟ' },
+  { f1: 400, f2: 1730, label: 'ø', korean: 'ㅚ' },
+  { f1: 590, f2: 1550, label: 'œ', korean: 'ㅚ' },
+  { f1: 560, f2: 1140, label: 'ʌ', korean: 'ㅓ' },
+  { f1: 390, f2: 1170, label: 'ɤ', korean: 'ㅡ' },
+  { f1: 275, f2: 1200, label: 'ɯ', korean: 'ㅡ' },
+  { f1: 490, f2: 1350, label: 'ə', korean: 'ㅓ' },
+];
+
+const jongParams: Record<string, { type: 'stop' | 'nasal' | 'liquid'; place: string; dur: number; nasalFreq?: number }> = {
+  'ㄱ': { type: 'stop', place: 'velar', dur: 80 },
+  'ㄷ': { type: 'stop', place: 'alveolar', dur: 80 },
+  'ㅂ': { type: 'stop', place: 'bilabial', dur: 80 },
+  'ㄴ': { type: 'nasal', place: 'alveolar', dur: 120, nasalFreq: 250 },
+  'ㅁ': { type: 'nasal', place: 'bilabial', dur: 120, nasalFreq: 250 },
+  'ㅇ': { type: 'nasal', place: 'velar', dur: 120, nasalFreq: 280 },
+  'ㄹ': { type: 'liquid', place: 'alveolar', dur: 100 },
+};
+
+const vowelMap: Record<string, { f1: number; f2: number }> = {
+  'ㅏ': { f1: 900, f2: 1350 },
+  'ㅐ': { f1: 620, f2: 1800 },
+  'ㅓ': { f1: 560, f2: 1140 },
+  'ㅔ': { f1: 412, f2: 2150 },
+  'ㅗ': { f1: 380, f2: 690 },
+  'ㅜ': { f1: 275, f2: 600 },
+  'ㅡ': { f1: 275, f2: 1200 },
+  'ㅣ': { f1: 275, f2: 2400 },
+  'ㅚ': { f1: 400, f2: 1730 },
+  'ㅟ': { f1: 275, f2: 1860 },
+};
+
+const doubleVowels: Record<string, string[]> = {
+  'ㅑ': ['ㅣ', 'ㅏ'], 'ㅒ': ['ㅣ', 'ㅐ'],
+  'ㅕ': ['ㅣ', 'ㅓ'], 'ㅖ': ['ㅣ', 'ㅔ'],
+  'ㅛ': ['ㅣ', 'ㅗ'], 'ㅠ': ['ㅣ', 'ㅜ'],
+  'ㅘ': ['ㅗ', 'ㅏ'], 'ㅙ': ['ㅗ', 'ㅐ'],
+  'ㅚ': ['ㅗ', 'ㅣ'], 'ㅝ': ['ㅜ', 'ㅓ'],
+  'ㅞ': ['ㅜ', 'ㅔ'], 'ㅟ': ['ㅜ', 'ㅣ'],
+  'ㅢ': ['ㅡ', 'ㅣ'],
+};
+
+const choList = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+const jungList = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ'];
+const jongList = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+
+const decomposeHangul = (char: string) => {
+  const code = char.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return null;
+  const offset = code - 0xac00;
+  const choIdx = Math.floor(offset / (21 * 28));
+  const jungIdx = Math.floor((offset % (21 * 28)) / 28);
+  const jongIdx = offset % 28;
+
+  let jong: string | null = null;
+  if (jongIdx > 0) {
+    const jongToRep: Record<number, string> = {
+      1:'ㄱ', 2:'ㄱ', 3:'ㄱ', 9:'ㄱ', 24:'ㄱ',
+      4:'ㄴ', 5:'ㄴ', 6:'ㄴ',
+      7:'ㄷ', 19:'ㄷ', 20:'ㄷ', 22:'ㄷ', 23:'ㄷ', 25:'ㄷ', 27:'ㄷ',
+      8:'ㄹ', 11:'ㄹ', 12:'ㄹ', 13:'ㄹ', 15:'ㄹ',
+      10:'ㅁ', 16:'ㅁ',
+      14:'ㅂ', 17:'ㅂ', 18:'ㅂ', 26:'ㅂ',
+      21:'ㅇ',
+    };
+    jong = jongToRep[jongIdx] || null;
+  }
+
+  return { cho: choList[choIdx], jung: jungList[jungIdx], jong };
+};
+
+const decomposeVowel = (jung: string) => doubleVowels[jung] || [jung];
+
+const getVowelFormants = (vowel: string) => vowelMap[vowel] || { f1: 490, f2: 1350 };
+
+const findConsonantByName = (name: string) => {
+  if (name === 'ㅇ') return null;
+  const ssangMap: Record<string, string> = { 'ㄲ': 'ㄱ', 'ㄸ': 'ㄷ', 'ㅃ': 'ㅂ', 'ㅆ': 'ㅅ', 'ㅉ': 'ㅈ' };
+  const mapped = ssangMap[name] || name;
+  return consonants.find(c => c.name === mapped) || null;
+};
+
+const composeHangul = (cho: string, jung: string, jong?: string | null) => {
+  const choIdx = choList.indexOf(cho);
+  const jungIdx = jungList.indexOf(jung);
+  if (choIdx < 0 || jungIdx < 0) return `${cho}${jung}${jong || ''}`;
+  let jongIdx = jong ? jongList.indexOf(jong) : 0;
+  if (jongIdx < 0) jongIdx = 0;
+  return String.fromCharCode(0xac00 + choIdx * 21 * 28 + jungIdx * 28 + jongIdx);
+};
+
+const getF2Locus = (consonant: Consonant | null) => {
+  if (!consonant) return null;
+  switch (consonant.place) {
+    case 'bilabial': return 650;
+    case 'alveolar': return 1800;
+    case 'palatal': return 2300;
+    case 'velar': return 3000;
+    case 'glottal': return 1500;
+    default: return 1500;
+  }
+};
+
+const createNoiseBuffer = (ctx: AudioContext, durationSec: number) => {
+  const length = Math.max(1, Math.floor(ctx.sampleRate * durationSec));
+  const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  return buffer;
+};
+
+const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({ audioContext }) => {
+  const { language } = useLanguage();
+  const text = useMemo(() => {
+    if (language === 'ja') {
+      return {
+        title: '韓国語 フォルマント 合成',
+        subtitle: 'F1/F2 グラフで母音を作り、子音/終声を合成します。',
+        consonantTitle: '초성(子音)',
+        jongTitle: '받침(終声)',
+        ttsLabel: 'テキスト読み上げ',
+        ttsPlaceholder: '韓国語入力...',
+        play: '再生',
+        stop: '停止',
+      };
+    }
+    if (language === 'en') {
+      return {
+        title: 'Korean Formant Synth',
+        subtitle: 'Create vowels on the F1/F2 chart and add onset/coda consonants.',
+        consonantTitle: 'Onset consonant',
+        jongTitle: 'Coda consonant',
+        ttsLabel: 'Text playback',
+        ttsPlaceholder: 'Enter Korean text...',
+        play: 'Play',
+        stop: 'Stop',
+      };
+    }
+    return {
+      title: '한글 모음/자음 합성',
+      subtitle: 'F1/F2 그래프에서 모음을 만들고 초성/종성을 합성합니다.',
+      consonantTitle: '초성 자음',
+      jongTitle: '받침(종성)',
+      ttsLabel: '텍스트 읽기',
+      ttsPlaceholder: '한글 입력...',
+      play: '재생',
+      stop: '정지',
+    };
+  }, [language]);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const playingRef = useRef(false);
+  const nodesRef = useRef<PlayNodes | null>(null);
+  const timeoutIdsRef = useRef<number[]>([]);
+
+  const [selectedConsonant, setSelectedConsonant] = useState<Consonant | null>(null);
+  const [selectedJong, setSelectedJong] = useState<string | null>(null);
+  const [isPointerDown, setIsPointerDown] = useState(false);
+  const [currentF1, setCurrentF1] = useState(490);
+  const [currentF2, setCurrentF2] = useState(1350);
+  const [ttsText, setTtsText] = useState('안녕하세요');
+  const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [nearestSyllable, setNearestSyllable] = useState('');
+
+  const chartW = 440;
+  const chartH = 300;
+  const margin = 28;
+
+  const xFromF2 = (f2: number) => {
+    const x = (Math.log(f2) - Math.log(f2min)) / (Math.log(f2max) - Math.log(f2min));
+    return (1 - x) * (chartW - 2 * margin) + margin;
+  };
+  const yFromF1 = (f1: number) => {
+    const y = (Math.log(f1) - Math.log(f1min)) / (Math.log(f1max) - Math.log(f1min));
+    return y * (chartH - 2 * margin) + margin;
+  };
+  const f2FromX = (x: number) => {
+    const t = (chartW - margin - x) / (chartW - 2 * margin);
+    return Math.exp(Math.log(f2min) + t * (Math.log(f2max) - Math.log(f2min)));
+  };
+  const f1FromY = (y: number) => {
+    const t = (y - margin) / (chartH - 2 * margin);
+    return Math.exp(Math.log(f1min) + t * (Math.log(f1max) - Math.log(f1min)));
+  };
+
+  const findNearestVowel = useCallback((f1: number, f2: number) => {
+    let minDist = Infinity;
+    let closest: VowelPoint | null = null;
+    for (const v of vowels) {
+      const d = Math.hypot(
+        (Math.log(f1) - Math.log(v.f1)) / (Math.log(f1max) - Math.log(f1min)),
+        (Math.log(f2) - Math.log(v.f2)) / (Math.log(f2max) - Math.log(f2min))
+      );
+      if (d < minDist) {
+        minDist = d;
+        closest = v;
+      }
+    }
+    return closest;
+  }, []);
+
+  const clearTimeouts = () => {
+    timeoutIdsRef.current.forEach(t => window.clearTimeout(t));
+    timeoutIdsRef.current = [];
+  };
+
+  const stopPlayback = useCallback(() => {
+    clearTimeouts();
+    playingRef.current = false;
+    if (nodesRef.current) {
+      const { osc, oscGain, noiseSrc, noiseGain } = nodesRef.current;
+      try { oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.02); } catch { }
+      try { noiseGain?.gain.setTargetAtTime(0, audioContext.currentTime, 0.02); } catch { }
+      try { osc.stop(audioContext.currentTime + 0.05); } catch { }
+      try { noiseSrc?.stop(audioContext.currentTime + 0.05); } catch { }
+    }
+    nodesRef.current = null;
+  }, [audioContext]);
+
+  useEffect(() => () => stopPlayback(), [stopPlayback]);
+
+  const createVoiceChain = useCallback((): PlayNodes => {
+    const osc = audioContext.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = basePitch;
+
+    const oscGain = audioContext.createGain();
+    oscGain.gain.value = 0;
+
+    const f1 = audioContext.createBiquadFilter();
+    f1.type = 'peaking';
+    f1.Q.value = 0.2; f1.gain.value = 60;
+    const f2 = audioContext.createBiquadFilter();
+    f2.type = 'peaking';
+    f2.Q.value = 0.4; f2.gain.value = 60;
+    const f3 = audioContext.createBiquadFilter();
+    f3.type = 'peaking';
+    f3.Q.value = 0.8; f3.gain.value = 50;
+    const f4 = audioContext.createBiquadFilter();
+    f4.type = 'peaking';
+    f4.Q.value = 1; f4.gain.value = 40;
+    const bef = audioContext.createBiquadFilter();
+    bef.type = 'notch';
+    bef.frequency.value = antiF; bef.Q.value = 0.2;
+    const lpf = audioContext.createBiquadFilter();
+    lpf.type = 'lowpass';
+    lpf.frequency.value = cutoff; lpf.Q.value = 0.001;
+
+    osc.connect(oscGain);
+    oscGain.connect(bef);
+    oscGain.connect(lpf);
+    oscGain.connect(f1);
+    oscGain.connect(f2);
+    oscGain.connect(f3);
+    oscGain.connect(f4);
+
+    f1.connect(audioContext.destination);
+    f2.connect(audioContext.destination);
+    f3.connect(audioContext.destination);
+    f4.connect(audioContext.destination);
+    bef.connect(audioContext.destination);
+    lpf.connect(audioContext.destination);
+
+    osc.start();
+
+    return { osc, oscGain, f1, f2, f3, f4, lpf, bef };
+  }, [audioContext]);
+
+  const ensureAudioContext = async () => {
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+  };
+
+  const updateFormants = (f1Target: number, f2Target: number) => {
+    if (!nodesRef.current) return;
+    const now = audioContext.currentTime;
+    nodesRef.current.f1.frequency.setTargetAtTime(f1Target, now, 0.02);
+    nodesRef.current.f2.frequency.setTargetAtTime(f2Target, now, 0.02);
+    nodesRef.current.f3.frequency.setTargetAtTime(f3, now, 0.02);
+    nodesRef.current.f4.frequency.setTargetAtTime(f4, now, 0.02);
+  };
+
+  const startVowelTransition = (consonant: Consonant | null, f1Target: number, f2Target: number) => {
+    const now = audioContext.currentTime;
+    if (!nodesRef.current) return;
+    nodesRef.current.oscGain.gain.setTargetAtTime(0.002, now, 0.05);
+
+    updateFormants(f1Target, f2Target);
+
+    const locus = getF2Locus(consonant);
+    if (locus) {
+      nodesRef.current.f2.frequency.setTargetAtTime(locus, now, 0.01);
+      nodesRef.current.f2.frequency.linearRampToValueAtTime(f2Target, now + 0.05);
+    }
+  };
+
+  const setupNoise = (freq: number, bw: number, amp: number) => {
+    if (!nodesRef.current) return;
+    const noiseBuffer = createNoiseBuffer(audioContext, 0.5);
+    const noiseSrc = audioContext.createBufferSource();
+    noiseSrc.buffer = noiseBuffer;
+    noiseSrc.loop = true;
+    const noiseBpf = audioContext.createBiquadFilter();
+    noiseBpf.type = 'bandpass';
+    noiseBpf.frequency.value = freq;
+    noiseBpf.Q.value = freq / Math.max(1, bw);
+    const noiseGain = audioContext.createGain();
+    noiseGain.gain.value = amp;
+    noiseSrc.connect(noiseBpf);
+    noiseBpf.connect(noiseGain);
+    noiseGain.connect(audioContext.destination);
+    noiseSrc.start();
+    nodesRef.current.noiseSrc = noiseSrc;
+    nodesRef.current.noiseGain = noiseGain;
+    nodesRef.current.noiseBpf = noiseBpf;
+  };
+
+  const stopNoise = () => {
+    if (!nodesRef.current?.noiseSrc) return;
+    try { nodesRef.current.noiseGain?.gain.setTargetAtTime(0, audioContext.currentTime, 0.02); } catch { }
+    try { nodesRef.current.noiseSrc.stop(audioContext.currentTime + 0.05); } catch { }
+    nodesRef.current.noiseSrc = undefined;
+    nodesRef.current.noiseGain = undefined;
+    nodesRef.current.noiseBpf = undefined;
+  };
+
+  const playCoda = (jong: string, onDone?: () => void) => {
+    const p = jongParams[jong];
+    if (!p || !nodesRef.current) { onDone?.(); return; }
+    if (p.type === 'stop') {
+      nodesRef.current.f1.frequency.setTargetAtTime(300, audioContext.currentTime, 0.02);
+      nodesRef.current.f2.frequency.setTargetAtTime(p.place === 'bilabial' ? 800 : 1800, audioContext.currentTime, 0.02);
+      nodesRef.current.oscGain.gain.setTargetAtTime(0.001, audioContext.currentTime, 0.03);
+      const t = window.setTimeout(() => {
+        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
+        onDone?.();
+      }, p.dur);
+      timeoutIdsRef.current.push(t);
+      return;
+    }
+    if (p.type === 'nasal') {
+      nodesRef.current.f1.frequency.setTargetAtTime(p.nasalFreq || 250, audioContext.currentTime, 0.02);
+      nodesRef.current.f2.frequency.setTargetAtTime(1200, audioContext.currentTime, 0.02);
+      nodesRef.current.oscGain.gain.setTargetAtTime(0.0015, audioContext.currentTime, 0.02);
+      const t = window.setTimeout(() => {
+        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.03);
+        onDone?.();
+      }, p.dur);
+      timeoutIdsRef.current.push(t);
+      return;
+    }
+    nodesRef.current.f3.frequency.setTargetAtTime(2000, audioContext.currentTime, 0.02);
+    nodesRef.current.oscGain.gain.setTargetAtTime(0.0014, audioContext.currentTime, 0.02);
+    const t = window.setTimeout(() => {
+      nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.03);
+      onDone?.();
+    }, p.dur);
+    timeoutIdsRef.current.push(t);
+  };
+
+  const playConsonantAndVowel = async (consonant: Consonant | null, f1Target: number, f2Target: number, applyJong: boolean) => {
+    await ensureAudioContext();
+    stopPlayback();
+    nodesRef.current = createVoiceChain();
+    playingRef.current = true;
+
+    if (!consonant || consonant.name === 'ㅇ') {
+      startVowelTransition(consonant, f1Target, f2Target);
+      if (applyJong && selectedJong) {
+        const t = window.setTimeout(() => playCoda(selectedJong, stopPlayback), 240);
+        timeoutIdsRef.current.push(t);
+      }
+      return;
+    }
+
+    if (consonant.type === 'plosive') {
+      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.35);
+      const t1 = window.setTimeout(() => {
+        if (consonant.aspirated && consonant.aspirDur && consonant.aspirDur > 0) {
+          if (nodesRef.current?.noiseBpf) {
+            nodesRef.current.noiseBpf.frequency.setValueAtTime(2500, audioContext.currentTime);
+            nodesRef.current.noiseBpf.Q.value = 0.5;
+          }
+          const t2 = window.setTimeout(() => {
+            stopNoise();
+            startVowelTransition(consonant, f1Target, f2Target);
+          }, consonant.aspirDur);
+          timeoutIdsRef.current.push(t2);
+        } else {
+          stopNoise();
+          startVowelTransition(consonant, f1Target, f2Target);
+        }
+      }, consonant.burstDur || 15);
+      timeoutIdsRef.current.push(t1);
+    } else if (consonant.type === 'fricative') {
+      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.3);
+      const t1 = window.setTimeout(() => {
+        stopNoise();
+        startVowelTransition(consonant, f1Target, f2Target);
+      }, consonant.fricDur || 120);
+      timeoutIdsRef.current.push(t1);
+    } else if (consonant.type === 'affricate') {
+      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.3);
+      const t1 = window.setTimeout(() => {
+        if (nodesRef.current?.noiseBpf) {
+          nodesRef.current.noiseBpf.frequency.setValueAtTime(consonant.fricFreq || 3500, audioContext.currentTime);
+        }
+        const t2 = window.setTimeout(() => {
+          if (consonant.aspirated && consonant.aspirDur && consonant.aspirDur > 0) {
+            const t3 = window.setTimeout(() => {
+              stopNoise();
+              startVowelTransition(consonant, f1Target, f2Target);
+            }, consonant.aspirDur);
+            timeoutIdsRef.current.push(t3);
+          } else {
+            stopNoise();
+            startVowelTransition(consonant, f1Target, f2Target);
+          }
+        }, consonant.fricDur || 60);
+        timeoutIdsRef.current.push(t2);
+      }, consonant.burstDur || 20);
+      timeoutIdsRef.current.push(t1);
+    } else if (consonant.type === 'nasal') {
+      startVowelTransition(consonant, consonant.nasalFreq || f1Target, f2Target);
+      const t1 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.nasalDur || 80);
+      timeoutIdsRef.current.push(t1);
+    } else if (consonant.type === 'liquid') {
+      startVowelTransition(consonant, f1Target, f2Target);
+      const t1 = window.setTimeout(() => {
+        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
+        const t2 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.silenceDur || 10);
+        timeoutIdsRef.current.push(t2);
+      }, consonant.tapDur || 20);
+      timeoutIdsRef.current.push(t1);
+    }
+
+    if (applyJong && selectedJong) {
+      const t = window.setTimeout(() => playCoda(selectedJong, stopPlayback), 320);
+      timeoutIdsRef.current.push(t);
+    }
+  };
+
+  const handlePointerDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(chartW, Math.max(0, e.clientX - rect.left));
+    const y = Math.min(chartH, Math.max(0, e.clientY - rect.top));
+    const f1 = f1FromY(y);
+    const f2 = f2FromX(x);
+    setCurrentF1(f1);
+    setCurrentF2(f2);
+    const nearest = findNearestVowel(f1, f2);
+    if (nearest) {
+      const cho = selectedConsonant ? selectedConsonant.name : 'ㅇ';
+      const vowel = nearest.korean || nearest.label;
+      setNearestSyllable(composeHangul(cho, vowel, selectedJong));
+    }
+    setIsPointerDown(true);
+    playConsonantAndVowel(selectedConsonant, f1, f2, true);
+  };
+
+  const handlePointerMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isPointerDown || !nodesRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(chartW, Math.max(0, e.clientX - rect.left));
+    const y = Math.min(chartH, Math.max(0, e.clientY - rect.top));
+    const f1 = f1FromY(y);
+    const f2 = f2FromX(x);
+    setCurrentF1(f1);
+    setCurrentF2(f2);
+    updateFormants(f1, f2);
+  };
+
+  const handlePointerUp = () => {
+    setIsPointerDown(false);
+    stopPlayback();
+  };
+
+  const handleTtsToggle = () => {
+    if (ttsPlaying) {
+      setTtsPlaying(false);
+      stopPlayback();
+      return;
+    }
+    if (!ttsText.trim()) return;
+    setTtsPlaying(true);
+
+    const events: Array<{ type: 'syllable' | 'glide' | 'coda' | 'silence'; consonant?: Consonant | null; jong?: string | null; f1?: number; f2?: number; dur: number; }> = [];
+    for (const char of ttsText.trim()) {
+      const decomp = decomposeHangul(char);
+      if (!decomp) continue;
+      const consonant = findConsonantByName(decomp.cho);
+      const vowelSeq = decomposeVowel(decomp.jung);
+      const jong = decomp.jong || null;
+
+      let onsetDur = 0;
+      if (consonant) {
+        if (consonant.type === 'plosive') onsetDur = (consonant.burstDur || 0) + (consonant.aspirated ? (consonant.aspirDur || 0) : 0) + 50;
+        else if (consonant.type === 'fricative') onsetDur = (consonant.fricDur || 0) + 50;
+        else if (consonant.type === 'affricate') onsetDur = (consonant.burstDur || 0) + (consonant.fricDur || 0) + (consonant.aspirated ? (consonant.aspirDur || 0) : 0) + 50;
+        else if (consonant.type === 'nasal') onsetDur = (consonant.nasalDur || 0) + 30;
+        else if (consonant.type === 'liquid') onsetDur = (consonant.tapDur || 0) + (consonant.silenceDur || 0) + 30;
+      }
+
+      const v0 = getVowelFormants(vowelSeq[0]);
+      if (vowelSeq.length > 1) {
+        const v1 = getVowelFormants(vowelSeq[1]);
+        events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 100 });
+        events.push({ type: 'glide', f1: v1.f1, f2: v1.f2, dur: 120 });
+      } else {
+        events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 200 });
+      }
+
+      if (jong) events.push({ type: 'coda', jong, dur: 80 });
+      events.push({ type: 'silence', dur: 60 });
+    }
+
+    if (events.length === 0) {
+      setTtsPlaying(false);
+      return;
+    }
+
+    stopPlayback();
+    nodesRef.current = createVoiceChain();
+
+    let idx = 0;
+    const playNext = () => {
+      if (!ttsPlaying || idx >= events.length) {
+        setTtsPlaying(false);
+        stopPlayback();
+        return;
+      }
+      const ev = events[idx];
+      if (ev.type === 'syllable') {
+        startVowelTransition(ev.consonant || null, ev.f1 || currentF1, ev.f2 || currentF2);
+        if (ev.consonant) {
+          // Play consonant overlay first
+          playConsonantAndVowel(ev.consonant, ev.f1 || currentF1, ev.f2 || currentF2, false);
+        }
+      } else if (ev.type === 'glide') {
+        updateFormants(ev.f1 || currentF1, ev.f2 || currentF2);
+      } else if (ev.type === 'coda' && ev.jong) {
+        playCoda(ev.jong);
+      }
+      const t = window.setTimeout(() => {
+        idx += 1;
+        playNext();
+      }, ev.dur);
+      timeoutIdsRef.current.push(t);
+    };
+    playNext();
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, chartW, chartH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, chartW, chartH);
+
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    for (let i = f2min; i <= f2max; i += 200) {
+      const x = xFromF2(i);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, chartH); ctx.stroke();
+    }
+    for (let i = f1min; i <= f1max; i += 100) {
+      const y = yFromF1(i);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(margin, margin, chartW - 2 * margin, chartH - 2 * margin);
+
+    vowels.forEach(v => {
+      const x = xFromF2(v.f2);
+      const y = yFromF1(v.f1);
+      ctx.fillStyle = 'rgba(0,0,0,0.15)';
+      ctx.font = '24px "Lucida Grande"';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(v.label, x, y + 6);
+      if (v.korean) {
+        ctx.fillStyle = '#111827';
+        ctx.font = 'bold 14px "KoddiUD OnGothic", sans-serif';
+        ctx.fillText(v.korean, x, y - 10);
+      }
+    });
+
+    const cx = xFromF2(currentF2);
+    const cy = yFromF1(currentF1);
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+    ctx.stroke();
+  }, [currentF1, currentF2, language]);
+
+  useEffect(() => {
+    const nearest = findNearestVowel(currentF1, currentF2);
+    if (!nearest) return;
+    const cho = selectedConsonant ? selectedConsonant.name : 'ㅇ';
+    const vowel = nearest.korean || nearest.label;
+    setNearestSyllable(composeHangul(cho, vowel, selectedJong));
+  }, [currentF1, currentF2, selectedConsonant, selectedJong, findNearestVowel]);
+
+  const consonantGroups = useMemo(() => {
+    return [
+      { label: '어금닛소리(아음)', items: ['ㄱ', null, 'ㅋ', 'ㅇ'] },
+      { label: '혓소리(설음)', items: ['ㄴ', 'ㄷ', 'ㅌ', 'ㄹ'] },
+      { label: '입술소리(순음)', items: ['ㅁ', 'ㅂ', 'ㅍ'] },
+      { label: '잇소리(치음)', items: ['ㅅ', 'ㅈ', 'ㅊ'] },
+      { label: '목소리(후음)', items: ['ㅎ'] },
+    ];
+  }, []);
+
+  const jongGroups = useMemo(() => {
+    return [
+      { label: '파열(폐쇄)', items: ['ㄱ', 'ㄷ', 'ㅂ'] },
+      { label: '비음', items: ['ㄴ', 'ㅁ', 'ㅇ'] },
+      { label: '유음', items: ['ㄹ'] },
+    ];
+  }, []);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-black text-slate-800">{text.title}</h3>
+          <p className="text-[11px] text-slate-500 font-medium mt-1">{text.subtitle}</p>
+        </div>
+        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
+          <Volume2 size={14} /> {Math.round(basePitch)}Hz
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantTitle}</div>
+            {consonantGroups.map(group => (
+              <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                <span className="text-[9px] text-slate-400 min-w-[110px]">{group.label}</span>
+                {group.items.map((item, idx) => {
+                  if (!item) return <span key={`${group.label}-${idx}`} className="w-6" />;
+                  const isSelected = selectedConsonant?.name === item || (!selectedConsonant && item === 'ㅇ');
+                  return (
+                    <button
+                      key={`${group.label}-${item}`}
+                      onClick={() => setSelectedConsonant(item === 'ㅇ' ? null : findConsonantByName(item))}
+                      className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-[10px] font-black text-slate-500 uppercase">{text.jongTitle}</div>
+            {jongGroups.map(group => (
+              <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                <span className="text-[9px] text-slate-400 min-w-[70px]">{group.label}</span>
+                {group.items.map(item => {
+                  const isSelected = selectedJong === item;
+                  return (
+                    <button
+                      key={`${group.label}-${item}`}
+                      onClick={() => setSelectedJong(item)}
+                      className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                    >
+                      {item}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setSelectedJong(null)}
+                  className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJong === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                >
+                  없음
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <canvas
+            ref={canvasRef}
+            width={chartW}
+            height={chartH}
+            onMouseDown={handlePointerDown}
+            onMouseMove={handlePointerMove}
+            onMouseUp={handlePointerUp}
+            onMouseLeave={handlePointerUp}
+            className="w-full rounded-xl border border-slate-200 bg-white cursor-crosshair"
+          />
+          <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
+            <span>F1: {Math.round(currentF1)} Hz</span>
+            <span>F2: {Math.round(currentF2)} Hz</span>
+            <span className="text-slate-900">{nearestSyllable}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-black text-slate-500 uppercase">{text.ttsLabel}</span>
+        <input
+          value={ttsText}
+          onChange={e => setTtsText(e.target.value)}
+          placeholder={text.ttsPlaceholder}
+          className="flex-1 min-w-[220px] px-3 py-2 text-sm border border-slate-200 rounded-lg font-bold"
+        />
+        <button
+          onClick={handleTtsToggle}
+          className={`px-4 py-2 rounded-lg text-xs font-black ${ttsPlaying ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}`}
+        >
+          {ttsPlaying ? text.stop : text.play}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default KoreanVowelSynth;
