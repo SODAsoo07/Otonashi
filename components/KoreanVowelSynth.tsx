@@ -691,11 +691,14 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     if (p.type === 'stop') {
       nodesRef.current.f1.frequency.setTargetAtTime(300, audioContext.currentTime, 0.02);
       nodesRef.current.f2.frequency.setTargetAtTime(p.place === 'bilabial' ? 800 : 1800, audioContext.currentTime, 0.02);
-      nodesRef.current.oscGain.gain.setTargetAtTime(0.001, audioContext.currentTime, 0.03);
+      const isShortStop = jong === 'ㄱ' || jong === 'ㄷ' || jong === 'ㅂ';
+      const stopDur = isShortStop ? Math.max(25, p.dur * 0.28) : p.dur;
+      const fastTc = isShortStop ? 0.012 : 0.03;
+      nodesRef.current.oscGain.gain.setTargetAtTime(0.001, audioContext.currentTime, fastTc);
       const t = window.setTimeout(() => {
-        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
+        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, isShortStop ? 0.006 : 0.01);
         onDone?.();
-      }, p.dur);
+      }, stopDur);
       timeoutIdsRef.current.push(t);
       return;
     }
@@ -1000,8 +1003,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       if (ev.type === 'glide') {
         eased = Math.min(base, Math.max(60, base * 0.6));
       }
-      if (ev.type === 'syllable' && ev.jong === 'ㄱ') {
-        eased = Math.min(eased, Math.max(40, base * 0.3));
+      if (ev.type === 'syllable' && (ev.jong === 'ㄱ' || ev.jong === 'ㄷ' || ev.jong === 'ㅂ')) {
+        eased = Math.min(eased, Math.max(30, base * 0.28));
       } else if (ev.type === 'syllable' && (!ev.consonant || ev.consonant.name === 'ㅇ')) {
         eased = Math.min(eased, Math.max(45, base * 0.4));
       } else if (ev.type === 'syllable' && ev.consonant) {
