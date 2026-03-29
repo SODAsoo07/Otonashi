@@ -1302,7 +1302,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-black text-slate-800">{text.title}</h3>
-          <p className="text-[11px] text-slate-500 font-medium mt-1">{text.subtitle}</p>
+          <p className="text-[12px] text-slate-500 font-medium mt-1">{text.subtitle}</p>
         </div>
         <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
           <Volume2 size={14} /> {Math.round(manualPitch)}Hz
