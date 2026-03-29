@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Download, Activity, FileCheck2 } from 'lucide-react';
 import JSZip from 'jszip';
 import { AudioFile } from '../types';
@@ -22,11 +22,62 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
     const dragStartY = useRef<number>(0);
     const dragStartPitch = useRef<number>(0);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const frqWorkerRef = useRef<Worker | null>(null);
+    const frqWorkerMsgIdRef = useRef(0);
+    const frqWorkerPendingRef = useRef<Map<number, { resolve: (buffer: ArrayBuffer | null) => void; reject: (err: Error) => void }>>(new Map());
+    const frqCacheRef = useRef<Map<string, ArrayBuffer>>(new Map());
 
     const buildFrqCurve = (file: AudioFile) => {
         return AudioUtils.detectPitchCurve(file.buffer, 30, 256, isInterpolate, isForcePitchOn ? forcePitch : null);
     };
 
+    const getFrqCacheKey = useCallback((file: AudioFile) => {
+        const force = isForcePitchOn ? forcePitch.toFixed(1) : 'auto';
+        return `${file.id}:${file.buffer.length}:${file.buffer.sampleRate}:${isInterpolate ? 'i1' : 'i0'}:${force}`;
+    }, [isInterpolate, isForcePitchOn, forcePitch]);
+    const ensureFrqWorker = useCallback(() => {
+        if (!frqWorkerRef.current) {
+            frqWorkerRef.current = new Worker(new URL('../utils/frqZipWorker.ts', import.meta.url), { type: 'module' });
+            frqWorkerRef.current.onmessage = (e: MessageEvent) => {
+                const { id, buffer, error } = e.data || {};
+                const pending = frqWorkerPendingRef.current.get(id);
+                if (!pending) return;
+                frqWorkerPendingRef.current.delete(id);
+                if (error) pending.reject(new Error(error));
+                else pending.resolve(buffer ?? null);
+            };
+        }
+        return frqWorkerRef.current;
+    }, []);
+
+    const requestFrqBuffer = useCallback(async (samples: Float32Array, sampleRate: number) => {
+        const worker = ensureFrqWorker();
+        const id = frqWorkerMsgIdRef.current + 1;
+        frqWorkerMsgIdRef.current = id;
+        const payload = {
+            id,
+            samples,
+            sampleRate,
+            windowMs: 30,
+            stepSamples: 256,
+            interpolate: isInterpolate,
+            forcePitch: isForcePitchOn ? forcePitch : null,
+        };
+        return new Promise<ArrayBuffer | null>((resolve, reject) => {
+            frqWorkerPendingRef.current.set(id, { resolve, reject });
+            worker.postMessage(payload, [samples.buffer]);
+        });
+    }, [ensureFrqWorker, isInterpolate, isForcePitchOn, forcePitch]);
+
+    useEffect(() => {
+        return () => {
+            if (frqWorkerRef.current) {
+                frqWorkerRef.current.terminate();
+                frqWorkerRef.current = null;
+                frqWorkerPendingRef.current.clear();
+            }
+        };
+    }, []);
     const handlePitchDragStart = (e: React.MouseEvent<HTMLInputElement>) => {
         if (!isForcePitchOn) return;
         setIsDraggingPitch(true);
@@ -143,9 +194,25 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
             };
 
             for (const file of files) {
-                const curve = buildFrqCurve(file);
-                if (curve.length === 0) continue;
-                const frqBuffer = AudioUtils.generateFrqBuffer(curve, 256);
+                const cacheKey = getFrqCacheKey(file);
+                let frqBuffer = frqCacheRef.current.get(cacheKey) ?? null;
+                if (!frqBuffer) {
+                    const samples = file.buffer.getChannelData(0).slice();
+                    let result: ArrayBuffer | null = null;
+                    try {
+                        result = await requestFrqBuffer(samples, file.buffer.sampleRate);
+                    } catch {
+                        continue;
+                    }
+                    if (!result) continue;
+                    frqBuffer = result;
+                    frqCacheRef.current.set(cacheKey, frqBuffer);
+                    if (frqCacheRef.current.size > 80) {
+                        const oldestKey = frqCacheRef.current.keys().next().value;
+                        if (oldestKey) frqCacheRef.current.delete(oldestKey);
+                    }
+                }
+                if (!frqBuffer) continue;
                 const baseName = file.name.replace(/\.[^/.]+$/, '');
                 const frqName = makeUniqueName(`${baseName}_wav.frq`);
                 zip.file(frqName, frqBuffer);
@@ -173,22 +240,22 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                        <Activity size={24} className="text-pink-500" /> FRQ 주파수 맵 추출기
+                        <Activity size={24} className="text-pink-500" /> FRQ ??? ? ???
                     </h2>
-                    <p className="text-xs font-bold text-slate-500 mt-1">UTAU 엔진과 완벽하게 호환되는 F0 및 진폭 바이너리 데이터를 생성하고 다운로드합니다.</p>
+                    <p className="text-xs font-bold text-slate-500 mt-1">UTAU ??? ???? ???? F0 ? ?? ???? ???? ???? ???????.</p>
                 </div>
                 <button
                     onClick={handleDownloadFrqZip}
                     disabled={files.length === 0 || isBulkZipExporting}
                     className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white rounded-xl font-black flex items-center gap-2 active:scale-95 transition-all shadow-md"
                 >
-                    <Download size={16} /> {isBulkZipExporting ? 'FRQ ZIP 생성 중...' : '전체 .frq ZIP 다운로드'}
+                    <Download size={16} /> {isBulkZipExporting ? 'FRQ ZIP ?? ?...' : '?? .frq ZIP ????'}
                 </button>
             </div>
 
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-6">
                 <div className="flex flex-col gap-2">
-                    <label className="text-xs font-black text-slate-700 uppercase tracking-widest">대상 오디오 선택</label>
+                    <label className="text-xs font-black text-slate-700 uppercase tracking-widest">?? ??? ??</label>
                     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                         {files.map(f => (
                             <button
@@ -202,7 +269,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                         ))}
                         {files.length === 0 && (
                             <div className="col-span-full py-8 text-center text-slate-400 text-sm font-bold bg-slate-100 rounded-xl border border-dashed border-slate-300">
-                                보관함에 오디오 파일이 없습니다.
+                                ???? ??? ??? ????.
                             </div>
                         )}
                     </div>
@@ -212,8 +279,8 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                     <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4">
                         <div className="flex items-center gap-4">
                             <div className="bg-slate-800 text-white px-4 py-2 rounded-xl text-lg font-black min-w-[140px] text-center border border-slate-700 shadow-inner flex flex-col">
-                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">평균 기준 F0</span>
-                                {detectedF0 ? `${detectedF0} Hz` : '분석 실패'}
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">?? ?? F0</span>
+                                {detectedF0 ? `${detectedF0} Hz` : '?? ??'}
                             </div>
                             <div className="flex flex-col gap-1 ml-4 justify-center">
                                 <label className="flex items-center gap-2 cursor-pointer text-sm font-bold text-slate-700">
@@ -224,9 +291,9 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                                         disabled={isForcePitchOn}
                                         className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500 disabled:opacity-50"
                                     />
-                                    <span className={isForcePitchOn ? 'opacity-50' : ''}>F0 끊김 보정 (Interpolation)</span>
+                                    <span className={isForcePitchOn ? 'opacity-50' : ''}>F0 ?? ?? (Interpolation)</span>
                                 </label>
-                                <span className={`text-[10px] font-bold ${isForcePitchOn ? 'text-slate-300' : 'text-slate-400'}`}>무음/노이즈 구간의 유실된 피치를 잇습니다.</span>
+                                <span className={`text-[10px] font-bold ${isForcePitchOn ? 'text-slate-300' : 'text-slate-400'}`}>??/??? ??? ??? ??? ????.</span>
                             </div>
 
                             <div className="flex flex-col gap-1 ml-4 justify-center border-l-2 border-slate-200 pl-4">
@@ -237,7 +304,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                                         onChange={(e) => setIsForcePitchOn(e.target.checked)}
                                         className="w-4 h-4 text-pink-500 rounded border-slate-300 focus:ring-pink-500"
                                     />
-                                    타겟 피치 강제 덮어쓰기
+                                    ?? ?? ?? ????
                                 </label>
                                 <div className="flex items-center gap-2 mt-1">
                                     <input
@@ -258,7 +325,7 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
                                 disabled={f0Curve.length === 0}
                                 className="px-6 py-3 bg-pink-500 hover:bg-pink-600 disabled:bg-slate-300 text-white rounded-xl font-black flex items-center gap-2 active:scale-95 transition-all shadow-md ml-auto"
                             >
-                                <Download size={18} /> UTAU용 .frq 파일 다운로드
+                                <Download size={18} /> UTAU? .frq ?? ????
                             </button>
                         </div>
 
@@ -273,3 +340,15 @@ const FrqTab: React.FC<FrqTabProps> = ({ files }) => {
 };
 
 export default FrqTab;
+
+
+
+
+
+
+
+
+
+
+
+
