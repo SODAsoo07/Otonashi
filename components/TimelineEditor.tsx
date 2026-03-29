@@ -79,6 +79,13 @@ const TIMELINE_TEXT = {
     },
 } as const;
 
+const getLabelPointColor = (idx: number, total: number) => {
+    const safeTotal = Math.max(1, total - 1);
+    const adjusted = Math.max(0, idx - 1);
+    const hue = (adjusted % safeTotal) * (360 / safeTotal);
+    return `hsl(${hue}, 70%, 45%)`;
+};
+
 const GRAPH_BOTTOM_PADDING = 16;
 
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
@@ -444,35 +451,54 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             }
             
             ctx.stroke(); 
+            const labelList = track.id === 'consonant' ? consonantLabels : track.id === 'coda' ? codaLabels : null;
             track.points.forEach((p, i) => { 
                 const x = p.t * w; 
                 const y = valueToY(p.v, track.min, track.max); 
-                ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : track.color; 
+                let pointColor = track.color;
+                let label = '';
+                if (labelList && labelList.length > 0) {
+                    const idx = Math.max(0, Math.min(Math.round(p.v), labelList.length - 1));
+                    label = labelList[idx] || '';
+                    if (label && label !== '(none)') {
+                        pointColor = getLabelPointColor(idx, labelList.length);
+                    }
+                }
+                ctx.fillStyle = (hoveredKeyframe?.index === i) ? '#1f1e1d' : pointColor; 
                 ctx.beginPath(); 
                 ctx.arc(x, y, 6, 0, Math.PI*2); 
                 ctx.fill(); 
-            }); 
 
-            const labelList = track.id === 'consonant' ? consonantLabels : track.id === 'coda' ? codaLabels : null;
-            if (labelList && labelList.length > 0) {
-                ctx.fillStyle = '#111827';
-                ctx.font = 'bold 11px "KoddiUD OnGothic", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                track.points.forEach((p) => {
-                    const idx = Math.max(0, Math.min(Math.round(p.v), labelList.length - 1));
-                    const label = labelList[idx] || '';
-                    if (!label || label === '(none)') return;
-                    const x = p.t * w;
-                    const y = valueToY(p.v, track.min, track.max);
-                    ctx.fillText(label, x, Math.max(RULER_HEIGHT + 10, y - 8));
-                });
-            }
+                if (label && label !== '(none)') {
+                    ctx.save();
+                    ctx.font = 'bold 11px "KoddiUD OnGothic", sans-serif';
+                    const textW = ctx.measureText(label).width;
+                    const padX = 4;
+                    const padY = 2;
+                    const boxW = textW + padX * 2;
+                    const boxH = 14;
+                    const bx = x - boxW / 2;
+                    const by = Math.max(RULER_HEIGHT + 4, y - 20);
+                    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                    ctx.strokeStyle = pointColor;
+                    ctx.lineWidth = 1;
+                    ctx.fillRect(bx, by, boxW, boxH);
+                    ctx.strokeRect(bx, by, boxW, boxH);
+                    ctx.fillStyle = pointColor;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(label, x, by + boxH / 2 + 0.5);
+                    ctx.restore();
+                }
+            }); 
         }
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(playHeadPos * w, 0); ctx.lineTo(playHeadPos * w, h); ctx.stroke();
     }, [canvasSize, selectedTrackId, advTracks, playHeadPos, hoveredKeyframe, previewBuffer, getValueAtTime, showSpectrogram, showGhost, ghostTracks, spectrogramCanvas, overlayTrackIds, consonantLabels, codaLabels]);
 
     const currentTrack = advTracks.find(t => t.id === selectedTrackId);
+    const gainTrackIds = new Set(['gain', 'breath', 'consonantGain', 'pitch', 'gender']);
+    const primaryTracks = advTracks.filter(t => !gainTrackIds.has(t.id));
+    const gainTracks = advTracks.filter(t => gainTrackIds.has(t.id));
     
     // Determine Cursor
     let cursorClass = 'cursor-text';
@@ -485,8 +511,17 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     return (
         <div className="flex-1 min-h-[150px] bg-white/40 dynamic-radius border border-slate-300 p-2 shadow-sm relative shrink-0 flex flex-col">
             <div className="flex items-center justify-between gap-1.5 pb-1 px-1 shrink-0">
-                <div className="flex gap-1.5 overflow-x-auto custom-scrollbar py-1 font-bold">
-                    {advTracks.map(t => <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId === t.id ? 'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>)}
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar py-1 font-bold flex-1">
+                    <div className="flex gap-1.5">
+                        {primaryTracks.map(t => (
+                            <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId === t.id ? 'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>
+                        ))}
+                    </div>
+                    <div className="flex gap-1.5 ml-auto">
+                        {gainTracks.map(t => (
+                            <button key={t.id} onClick={() => setSelectedTrackId(t.id)} className={`px-2.5 py-1 text-[10px] font-black border rounded-full transition-all whitespace-nowrap ${selectedTrackId === t.id ? 'dynamic-primary text-slate-900 font-black dynamic-primary-border shadow-md' : 'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>
+                        ))}
+                    </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
                     {isEditMode && selectedTrackId === 'gain' && (

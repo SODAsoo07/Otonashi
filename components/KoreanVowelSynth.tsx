@@ -24,12 +24,15 @@ interface KoreanVowelSynthProps {
   onRecordSnapshot: () => void;
   onRecordTts: (frames: VowelSynthFrame[], totalDurationSec: number) => void;
   onRecordConsonant: () => void;
+  consonantBoostOn: boolean;
+  setConsonantBoostOn: React.Dispatch<React.SetStateAction<boolean>>;
   autoExtendDuration: boolean;
   setAutoExtendDuration: React.Dispatch<React.SetStateAction<boolean>>;
   selectedConsonantName: string | null;
   setSelectedConsonantName: React.Dispatch<React.SetStateAction<string | null>>;
   selectedJongName: string | null;
   setSelectedJongName: React.Dispatch<React.SetStateAction<string | null>>;
+  onPreviewPlayingChange?: (isPlaying: boolean) => void;
 }
 
 type ConsonantType = 'plosive' | 'fricative' | 'affricate' | 'nasal' | 'liquid';
@@ -268,16 +271,19 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   setSynthBlend,
   noisePreset,
   setNoisePreset,
-  onFormantChange,
-  onRecordSnapshot,
-  onRecordTts,
-  onRecordConsonant,
-  autoExtendDuration,
+    onFormantChange,
+    onRecordSnapshot,
+    onRecordTts,
+    onRecordConsonant,
+    consonantBoostOn,
+    setConsonantBoostOn,
+    autoExtendDuration,
   setAutoExtendDuration,
   selectedConsonantName,
   setSelectedConsonantName,
   selectedJongName,
   setSelectedJongName,
+  onPreviewPlayingChange,
 }) => {
   const { language } = useLanguage();
   const text = useMemo(() => {
@@ -304,6 +310,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         consonantTab: '子音/母音プリセット',
         controlsTab: '周波数/波形/ノイズ',
         recordConsonant: '子音記録',
+        recordPronunciation: '発音記録',
+        consonantBoost: '子音補正強化',
         vowelPresetLabel: '母音プリセット',
         consonantPresetLabel: '子音プリセット',
         codaPresetLabel: '終声プリセット',
@@ -334,6 +342,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         consonantTab: 'Consonant/Vowel presets',
         controlsTab: 'Freq/Wave/Noise',
         recordConsonant: 'Record consonant',
+        recordPronunciation: 'Record pronunciation',
+        consonantBoost: 'Consonant boost',
         vowelPresetLabel: 'Vowel presets',
         consonantPresetLabel: 'Consonant presets',
         codaPresetLabel: 'Coda presets',
@@ -363,6 +373,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       consonantTab: '자/모음 프리셋',
       controlsTab: '주파수/파형/노이즈',
       recordConsonant: '자음 기록',
+      recordPronunciation: '발음 기록',
+      consonantBoost: '자음 보정 강화',
       vowelPresetLabel: '모음 프리셋',
       consonantPresetLabel: '자음 프리셋',
       codaPresetLabel: '받침 프리셋',
@@ -385,11 +397,15 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const [currentF2, setCurrentF2] = useState(1350);
   const [ttsText, setTtsText] = useState('안녕하세요');
   const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const previewLoopRef = useRef(false);
+  const previewLoopTimerRef = useRef<number | null>(null);
   const [nearestSyllable, setNearestSyllable] = useState('');
   const ttsPlayingRef = useRef(false);
   const [panelTab, setPanelTab] = useState<'formant' | 'presets' | 'controls'>('formant');
   const [ttsSpeed, setTtsSpeed] = useState(1.0);
   const [ttsTimeRatio, setTtsTimeRatio] = useState(1.0);
+  const [selectedVowelPreset, setSelectedVowelPreset] = useState<string | null>(null);
   const formantAnimRef = useRef<number | null>(null);
   const currentF1Ref = useRef(currentF1);
   const currentF2Ref = useRef(currentF2);
@@ -474,9 +490,17 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     timeoutIdsRef.current = [];
   };
 
-  const stopPlayback = useCallback(() => {
+  const stopPlayback = useCallback((options?: { keepPreviewLoop?: boolean }) => {
     clearTimeouts();
     playingRef.current = false;
+    if (!options?.keepPreviewLoop) {
+      previewLoopRef.current = false;
+      if (previewLoopTimerRef.current !== null) {
+        window.clearTimeout(previewLoopTimerRef.current);
+        previewLoopTimerRef.current = null;
+      }
+      setPreviewPlaying(false);
+    }
     stopFormantAnimation();
     if (nodesRef.current) {
       const { oscillators, oscGain, noiseSrc, noiseGain, noiseVoice } = nodesRef.current;
@@ -494,6 +518,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   }, [audioContext]);
 
   useEffect(() => () => stopPlayback(), [stopPlayback]);
+  useEffect(() => { onPreviewPlayingChange?.(previewPlaying); }, [previewPlaying, onPreviewPlayingChange]);
 
   useEffect(() => {
     if (!nodesRef.current) return;
@@ -722,11 +747,12 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     timeoutIdsRef.current.push(t);
   };
 
-  const playConsonantAndVowel = async (consonant: Consonant | null, f1Target: number, f2Target: number, applyJong: boolean, jongOverride?: string | null) => {
+  const playConsonantAndVowel = async (consonant: Consonant | null, f1Target: number, f2Target: number, applyJong: boolean, jongOverride?: string | null, options?: { keepPreviewLoop?: boolean }) => {
     await ensureAudioContext();
-    stopPlayback();
+    stopPlayback({ keepPreviewLoop: options?.keepPreviewLoop });
     nodesRef.current = createVoiceChain();
     playingRef.current = true;
+    setPreviewPlaying(true);
     const jongValue = jongOverride !== undefined ? jongOverride : selectedJong;
 
     if (!consonant || consonant.name === 'ㅇ') {
@@ -891,6 +917,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
   const handlePointerDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     markPresetChange();
+    setSelectedVowelPreset(null);
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.min(chartW, Math.max(0, e.clientX - rect.left));
     const y = Math.min(chartH, Math.max(0, e.clientY - rect.top));
@@ -1055,6 +1082,37 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     playNext();
   };
 
+  const buildPronunciationFrames = useCallback(() => {
+    const preset = lastPresetVowelRef.current;
+    const f1 = preset ? preset.f1 : currentF1Ref.current;
+    const f2 = preset ? preset.f2 : currentF2Ref.current;
+    const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
+    const vowelDur = 220;
+    let onsetDur = 0;
+    if (consonantObj) {
+      if (consonantObj.type === 'plosive') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.aspirated ? (consonantObj.aspirDur || 0) : 0) + 50;
+      else if (consonantObj.type === 'fricative') onsetDur = (consonantObj.fricDur || 0) + 50;
+      else if (consonantObj.type === 'affricate') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.fricDur || 0) + (consonantObj.aspirated ? (consonantObj.aspirDur || 0) : 0) + 50;
+      else if (consonantObj.type === 'nasal') onsetDur = (consonantObj.nasalDur || 0) + 30;
+      else if (consonantObj.type === 'liquid') onsetDur = (consonantObj.tapDur || 0) + (consonantObj.silenceDur || 0) + 30;
+    }
+    const jongDur = selectedJongName ? (jongParams[selectedJongName]?.dur ?? 80) : 0;
+    const presetFrames: VowelSynthFrame[] = [];
+    if (consonantObj && onsetDur > 0) {
+      presetFrames.push({ f1, f2, durMs: onsetDur, consonant: consonantObj.name, coda: null });
+    }
+    presetFrames.push({ f1, f2, durMs: vowelDur, consonant: null, coda: null });
+    if (selectedJongName && jongDur > 0) {
+      presetFrames.push({ f1, f2, durMs: jongDur, consonant: null, coda: selectedJongName });
+      presetFrames.push({ f1, f2, durMs: 40, consonant: null, coda: null });
+    }
+    if (presetFrames.length === 0) return null;
+    const ratio = Math.max(0.1, ttsTimeRatio);
+    const scaledFrames = presetFrames.map(frame => ({ ...frame, durMs: frame.durMs * ratio }));
+    const total = scaledFrames.reduce((sum, f) => sum + f.durMs, 0) / 1000;
+    return { frames: scaledFrames, totalSec: total };
+  }, [selectedConsonantName, selectedJongName, ttsTimeRatio]);
+
   const handleRecord = () => {
     if (ttsPlaying) return;
     if (forceSnapshotRef.current) {
@@ -1070,7 +1128,51 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       onRecordTts(scaledFrames, totalSec * ratio);
       return;
     }
+    const preset = buildPronunciationFrames();
+    if (preset) {
+      onRecordTts(preset.frames, preset.totalSec);
+      return;
+    }
     onRecordSnapshot();
+  };
+
+  const handleRecordPronunciation = () => {
+    if (ttsPlaying) return;
+    const preset = buildPronunciationFrames();
+    if (preset) {
+      onRecordTts(preset.frames, preset.totalSec);
+      return;
+    }
+    onRecordSnapshot();
+  };
+
+  const estimatePreviewDurationMs = (consonantObj: Consonant | null, jongValue: string | null) => {
+    let onsetDur = 0;
+    if (consonantObj) {
+      if (consonantObj.type === 'plosive') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.aspirDur || 0) + 50;
+      else if (consonantObj.type === 'fricative') onsetDur = (consonantObj.fricDur || 0) + 50;
+      else if (consonantObj.type === 'affricate') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.fricDur || 0) + (consonantObj.aspirDur || 0) + 50;
+      else if (consonantObj.type === 'nasal') onsetDur = (consonantObj.nasalDur || 0) + 30;
+      else if (consonantObj.type === 'liquid') onsetDur = (consonantObj.tapDur || 0) + (consonantObj.silenceDur || 0) + 30;
+    }
+    const vowelDur = 220;
+    const jongDur = jongValue ? (jongParams[jongValue]?.dur ?? 80) : 0;
+    const gap = 140;
+    return Math.max(200, onsetDur + vowelDur + jongDur + gap);
+  };
+
+  const playPreviewLoop = async () => {
+    const preset = lastPresetVowelRef.current;
+    const f1 = preset ? preset.f1 : currentF1Ref.current;
+    const f2 = preset ? preset.f2 : currentF2Ref.current;
+    const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
+    const jongValue = selectedJongName ?? null;
+    await playConsonantAndVowel(consonantObj, f1, f2, true, jongValue, { keepPreviewLoop: true });
+    const dur = estimatePreviewDurationMs(consonantObj, jongValue);
+    previewLoopTimerRef.current = window.setTimeout(() => {
+      if (!previewLoopRef.current) return;
+      playPreviewLoop();
+    }, dur);
   };
 
   useEffect(() => {
@@ -1231,17 +1333,21 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
           </div>
           <button
             onClick={() => {
-              const preset = lastPresetVowelRef.current;
-              const f1 = preset ? preset.f1 : currentF1Ref.current;
-              const f2 = preset ? preset.f2 : currentF2Ref.current;
-              const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
-              playConsonantAndVowel(consonantObj, f1, f2, true, selectedJongName);
+              if (previewLoopRef.current) {
+                previewLoopRef.current = false;
+                stopPlayback();
+                return;
+              }
+              previewLoopRef.current = true;
+              playPreviewLoop();
             }}
-            className="px-2 py-1 rounded-full border border-slate-200 text-slate-600 bg-white hover:bg-slate-100 transition-all flex items-center gap-1"
+            className={`px-2 py-1 rounded-full border transition-all flex items-center gap-1 ${previewPlaying ? 'border-red-200 text-red-600 bg-red-50' : 'border-slate-200 text-slate-600 bg-white hover:bg-slate-100'}`}
             title={language === 'ko' ? '미리보기 재생' : language === 'ja' ? 'プレビュー再生' : 'Preview play'}
           >
             <Play size={12} />
-            <span className="text-[10px] font-black">{language === 'ko' ? '미리보기' : language === 'ja' ? 'プレビュー' : 'Preview'}</span>
+            <span className="text-[10px] font-black">
+              {previewPlaying ? (language === 'ko' ? '정지' : language === 'ja' ? '停止' : 'Stop') : (language === 'ko' ? '미리보기' : language === 'ja' ? 'プレビュー' : 'Preview')}
+            </span>
           </button>
         </div>
 
@@ -1257,14 +1363,24 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                       markPresetChange();
                       const target = getVowelFormants(vowel);
                       lastPresetVowelRef.current = target;
+                      setSelectedVowelPreset(vowel);
                       animateFormants(currentF1Ref.current, currentF2Ref.current, target.f1, target.f2, 220);
                     }}
-                    className="px-3 py-1.5 rounded-lg border text-sm font-black bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 transition-all"
+                    className={`px-3 py-1.5 rounded-lg border text-sm font-black transition-all ${selectedVowelPreset === vowel ? 'bg-indigo-500 text-white border-indigo-400 shadow-sm' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}`}
                   >
                     {vowel}
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+              <span className="uppercase">{text.consonantBoost}</span>
+              <button
+                onClick={() => setConsonantBoostOn(!consonantBoostOn)}
+                className={`w-8 h-4 rounded-full transition-colors relative ${consonantBoostOn ? 'bg-indigo-500' : 'bg-slate-300'}`}
+              >
+                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${consonantBoostOn ? 'left-4.5' : 'left-0.5'}`} />
+              </button>
             </div>
             <div className="space-y-2">
               <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantPresetLabel}</div>
@@ -1335,7 +1451,13 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                 </div>
               ))}
             </div>
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleRecordPronunciation}
+                className="px-3 py-1.5 rounded-lg text-xs font-black bg-indigo-500 text-white"
+              >
+                {text.recordPronunciation}
+              </button>
               <button
                 onClick={onRecordConsonant}
                 className="px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-500 text-white"

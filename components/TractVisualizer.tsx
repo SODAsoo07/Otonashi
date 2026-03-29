@@ -72,6 +72,12 @@ const TractVisualizer: React.FC<TractVisualizerProps> = ({
                     }
                 >
                     <svg viewBox="100 50 280 340" className="w-full h-full drop-shadow-lg select-none transition-all duration-300 p-2" preserveAspectRatio="xMidYMid meet">
+                    {isAdvPlaying && (
+                        <>
+                            <circle cx="220" cy="330" r="22" fill="rgba(59,130,246,0.15)" className="animate-pulse" />
+                            <circle cx="220" cy="330" r="12" fill="rgba(59,130,246,0.25)" className="animate-pulse" />
+                        </>
+                    )}
                     <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                     <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                     <path d="M 220 380 L 220 250" stroke="#e2e8f0" strokeWidth={30 + (1 - liveTract.throat) * 40} strokeLinecap="round" opacity="0.6" />
