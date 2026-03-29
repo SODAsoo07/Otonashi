@@ -695,6 +695,87 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
   };
 
+  const playConsonantOnChain = (consonant: Consonant | null, f1Target: number, f2Target: number) => {
+    if (!nodesRef.current) return;
+    if (!consonant || consonant.name === 'ㅇ') {
+      startVowelTransition(consonant, f1Target, f2Target);
+      return;
+    }
+
+    if (consonant.type === 'plosive') {
+      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.35);
+      const t1 = window.setTimeout(() => {
+        if (consonant.aspirated && consonant.aspirDur && consonant.aspirDur > 0) {
+          if (nodesRef.current?.noiseBpf) {
+            nodesRef.current.noiseBpf.frequency.setValueAtTime(2500, audioContext.currentTime);
+            nodesRef.current.noiseBpf.Q.value = 0.5;
+          }
+          const t2 = window.setTimeout(() => {
+            stopNoise();
+            startVowelTransition(consonant, f1Target, f2Target);
+          }, consonant.aspirDur);
+          timeoutIdsRef.current.push(t2);
+        } else {
+          stopNoise();
+          startVowelTransition(consonant, f1Target, f2Target);
+        }
+      }, consonant.burstDur || 15);
+      timeoutIdsRef.current.push(t1);
+      return;
+    }
+
+    if (consonant.type === 'fricative') {
+      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.3);
+      const t1 = window.setTimeout(() => {
+        stopNoise();
+        startVowelTransition(consonant, f1Target, f2Target);
+      }, consonant.fricDur || 120);
+      timeoutIdsRef.current.push(t1);
+      return;
+    }
+
+    if (consonant.type === 'affricate') {
+      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.3);
+      const t1 = window.setTimeout(() => {
+        if (nodesRef.current?.noiseBpf) {
+          nodesRef.current.noiseBpf.frequency.setValueAtTime(consonant.fricFreq || 3500, audioContext.currentTime);
+        }
+        const t2 = window.setTimeout(() => {
+          if (consonant.aspirated && consonant.aspirDur && consonant.aspirDur > 0) {
+            const t3 = window.setTimeout(() => {
+              stopNoise();
+              startVowelTransition(consonant, f1Target, f2Target);
+            }, consonant.aspirDur);
+            timeoutIdsRef.current.push(t3);
+          } else {
+            stopNoise();
+            startVowelTransition(consonant, f1Target, f2Target);
+          }
+        }, consonant.fricDur || 60);
+        timeoutIdsRef.current.push(t2);
+      }, consonant.burstDur || 20);
+      timeoutIdsRef.current.push(t1);
+      return;
+    }
+
+    if (consonant.type === 'nasal') {
+      startVowelTransition(consonant, consonant.nasalFreq || f1Target, f2Target);
+      const t1 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.nasalDur || 80);
+      timeoutIdsRef.current.push(t1);
+      return;
+    }
+
+    if (consonant.type === 'liquid') {
+      startVowelTransition(consonant, f1Target, f2Target);
+      const t1 = window.setTimeout(() => {
+        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
+        const t2 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.silenceDur || 10);
+        timeoutIdsRef.current.push(t2);
+      }, consonant.tapDur || 20);
+      timeoutIdsRef.current.push(t1);
+    }
+  };
+
   const handlePointerDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.min(chartW, Math.max(0, e.clientX - rect.left));
@@ -732,13 +813,14 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     stopPlayback();
   };
 
-  const handleTtsToggle = () => {
+  const handleTtsToggle = async () => {
     if (ttsPlaying) {
       setTtsPlaying(false);
       stopPlayback();
       return;
     }
     if (!ttsText.trim()) return;
+    await ensureAudioContext();
     setTtsPlaying(true);
 
     const events: Array<{ type: 'syllable' | 'glide' | 'coda' | 'silence'; consonant?: Consonant | null; jong?: string | null; f1?: number; f2?: number; dur: number; }> = [];
@@ -796,12 +878,12 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       }
       const ev = events[idx];
       if (ev.type === 'syllable') {
-        startVowelTransition(ev.consonant || null, ev.f1 || currentF1, ev.f2 || currentF2);
-        onFormantChange(ev.f1 || currentF1, ev.f2 || currentF2);
         if (ev.consonant) {
-          // Play consonant overlay first
-          playConsonantAndVowel(ev.consonant, ev.f1 || currentF1, ev.f2 || currentF2, false);
+          playConsonantOnChain(ev.consonant, ev.f1 || currentF1, ev.f2 || currentF2);
+        } else {
+          startVowelTransition(ev.consonant || null, ev.f1 || currentF1, ev.f2 || currentF2);
         }
+        onFormantChange(ev.f1 || currentF1, ev.f2 || currentF2);
       } else if (ev.type === 'glide') {
         updateFormants(ev.f1 || currentF1, ev.f2 || currentF2);
         onFormantChange(ev.f1 || currentF1, ev.f2 || currentF2);

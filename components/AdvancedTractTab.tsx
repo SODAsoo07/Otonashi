@@ -20,6 +20,7 @@ interface AdvancedTractTabProps {
     monitorGainValue?: number;  // 0~1.0 (재생 시만)
     onSendToStudio?: (buffer: AudioBuffer, name: string) => void;
     onSendToVocoder?: (buffer: AudioBuffer, name: string) => void;
+    preferredSidebarTab?: 'settings' | 'eq' | 'vowel';
 }
 
 const ADVANCED_TRACT_TEXT = {
@@ -289,7 +290,7 @@ const cubicHermite = (p0: number, p1: number, p2: number, p3: number, t: number)
     return 0.5 * (a * t * t * t + b * t * t + c * t + d);
 };
 
-const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0, onSendToStudio, onSendToVocoder }) => {
+const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files, onAddToRack, isActive, monitorGainValue = 1.0, onSendToStudio, onSendToVocoder, preferredSidebarTab }) => {
     const { language } = useLanguage();
     const text = ADVANCED_TRACT_TEXT[language];
     const vowelSynthTabLabel = language === 'ja' ? '韓国語 フォルマント 合成' : language === 'en' ? 'Korean Formant Synth' : '한글 모음/자음 합성';
@@ -324,6 +325,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [isResizing, setIsResizing] = useState(false);
     const [previewBuffer, setPreviewBuffer] = useState<AudioBuffer | null>(null);
     const [sidebarTab, setSidebarTab] = useState<'settings' | 'eq' | 'vowel'>('settings');
+    const lastNonVowelTabRef = useRef<'settings' | 'eq'>('settings');
     const [autoExtendAdvDuration, setAutoExtendAdvDuration] = useState(false);
     const [showAnalyzer, setShowAnalyzer] = useState(false);
 
@@ -334,6 +336,20 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [showGhost, setShowGhost] = useState(true);
     const spectrogramCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const tractStateInputRef = useRef<HTMLInputElement | null>(null);
+
+    useEffect(() => {
+        if (sidebarTab !== 'vowel') {
+            lastNonVowelTabRef.current = sidebarTab;
+        }
+    }, [sidebarTab]);
+
+    useEffect(() => {
+        if (preferredSidebarTab === 'vowel') {
+            setSidebarTab('vowel');
+        } else if (!preferredSidebarTab) {
+            setSidebarTab(lastNonVowelTabRef.current);
+        }
+    }, [preferredSidebarTab]);
 
     const [eqBands, setEqBands] = useState<EQBand[]>([
         { id: 1, type: 'highpass', freq: 80, gain: 0, q: 0.7, on: true },

@@ -14,7 +14,7 @@ import { AudioFile, UIConfig } from './types';
 import { AudioUtils } from './utils/audioUtils';
 import { LANGUAGE_LABELS } from './utils/translations';
 
-type TabId = 'editor' | 'generator' | 'consonant' | 'sim' | 'vocoder' | 'misc' | 'frq';
+type TabId = 'editor' | 'generator' | 'consonant' | 'sim' | 'vowel' | 'vocoder' | 'misc' | 'frq';
 type HistoryState = {
     files: AudioFile[];
     activeFileId: string | null;
@@ -49,6 +49,7 @@ const createEmptyTabHistories = (): Record<TabId, TabHistory> => ({
     generator: { undo: [], redo: [] },
     consonant: { undo: [], redo: [] },
     sim: { undo: [], redo: [] },
+    vowel: { undo: [], redo: [] },
     vocoder: { undo: [], redo: [] },
     misc: { undo: [], redo: [] },
     frq: { undo: [], redo: [] },
@@ -120,6 +121,7 @@ const APP_TEXT = {
             generator: '자음 생성기',
             consonant: '자모음 합성기',
             sim: '성도 시뮬레이터',
+            vowel: '성도 자음/모음 생성',
             vocoder: '보코더',
             misc: '기타',
             frq: 'FRQ',
@@ -138,6 +140,7 @@ const APP_TEXT = {
             generator: 'Consonant Gen',
             consonant: 'C-V Mixer',
             sim: 'Tract Sim',
+            vowel: 'Tract C/V',
             vocoder: 'Vocoder',
             misc: 'Misc',
             frq: 'FRQ',
@@ -156,6 +159,7 @@ const APP_TEXT = {
             generator: '子音生成',
             consonant: 'C-V ミキサー',
             sim: '声道シミュレーター',
+            vowel: '声道 子音/母音 生成',
             vocoder: 'ボコーダー',
             misc: 'その他',
             frq: 'FRQ',
@@ -203,6 +207,7 @@ const AppContent: React.FC = () => {
         { id: 'generator', label: text.tabs.generator },
         { id: 'consonant', label: text.tabs.consonant },
         { id: 'sim', label: text.tabs.sim },
+        { id: 'vowel', label: text.tabs.vowel },
         { id: 'vocoder', label: text.tabs.vocoder },
         { id: 'misc', label: text.tabs.misc },
         { id: 'frq', label: text.tabs.frq },
@@ -656,8 +661,17 @@ const AppContent: React.FC = () => {
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'consonant' ? 'flex' : 'none' }}>
                         <ConsonantTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'consonant'} monitorGainValue={monitorGainValue} />
                     </div>
-                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'sim' ? 'flex' : 'none' }}>
-                        <AdvancedTractTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'sim'} monitorGainValue={monitorGainValue} onSendToStudio={sendSimToStudio} onSendToVocoder={sendSimToVocoder} />
+                    <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'sim' || activeTab === 'vowel' ? 'flex' : 'none' }}>
+                        <AdvancedTractTab
+                            audioContext={audioContext}
+                            files={files}
+                            onAddToRack={addToRack}
+                            isActive={activeTab === 'sim' || activeTab === 'vowel'}
+                            monitorGainValue={monitorGainValue}
+                            onSendToStudio={sendSimToStudio}
+                            onSendToVocoder={sendSimToVocoder}
+                            preferredSidebarTab={activeTab === 'vowel' ? 'vowel' : undefined}
+                        />
                     </div>
                     <div className="absolute inset-0 flex flex-col transition-opacity" style={{ display: activeTab === 'vocoder' ? 'flex' : 'none' }}>
                         <VocoderTab audioContext={audioContext} files={files} onAddToRack={addToRack} isActive={activeTab === 'vocoder'} monitorGainValue={monitorGainValue} />
