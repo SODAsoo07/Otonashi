@@ -1000,7 +1000,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       if (ev.type === 'glide') {
         eased = Math.min(base, Math.max(60, base * 0.6));
       }
-      if (ev.type === 'syllable' && (!ev.consonant || ev.consonant.name === 'ㅇ')) {
+      if (ev.type === 'syllable' && ev.jong === 'ㄱ') {
+        eased = Math.min(eased, Math.max(40, base * 0.3));
+      } else if (ev.type === 'syllable' && (!ev.consonant || ev.consonant.name === 'ㅇ')) {
         eased = Math.min(eased, Math.max(45, base * 0.4));
       } else if (ev.type === 'syllable' && ev.consonant) {
         if (['ㅁ', 'ㄹ', 'ㅇ', 'ㄴ'].includes(ev.consonant.name)) {
