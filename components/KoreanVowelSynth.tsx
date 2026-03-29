@@ -295,9 +295,12 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         brownNoise: 'ブラウン',
         autoExtend: '再生長さに合わせて延長',
         formantTab: '母音フォルマント',
-        consonantTab: '母音プリセット',
+        consonantTab: '子音/母音プリセット',
+        controlsTab: '周波数/波形/ノイズ',
         recordConsonant: '子音記録',
         vowelPresetLabel: '母音プリセット',
+        consonantPresetLabel: '子音プリセット',
+        codaPresetLabel: '終声プリセット',
         timeRatio: '時間比率',
         ttsSpeed: 'TTS 速度',
       };
@@ -322,9 +325,12 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         brownNoise: 'Brown',
         autoExtend: 'Auto-extend duration',
         formantTab: 'Vowel formant',
-        consonantTab: 'Vowel presets',
+        consonantTab: 'Consonant/Vowel presets',
+        controlsTab: 'Freq/Wave/Noise',
         recordConsonant: 'Record consonant',
         vowelPresetLabel: 'Vowel presets',
+        consonantPresetLabel: 'Consonant presets',
+        codaPresetLabel: 'Coda presets',
         timeRatio: 'Time ratio',
         ttsSpeed: 'TTS speed',
       };
@@ -349,8 +355,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       autoExtend: '재생 길이에 맞춰 자동 연장',
       formantTab: '모음 포먼트',
       consonantTab: '자/모음 프리셋',
+      controlsTab: '주파수/파형/노이즈',
       recordConsonant: '자음 기록',
       vowelPresetLabel: '모음 프리셋',
+      consonantPresetLabel: '자음 프리셋',
+      codaPresetLabel: '받침 프리셋',
       timeRatio: '시간 비율',
       ttsSpeed: 'TTS 속도',
     };
@@ -372,7 +381,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [nearestSyllable, setNearestSyllable] = useState('');
   const ttsPlayingRef = useRef(false);
-  const [panelTab, setPanelTab] = useState<'formant' | 'consonant'>('formant');
+  const [panelTab, setPanelTab] = useState<'formant' | 'presets' | 'controls'>('formant');
   const [ttsSpeed, setTtsSpeed] = useState(1.0);
   const [ttsTimeRatio, setTtsTimeRatio] = useState(1.0);
   const formantAnimRef = useRef<number | null>(null);
@@ -1110,7 +1119,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       </div>
 
       <div className="space-y-3">
-        <div className="flex items-center gap-2 text-[10px] font-black">
+        <div className="flex items-center gap-2 text-[10px] font-black flex-wrap">
           <button
             onClick={() => setPanelTab('formant')}
             className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'formant' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
@@ -1118,14 +1127,20 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
             {text.formantTab}
           </button>
           <button
-            onClick={() => setPanelTab('consonant')}
-            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'consonant' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+            onClick={() => setPanelTab('presets')}
+            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'presets' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
           >
             {text.consonantTab}
           </button>
+          <button
+            onClick={() => setPanelTab('controls')}
+            className={`px-3 py-1 rounded-full border transition-all ${panelTab === 'controls' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200'}`}
+          >
+            {text.controlsTab}
+          </button>
         </div>
 
-        {panelTab === 'consonant' ? (
+        {panelTab === 'presets' ? (
           <div className="space-y-4">
             <div className="space-y-2">
               <div className="text-[10px] font-black text-slate-500 uppercase">{text.vowelPresetLabel}</div>
@@ -1144,6 +1159,53 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                 ))}
               </div>
             </div>
+            <div className="space-y-2">
+              <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantPresetLabel}</div>
+              {consonantGroups.map(group => (
+                <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] text-slate-400 min-w-[110px]">{group.label}</span>
+                  {group.items.map((item, idx) => {
+                    if (!item) return <span key={`${group.label}-${idx}`} className="w-6" />;
+                    const isSelected = selectedConsonantName === item || (!selectedConsonantName && item === 'ㅇ');
+                    return (
+                      <button
+                        key={`${group.label}-${item}`}
+                        onClick={() => setSelectedConsonantName(item === 'ㅇ' ? null : item)}
+                        className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <div className="text-[10px] font-black text-slate-500 uppercase">{text.codaPresetLabel}</div>
+              {jongGroups.map(group => (
+                <div key={group.label} className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[9px] text-slate-400 min-w-[70px]">{group.label}</span>
+                  {group.items.map(item => {
+                    const isSelected = selectedJongName === item;
+                    return (
+                      <button
+                        key={`${group.label}-${item}`}
+                        onClick={() => setSelectedJongName(item)}
+                        className={`w-8 h-7 rounded border text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setSelectedJongName(null)}
+                    className={`px-3 h-7 rounded border text-[10px] font-black ${selectedJongName === null ? 'bg-blue-500 text-white border-blue-400' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                  >
+                    없음
+                  </button>
+                </div>
+              ))}
+            </div>
             <div className="flex justify-end">
               <button
                 onClick={onRecordConsonant}
@@ -1153,7 +1215,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               </button>
             </div>
           </div>
-        ) : (
+        ) : panelTab === 'formant' ? (
           <div className="space-y-3">
             <div className="w-full flex justify-center">
               <div className="w-[66%] min-w-[200px] max-w-[260px] aspect-square">
@@ -1175,86 +1237,88 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               <span className="text-slate-900">{nearestSyllable}</span>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-          <div className="flex justify-between text-[11px] font-black text-slate-500">
-            <span>{text.pitch}</span>
-            <span className="text-indigo-600">{Math.round(manualPitch)}Hz</span>
+      {panelTab === 'controls' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="flex justify-between text-[11px] font-black text-slate-500">
+              <span>{text.pitch}</span>
+              <span className="text-indigo-600">{Math.round(manualPitch)}Hz</span>
+            </div>
+            <input
+              type="range"
+              min="50"
+              max="600"
+              step="1"
+              value={manualPitch}
+              onChange={e => setManualPitch(Number(e.target.value))}
+              className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+            />
           </div>
-          <input
-            type="range"
-            min="50"
-            max="600"
-            step="1"
-            value={manualPitch}
-            onChange={e => setManualPitch(Number(e.target.value))}
-            className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
-          />
-        </div>
-        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase">{text.waveform}</span>
-            <select
-              value={synthWaveform}
-              onChange={e => setSynthWaveform(e.target.value as any)}
-              className="text-[11px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"
-            >
-              <option value="blend">{text.waveBlend}</option>
-              <option value="sawtooth">Sawtooth</option>
-              <option value="sine">Sine</option>
-              <option value="square">Square</option>
-              <option value="noise">Noise</option>
-            </select>
-          </div>
-          {synthWaveform === 'blend' && (
-            <div className="space-y-1.5">
-              {([
-                ['sawtooth', 'Sawtooth'],
-                ['sine', 'Sine'],
-                ['square', 'Square'],
-                ['noise', 'Noise'],
-              ] as [BlendWave, string][]).map(([waveId, label]) => (
-                <div key={waveId} className="space-y-0.5">
-                  <div className="flex justify-between text-[11px] font-black text-slate-500">
-                    <span>{label}</span>
-                    <span className="text-indigo-600">{Math.round(normalizedBlend[waveId] * 100)}%</span>
+          <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black text-slate-500 uppercase">{text.waveform}</span>
+              <select
+                value={synthWaveform}
+                onChange={e => setSynthWaveform(e.target.value as any)}
+                className="text-[11px] bg-white border border-slate-200 rounded px-1 outline-none font-black text-slate-900"
+              >
+                <option value="blend">{text.waveBlend}</option>
+                <option value="sawtooth">Sawtooth</option>
+                <option value="sine">Sine</option>
+                <option value="square">Square</option>
+                <option value="noise">Noise</option>
+              </select>
+            </div>
+            {synthWaveform === 'blend' && (
+              <div className="space-y-1.5">
+                {([
+                  ['sawtooth', 'Sawtooth'],
+                  ['sine', 'Sine'],
+                  ['square', 'Square'],
+                  ['noise', 'Noise'],
+                ] as [BlendWave, string][]).map(([waveId, label]) => (
+                  <div key={waveId} className="space-y-0.5">
+                    <div className="flex justify-between text-[11px] font-black text-slate-500">
+                      <span>{label}</span>
+                      <span className="text-indigo-600">{Math.round(normalizedBlend[waveId] * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={synthBlend[waveId]}
+                      onChange={e => setSynthBlend({ ...synthBlend, [waveId]: Number(e.target.value) })}
+                      className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={synthBlend[waveId]}
-                    onChange={e => setSynthBlend({ ...synthBlend, [waveId]: Number(e.target.value) })}
-                    className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
-                  />
-                </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="text-[11px] font-black text-slate-500 uppercase">{text.noisePreset}</div>
+            <div className="grid grid-cols-3 gap-1">
+              {([
+                ['white', text.whiteNoise],
+                ['pink', text.pinkNoise],
+                ['brown', text.brownNoise],
+              ] as [NoisePreset, string][]).map(([preset, label]) => (
+                <button
+                  key={preset}
+                  onClick={() => setNoisePreset(preset)}
+                  className={`py-1 rounded text-[11px] font-black border transition-all ${noisePreset === preset ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
+                >
+                  {label}
+                </button>
               ))}
             </div>
-          )}
-        </div>
-        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-          <div className="text-[11px] font-black text-slate-500 uppercase">{text.noisePreset}</div>
-          <div className="grid grid-cols-3 gap-1">
-            {([
-              ['white', text.whiteNoise],
-              ['pink', text.pinkNoise],
-              ['brown', text.brownNoise],
-            ] as [NoisePreset, string][]).map(([preset, label]) => (
-              <button
-                key={preset}
-                onClick={() => setNoisePreset(preset)}
-                className={`py-1 rounded text-[11px] font-black border transition-all ${noisePreset === preset ? 'bg-white text-slate-900 border-slate-300 shadow-sm' : 'bg-slate-100 text-slate-500 border-slate-200'}`}
-              >
-                {label}
-              </button>
-            ))}
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500">
         <input
