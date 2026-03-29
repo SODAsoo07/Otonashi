@@ -62,7 +62,8 @@ const TractVisualizer: React.FC<TractVisualizerProps> = ({
     return (
         <div className="flex-1 bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm min-h-[200px]">
             <div className="flex-1 relative flex items-center justify-center overflow-hidden py-[3px]">
-                <svg viewBox="100 50 280 340" className="w-full h-full drop-shadow-lg select-none transition-all duration-300 p-2" preserveAspectRatio="xMidYMid meet">
+                <div className="w-full h-full max-w-[520px] max-h-[360px] flex items-center justify-center">
+                    <svg viewBox="100 50 280 340" className="w-full h-full drop-shadow-lg select-none transition-all duration-300 p-2" preserveAspectRatio="xMidYMid meet">
                     <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                     <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                     <path d="M 220 380 L 220 250" stroke="#e2e8f0" strokeWidth={30 + (1 - liveTract.throat) * 40} strokeLinecap="round" opacity="0.6" />
@@ -73,7 +74,8 @@ const TractVisualizer: React.FC<TractVisualizerProps> = ({
                         <path d={`M 350 ${190 + lipOpening / 2} L 370 ${190 + lipOpening / 2}`} stroke="#ec4899" strokeWidth="10" strokeLinecap="round" />
                         <rect x="340" y="140" width="40" height="60" fill="transparent" />
                     </g>
-                </svg>
+                    </svg>
+                </div>
             </div>
 
             <div className="p-2 px-4 bg-white/80 border-t flex justify-between items-center shrink-0 shadow-inner">

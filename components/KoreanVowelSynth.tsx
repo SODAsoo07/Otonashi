@@ -360,8 +360,8 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const ttsPlayingRef = useRef(false);
   const [panelTab, setPanelTab] = useState<'formant' | 'consonant'>('formant');
 
-  const chartW = 360;
-  const chartH = 240;
+  const chartW = 280;
+  const chartH = 280;
   const margin = 24;
 
   const normalizedBlend = useMemo(() => {
@@ -1097,16 +1097,18 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
           </div>
         ) : (
           <div className="space-y-3">
-            <canvas
-              ref={canvasRef}
-              width={chartW}
-              height={chartH}
-              onMouseDown={handlePointerDown}
-              onMouseMove={handlePointerMove}
-              onMouseUp={handlePointerUp}
-              onMouseLeave={handlePointerUp}
-              className="w-full h-[240px] max-h-[240px] rounded-xl border border-slate-200 bg-white cursor-crosshair"
-            />
+            <div className="w-full aspect-square">
+              <canvas
+                ref={canvasRef}
+                width={chartW}
+                height={chartH}
+                onMouseDown={handlePointerDown}
+                onMouseMove={handlePointerMove}
+                onMouseUp={handlePointerUp}
+                onMouseLeave={handlePointerUp}
+                className="w-full h-full rounded-xl border border-slate-200 bg-white cursor-crosshair"
+              />
+            </div>
             <div className="flex items-center justify-between text-[11px] text-slate-600 font-bold">
               <span>F1: {Math.round(currentF1)} Hz</span>
               <span>F2: {Math.round(currentF2)} Hz</span>

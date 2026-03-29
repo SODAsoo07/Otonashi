@@ -1475,31 +1475,32 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             )}
             {/* Bottom Section (Timeline Editor) - Responsive Flex */}
             <div className={`flex flex-col shrink-0 min-h-0 ${isTimelineOpen ? 'flex-[2]' : 'flex-none'}`}>
-                {/* ・､孖罹粕・､ / ・ｴ・罷鵠 ・・・ ・・款 ・・*/}
-                {(onSendToStudio || onSendToVocoder) && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">{text.sendLabel}</span>
-                        {onSendToStudio && (
-                            <button
-                                onClick={handleSendToStudio}
-                                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm"
-                                title={text.sendStudioTitle}
-                            >
-                                {text.sendStudio}
-                            </button>
-                        )}
-                        {onSendToVocoder && (
-                            <button
-                                onClick={handleSendToVocoder}
-                                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black bg-purple-500 text-white hover:bg-purple-600 transition-all shadow-sm"
-                                title={text.sendVocoderTitle}
-                            >
-                                {text.sendVocoder}
-                            </button>
+                <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0 gap-2">
+                    <div className="flex items-center gap-2">
+                        {(onSendToStudio || onSendToVocoder) && (
+                            <>
+                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mr-1">{text.sendLabel}</span>
+                                {onSendToStudio && (
+                                    <button
+                                        onClick={handleSendToStudio}
+                                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm"
+                                        title={text.sendStudioTitle}
+                                    >
+                                        {text.sendStudio}
+                                    </button>
+                                )}
+                                {onSendToVocoder && (
+                                    <button
+                                        onClick={handleSendToVocoder}
+                                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black bg-purple-500 text-white hover:bg-purple-600 transition-all shadow-sm"
+                                        title={text.sendVocoderTitle}
+                                    >
+                                        {text.sendVocoder}
+                                    </button>
+                                )}
+                            </>
                         )}
                     </div>
-                )}
-                <div className="flex items-center justify-end px-3 py-1.5 bg-slate-50 border-b border-slate-200 shrink-0">
                     <button
                         onClick={() => setIsTimelineOpen(v => !v)}
                         className="px-2 py-1 rounded-lg text-[10px] font-black bg-slate-200 text-slate-700 hover:bg-slate-300 transition-all"
