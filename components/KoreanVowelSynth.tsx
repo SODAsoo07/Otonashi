@@ -23,6 +23,7 @@ interface KoreanVowelSynthProps {
   onFormantChange: (f1: number, f2: number) => void;
   onRecordSnapshot: () => void;
   onRecordTts: (frames: VowelSynthFrame[], totalDurationSec: number) => void;
+  onRecordConsonant: () => void;
   autoExtendDuration: boolean;
   setAutoExtendDuration: React.Dispatch<React.SetStateAction<boolean>>;
   selectedConsonantName: string | null;
@@ -264,6 +265,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   onFormantChange,
   onRecordSnapshot,
   onRecordTts,
+  onRecordConsonant,
   autoExtendDuration,
   setAutoExtendDuration,
   selectedConsonantName,
@@ -294,6 +296,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         autoExtend: '再生長さに合わせて延長',
         formantTab: '母音フォルマント',
         consonantTab: '子音/終声',
+        recordConsonant: '子音記録',
+        timeRatio: '時間比率',
+        ttsSpeed: 'TTS 速度',
       };
     }
     if (language === 'en') {
@@ -317,6 +322,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         autoExtend: 'Auto-extend duration',
         formantTab: 'Vowel formant',
         consonantTab: 'Consonant/coda',
+        recordConsonant: 'Record consonant',
+        timeRatio: 'Time ratio',
+        ttsSpeed: 'TTS speed',
       };
     }
     return {
@@ -339,6 +347,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       autoExtend: '재생 길이에 맞춰 자동 연장',
       formantTab: '모음 포먼트',
       consonantTab: '자음/받침',
+      recordConsonant: '자음 기록',
+      timeRatio: '시간 비율',
+      ttsSpeed: 'TTS 속도',
     };
   }, [language]);
 
@@ -359,6 +370,11 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const [nearestSyllable, setNearestSyllable] = useState('');
   const ttsPlayingRef = useRef(false);
   const [panelTab, setPanelTab] = useState<'formant' | 'consonant'>('formant');
+  const [ttsSpeed, setTtsSpeed] = useState(1.0);
+  const [ttsTimeRatio, setTtsTimeRatio] = useState(1.0);
+  const formantAnimRef = useRef<number | null>(null);
+  const currentF1Ref = useRef(currentF1);
+  const currentF2Ref = useRef(currentF2);
 
   const chartW = 280;
   const chartH = 280;
@@ -441,6 +457,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const stopPlayback = useCallback(() => {
     clearTimeouts();
     playingRef.current = false;
+    stopFormantAnimation();
     if (nodesRef.current) {
       const { oscillators, oscGain, noiseSrc, noiseGain, noiseVoice } = nodesRef.current;
       try { oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.02); } catch { }
@@ -483,6 +500,16 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
     setNearestSyllable('');
   }, [ttsText]);
+
+  useEffect(() => { currentF1Ref.current = currentF1; }, [currentF1]);
+  useEffect(() => { currentF2Ref.current = currentF2; }, [currentF2]);
+
+  const stopFormantAnimation = () => {
+    if (formantAnimRef.current !== null) {
+      cancelAnimationFrame(formantAnimRef.current);
+      formantAnimRef.current = null;
+    }
+  };
 
   const createVoiceChain = useCallback((): PlayNodes => {
     const oscGain = audioContext.createGain();
@@ -555,6 +582,33 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     nodesRef.current.f2.frequency.setTargetAtTime(f2Target, now, 0.02);
     nodesRef.current.f3.frequency.setTargetAtTime(f3, now, 0.02);
     nodesRef.current.f4.frequency.setTargetAtTime(f4, now, 0.02);
+  };
+
+  const animateFormants = (startF1: number, startF2: number, targetF1: number, targetF2: number, durationMs: number) => {
+    stopFormantAnimation();
+    if (durationMs <= 0) {
+      setCurrentF1(targetF1);
+      setCurrentF2(targetF2);
+      onFormantChange(targetF1, targetF2);
+      updateFormants(targetF1, targetF2);
+      return;
+    }
+    const startTime = performance.now();
+    const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startTime) / durationMs);
+      const eased = easeInOut(t);
+      const f1 = startF1 + (targetF1 - startF1) * eased;
+      const f2 = startF2 + (targetF2 - startF2) * eased;
+      setCurrentF1(f1);
+      setCurrentF2(f2);
+      onFormantChange(f1, f2);
+      updateFormants(f1, f2);
+      if (t < 1 && ttsPlayingRef.current) {
+        formantAnimRef.current = requestAnimationFrame(step);
+      }
+    };
+    formantAnimRef.current = requestAnimationFrame(step);
   };
 
   const startVowelTransition = (consonant: Consonant | null, f1Target: number, f2Target: number) => {
@@ -839,6 +893,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     if (ttsPlaying) {
       ttsPlayingRef.current = false;
       setTtsPlaying(false);
+      stopFormantAnimation();
       stopPlayback();
       return;
     }
@@ -889,9 +944,14 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       return;
     }
 
-    const totalMs = events.reduce((sum, ev) => sum + ev.dur, 0);
+    const baseTotalMs = events.reduce((sum, ev) => sum + ev.dur, 0);
     lastTtsFramesRef.current = frames;
-    lastTtsDurationRef.current = totalMs / 1000;
+    lastTtsDurationRef.current = baseTotalMs / 1000;
+
+    const speedScale = 1 / Math.max(0.1, ttsSpeed);
+    events.forEach(ev => {
+      ev.dur = Math.max(20, ev.dur * speedScale);
+    });
 
     stopPlayback();
     nodesRef.current = createVoiceChain();
@@ -901,22 +961,26 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       if (!ttsPlayingRef.current || idx >= events.length) {
         ttsPlayingRef.current = false;
         setTtsPlaying(false);
+        stopFormantAnimation();
         stopPlayback();
         return;
       }
       const ev = events[idx];
+      const startF1 = currentF1Ref.current;
+      const startF2 = currentF2Ref.current;
+      const targetF1 = ev.f1 || startF1;
+      const targetF2 = ev.f2 || startF2;
       if (ev.type === 'syllable') {
         setSelectedConsonantName(ev.consonant ? ev.consonant.name : null);
         setSelectedJongName(ev.jong || null);
         if (ev.consonant) {
-          playConsonantOnChain(ev.consonant, ev.f1 || currentF1, ev.f2 || currentF2);
+          playConsonantOnChain(ev.consonant, targetF1, targetF2);
         } else {
-          startVowelTransition(ev.consonant || null, ev.f1 || currentF1, ev.f2 || currentF2);
+          startVowelTransition(ev.consonant || null, startF1, startF2);
         }
-        onFormantChange(ev.f1 || currentF1, ev.f2 || currentF2);
+        animateFormants(startF1, startF2, targetF1, targetF2, ev.dur);
       } else if (ev.type === 'glide') {
-        updateFormants(ev.f1 || currentF1, ev.f2 || currentF2);
-        onFormantChange(ev.f1 || currentF1, ev.f2 || currentF2);
+        animateFormants(startF1, startF2, targetF1, targetF2, ev.dur);
       } else if (ev.type === 'coda' && ev.jong) {
         playCoda(ev.jong);
       }
@@ -934,7 +998,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     const frames = lastTtsFramesRef.current;
     const totalSec = lastTtsDurationRef.current;
     if (frames && frames.length > 0 && totalSec > 0) {
-      onRecordTts(frames, totalSec);
+      const ratio = Math.max(0.1, ttsTimeRatio);
+      const scaledFrames = frames.map(frame => ({ ...frame, durMs: frame.durMs * ratio }));
+      onRecordTts(scaledFrames, totalSec * ratio);
       return;
     }
     onRecordSnapshot();
@@ -1094,11 +1160,19 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
                 </div>
               ))}
             </div>
+            <div className="flex justify-end">
+              <button
+                onClick={onRecordConsonant}
+                className="px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-500 text-white"
+              >
+                {text.recordConsonant}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="w-full flex justify-center">
-              <div className="w-[60%] min-w-[180px] max-w-[240px] aspect-square">
+              <div className="w-[66%] min-w-[200px] max-w-[260px] aspect-square">
                 <canvas
                   ref={canvasRef}
                   width={chartW}
@@ -1206,6 +1280,39 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
           className="w-4 h-4 accent-indigo-500"
         />
         <span>{text.autoExtend}</span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className="flex justify-between text-[11px] font-black text-slate-500">
+            <span>{text.timeRatio}</span>
+            <span className="text-indigo-600">{ttsTimeRatio.toFixed(2)}x</span>
+          </div>
+          <input
+            type="range"
+            min="0.5"
+            max="2.0"
+            step="0.05"
+            value={ttsTimeRatio}
+            onChange={e => setTtsTimeRatio(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+          />
+        </div>
+        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div className="flex justify-between text-[11px] font-black text-slate-500">
+            <span>{text.ttsSpeed}</span>
+            <span className="text-indigo-600">{ttsSpeed.toFixed(2)}x</span>
+          </div>
+          <input
+            type="range"
+            min="0.5"
+            max="2.0"
+            step="0.05"
+            value={ttsSpeed}
+            onChange={e => setTtsSpeed(Number(e.target.value))}
+            className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500"
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

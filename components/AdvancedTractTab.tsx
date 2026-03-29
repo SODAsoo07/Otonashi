@@ -1119,6 +1119,18 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         commitChange('Record snapshot');
     }
 
+    const recordConsonantKeyframe = useCallback(() => {
+        const t = playHeadPos;
+        setAdvTracks(prev => prev.map(tr => {
+            if (tr.id !== 'consonant' && tr.id !== 'coda') return tr;
+            const val = tr.id === 'consonant'
+                ? Math.max(0, VOWEL_CONSONANT_LIST.indexOf(selectedVowelConsonant ?? '(none)'))
+                : Math.max(0, VOWEL_CODA_LIST.indexOf(selectedVowelCoda ?? '(none)'));
+            return { ...tr, points: [...tr.points.filter(p => Math.abs(p.t - t) > 0.005), { t, v: val }].sort((a, b) => a.t - b.t) };
+        }));
+        commitChange('Record consonant');
+    }, [playHeadPos, selectedVowelConsonant, selectedVowelCoda, commitChange]);
+
     const handleResetAllKeyframes = useCallback(() => {
         commitChange("Reset all keyframes");
         const defaultTracks = createDefaultAdvTracks(language);
@@ -1212,27 +1224,28 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                         />
                     </div>
                     <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
-                        <KoreanVowelSynth
-                            audioContext={audioContext}
-                            liveTract={liveTract}
-                            manualPitch={manualPitch}
-                            setManualPitch={setManualPitch}
-                            synthWaveform={synthWaveform}
-                            setSynthWaveform={setSynthWaveform}
-                            synthBlend={synthBlend}
-                            setSynthBlend={setSynthBlend}
-                            noisePreset={larynxParams.noisePreset}
-                            setNoisePreset={(preset) => setLarynxParams({ ...larynxParams, noisePreset: preset })}
-                            onFormantChange={handleVowelFormantChange}
-                            onRecordSnapshot={recordSnapshot}
-                            onRecordTts={recordTtsKeyframes}
-                            autoExtendDuration={autoExtendAdvDuration}
-                            setAutoExtendDuration={setAutoExtendAdvDuration}
-                            selectedConsonantName={selectedVowelConsonant}
-                            setSelectedConsonantName={setSelectedVowelConsonant}
-                            selectedJongName={selectedVowelCoda}
-                            setSelectedJongName={setSelectedVowelCoda}
-                        />
+                    <KoreanVowelSynth
+                        audioContext={audioContext}
+                        liveTract={liveTract}
+                        manualPitch={manualPitch}
+                        setManualPitch={setManualPitch}
+                        synthWaveform={synthWaveform}
+                        setSynthWaveform={setSynthWaveform}
+                        synthBlend={synthBlend}
+                        setSynthBlend={setSynthBlend}
+                        noisePreset={larynxParams.noisePreset}
+                        setNoisePreset={(preset) => setLarynxParams({ ...larynxParams, noisePreset: preset })}
+                        onFormantChange={handleVowelFormantChange}
+                        onRecordSnapshot={recordSnapshot}
+                        onRecordTts={recordTtsKeyframes}
+                        onRecordConsonant={recordConsonantKeyframe}
+                        autoExtendDuration={autoExtendAdvDuration}
+                        setAutoExtendDuration={setAutoExtendAdvDuration}
+                        selectedConsonantName={selectedVowelConsonant}
+                        setSelectedConsonantName={setSelectedVowelConsonant}
+                        selectedJongName={selectedVowelCoda}
+                        setSelectedJongName={setSelectedVowelCoda}
+                    />
                     </div>
                 </div>
             ) : (
@@ -1460,6 +1473,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                                 onFormantChange={handleVowelFormantChange}
                                 onRecordSnapshot={recordSnapshot}
                                 onRecordTts={recordTtsKeyframes}
+                                onRecordConsonant={recordConsonantKeyframe}
                                 autoExtendDuration={autoExtendAdvDuration}
                                 setAutoExtendDuration={setAutoExtendAdvDuration}
                         selectedConsonantName={selectedVowelConsonant}
