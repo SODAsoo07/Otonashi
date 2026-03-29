@@ -62,7 +62,7 @@ const TractVisualizer: React.FC<TractVisualizerProps> = ({
     return (
         <div className="w-full h-full bg-white/60 dynamic-radius border border-slate-300 flex flex-col relative overflow-hidden shadow-sm min-h-0">
             <div className="flex-1 relative flex items-center justify-center overflow-hidden py-[3px]">
-                <div className="w-[34%] h-[34%] max-w-[300px] max-h-[220px] min-w-[120px] min-h-[100px] flex items-center justify-center">
+                <div className="h-[70%] w-auto max-w-[340px] max-h-[420px] min-w-[160px] min-h-[200px] flex items-center justify-center aspect-[14/17]">
                     <svg viewBox="100 50 280 340" className="w-full h-full drop-shadow-lg select-none transition-all duration-300 p-2" preserveAspectRatio="xMidYMid meet">
                     <path d="M 120 380 L 120 280 Q 120 180 160 120 Q 200 60 280 60 Q 340 60 360 100 L 360 140 Q 360 150 350 150" fill="none" stroke="#cbd5e1" strokeWidth="3" />
                     <path d="M 350 190 Q 360 190 360 200 L 360 230 Q 340 230 340 250 Q 340 280 310 310 L 250 330 L 120 380" fill="none" stroke="#cbd5e1" strokeWidth="3" />
