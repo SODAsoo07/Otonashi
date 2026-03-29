@@ -1,5 +1,5 @@
 ﻿
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Settings2, AudioLines, Activity, Wand2, Mic2, Wind, Waves, Download, Upload } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { AudioFile, AdvTrack, LarynxParams, LiveTractState, EQBand } from '../types';
@@ -10,7 +10,7 @@ import TractVisualizer from './TractVisualizer';
 import TimelineEditor from './TimelineEditor';
 import ParamInput from './ui/ParamInput';
 import EditorModeBar from './ui/EditorModeBar';
-import KoreanVowelSynth, { VowelSynthFrame } from './KoreanVowelSynth';
+import KoreanVowelSynth, { VowelSynthFrame, CustomConsonantProfile } from './KoreanVowelSynth';
 
 interface AdvancedTractTabProps {
     audioContext: AudioContext;
@@ -258,20 +258,20 @@ const CONSONANT_KEYFRAME_DUR_SEC: Record<string, number> = {
     'ㄹ': 0.08,
 };
 const CONSONANT_TRACT_PRESETS: Record<string, ConsonantTractOverlay> = {
-    'ㄱ': { x: 0.22, y: 0.55, strength: 0.7 },
-    'ㅋ': { x: 0.22, y: 0.58, strength: 0.75 },
-    'ㄷ': { x: 0.78, y: 0.6, strength: 0.7 },
-    'ㅌ': { x: 0.78, y: 0.62, strength: 0.75 },
-    'ㅂ': { lips: 0.0, lipLen: 0.35, strength: 0.9 },
-    'ㅍ': { lips: 0.0, lipLen: 0.4, strength: 0.9 },
-    'ㅅ': { x: 0.85, y: 0.68, strength: 0.7 },
-    'ㅈ': { x: 0.9, y: 0.7, strength: 0.7 },
-    'ㅊ': { x: 0.9, y: 0.72, strength: 0.75 },
-    'ㅎ': { lips: 0.6, y: 0.45, strength: 0.6 },
-    'ㄴ': { x: 0.78, y: 0.55, nasal: 0.9, strength: 0.75 },
-    'ㅁ': { lips: 0.0, lipLen: 0.3, nasal: 0.9, strength: 0.9 },
-    'ㅇ': { x: 0.25, y: 0.5, nasal: 0.9, strength: 0.75 },
-    'ㄹ': { x: 0.72, y: 0.52, strength: 0.65 },
+    'ㄱ': { x: 0.22, y: 0.55, strength: 0.9 },
+    'ㅋ': { x: 0.22, y: 0.58, strength: 0.95 },
+    'ㄷ': { x: 0.78, y: 0.6, strength: 0.9 },
+    'ㅌ': { x: 0.78, y: 0.62, strength: 0.95 },
+    'ㅂ': { lips: 0.0, lipLen: 0.35, strength: 1.0 },
+    'ㅍ': { lips: 0.0, lipLen: 0.4, strength: 1.0 },
+    'ㅅ': { x: 0.85, y: 0.68, strength: 0.85 },
+    'ㅈ': { x: 0.9, y: 0.7, strength: 0.85 },
+    'ㅊ': { x: 0.9, y: 0.72, strength: 0.9 },
+    'ㅎ': { lips: 0.6, y: 0.45, strength: 0.8 },
+    'ㄴ': { x: 0.78, y: 0.55, nasal: 0.9, strength: 0.9 },
+    'ㅁ': { lips: 0.0, lipLen: 0.3, nasal: 0.9, strength: 1.0 },
+    'ㅇ': { x: 0.25, y: 0.5, nasal: 0.9, strength: 0.9 },
+    'ㄹ': { x: 0.72, y: 0.52, strength: 0.8 },
 };
 const CODA_KEYFRAME_DUR_SEC: Record<string, number> = {
     'ㄱ': 0.06,
@@ -349,7 +349,10 @@ const getBlendForWaveform = (waveform: string, blend: SynthBlend): SynthBlend =>
     return normalizeSynthBlend(blend);
 };
 
-const createDefaultAdvTracks = (language: keyof typeof ADVANCED_TRACT_TRACK_NAMES): AdvTrack[] => {
+const createDefaultAdvTracks = (
+    language: keyof typeof ADVANCED_TRACT_TRACK_NAMES,
+    consonantLabels: readonly string[] = VOWEL_CONSONANT_LIST
+): AdvTrack[] => {
     const labels = ADVANCED_TRACT_TRACK_NAMES[language];
     return [
         { id: 'tongueX', name: labels.tongueX, group: 'adj', color: '#60a5fa', points: [{ t: 0, v: 0.5 }, { t: 1, v: 0.5 }], min: 0, max: 1, interpolation: 'curve' },
@@ -363,7 +366,7 @@ const createDefaultAdvTracks = (language: keyof typeof ADVANCED_TRACT_TRACK_NAME
         { id: 'gain', name: labels.gain, group: 'edit', color: '#ef4444', points: [{ t: 0, v: 0 }, { t: 0.1, v: 1 }, { t: 0.9, v: 1 }, { t: 1, v: 0 }], min: 0, max: 1.5, interpolation: 'linear' },
         { id: 'breath', name: labels.breath, group: 'edit', color: '#22d3ee', points: [{ t: 0, v: 0 }, { t: 1, v: 0 }], min: 0, max: 0.3, interpolation: 'linear' },
         { id: 'consonantGain', name: labels.consonantGain, group: 'edit', color: '#38bdf8', points: [{ t: 0, v: 1 }, { t: 1, v: 1 }], min: 0, max: 2.0, interpolation: 'linear' },
-        { id: 'consonant', name: labels.consonant, group: 'edit', color: '#38bdf8', points: [{ t: 0, v: 0 }], min: 0, max: VOWEL_CONSONANT_LIST.length - 1, interpolation: 'linear' },
+        { id: 'consonant', name: labels.consonant, group: 'edit', color: '#38bdf8', points: [{ t: 0, v: 0 }], min: 0, max: consonantLabels.length - 1, interpolation: 'linear' },
         { id: 'coda', name: labels.coda, group: 'edit', color: '#0ea5e9', points: [{ t: 0, v: 0 }], min: 0, max: VOWEL_CODA_LIST.length - 1, interpolation: 'linear' },
     ];
 };
@@ -418,6 +421,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
     const [isTimelineOpen, setIsTimelineOpen] = useState(true);
     const [autoExtendAdvDuration, setAutoExtendAdvDuration] = useState(false);
     const [showAnalyzer, setShowAnalyzer] = useState(false);
+    const [customConsonantProfiles, setCustomConsonantProfiles] = useState<CustomConsonantProfile[]>([]);
 
     const [showSpectrogram, setShowSpectrogram] = useState(false);
     const [pitchFileId, setPitchFileId] = useState("");
@@ -436,8 +440,52 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         { id: 5, type: 'lowpass', freq: 15000, gain: 0, q: 0.7, on: true }
     ]);
     const normalizedSynthBlend = normalizeSynthBlend(synthBlend);
+    const vowelConsonantLabels = useMemo(() => {
+        const labels = [...VOWEL_CONSONANT_LIST] as string[];
+        const seen = new Set(labels);
+        customConsonantProfiles.forEach((item) => {
+            const name = (item?.name || '').trim();
+            if (!name || seen.has(name)) return;
+            seen.add(name);
+            labels.push(name);
+        });
+        return labels;
+    }, [customConsonantProfiles]);
+    const customConsonantNoiseBuffers = useMemo(() => {
+        const map: Record<string, AudioBuffer> = {};
+        customConsonantProfiles.forEach(item => {
+            const name = (item?.name || '').trim();
+            if (!name || !item.customNoiseBuffer) return;
+            map[name] = item.customNoiseBuffer;
+        });
+        return map;
+    }, [customConsonantProfiles]);
 
     const [advTracks, setAdvTracks] = useState<AdvTrack[]>(() => createDefaultAdvTracks(language));
+
+    useEffect(() => {
+        setAdvTracks(prev => {
+            const consonantMax = Math.max(0, vowelConsonantLabels.length - 1);
+            let changed = false;
+            const next = prev.map(track => {
+                if (track.id !== 'consonant') return track;
+                let pointsChanged = false;
+                const points = track.points.map(point => {
+                    const clamped = Math.max(0, Math.min(consonantMax, point.v));
+                    if (clamped !== point.v) pointsChanged = true;
+                    return pointsChanged ? { ...point, v: clamped } : point;
+                });
+                if (track.max === consonantMax && !pointsChanged) return track;
+                changed = true;
+                return {
+                    ...track,
+                    max: consonantMax,
+                    points: pointsChanged ? points : track.points,
+                };
+            });
+            return changed ? next : prev;
+        });
+    }, [vowelConsonantLabels]);
 
     const [undoStack, setUndoStack] = useState<any[]>([]);
     const [redoStack, setRedoStack] = useState<any[]>([]);
@@ -753,7 +801,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const codaValue = getValueAtTime('coda', t);
         const consonantIdx = Math.round(consonantValue);
         const codaIdx = Math.round(codaValue);
-        const consonantName = VOWEL_CONSONANT_LIST[Math.max(0, Math.min(consonantIdx, VOWEL_CONSONANT_LIST.length - 1))];
+        const consonantName = vowelConsonantLabels[Math.max(0, Math.min(consonantIdx, vowelConsonantLabels.length - 1))];
         const codaName = VOWEL_CODA_LIST[Math.max(0, Math.min(codaIdx, VOWEL_CODA_LIST.length - 1))];
 
         let overlay: ConsonantTractOverlay | null = null;
@@ -771,7 +819,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
         const strength = overlay ? Math.max(0, Math.min(1, weight * (overlay.strength ?? 0.7))) : 0;
         return { consonantName, codaName, overlay, strength };
-    }, [getValueAtTime]);
+    }, [getValueAtTime, vowelConsonantLabels]);
 
     const syncVisualsToTime = useCallback((t: number) => {
         const baseTract: LiveTractState = {
@@ -862,7 +910,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             const mapped = formantToTract(frame.f1, frame.f2, lips, lipLen, throat);
             newX.push({ t: clamp01(t), v: mapped.x });
             newY.push({ t: clamp01(t), v: mapped.y });
-            const consonantIdx = Math.max(0, VOWEL_CONSONANT_LIST.indexOf(frame.consonant ?? '(none)'));
+            const consonantIdx = Math.max(0, vowelConsonantLabels.indexOf(frame.consonant ?? '(none)'));
             const codaIdx = Math.max(0, VOWEL_CODA_LIST.indexOf(frame.coda ?? '(none)'));
             newConsonant.push({ t: clamp01(t), v: consonantIdx });
             newCoda.push({ t: clamp01(t), v: codaIdx });
@@ -879,7 +927,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             const mapped = formantToTract(lastFrame.f1, lastFrame.f2, lips, lipLen, throat);
             newX.push({ t: clamp01(endT), v: mapped.x });
             newY.push({ t: clamp01(endT), v: mapped.y });
-            const consonantIdx = Math.max(0, VOWEL_CONSONANT_LIST.indexOf(lastFrame.consonant ?? '(none)'));
+            const consonantIdx = Math.max(0, vowelConsonantLabels.indexOf(lastFrame.consonant ?? '(none)'));
             const codaIdx = Math.max(0, VOWEL_CODA_LIST.indexOf(lastFrame.coda ?? '(none)'));
             newConsonant.push({ t: clamp01(endT), v: consonantIdx });
             newCoda.push({ t: clamp01(endT), v: codaIdx });
@@ -899,7 +947,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         }));
 
         commitChange('TTS keyframes');
-    }, [advDuration, autoExtendAdvDuration, commitChange, formantToTract, getValueAtTime, playHeadPos]);
+    }, [advDuration, autoExtendAdvDuration, commitChange, formantToTract, getValueAtTime, playHeadPos, vowelConsonantLabels]);
 
     const startLivePreview = useCallback(() => {
         if (!audioContext || liveAudioRef.current) return;
@@ -1169,7 +1217,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             const track = advTracks.find(t => t.id === trackId);
             if (!track || track.points.length < 2) return [];
             const points = [...track.points].sort((a, b) => a.t - b.t);
-            const segments: Array<{ start: number; end: number; params: ConsonantNoiseParams; name: string }> = [];
+            const segments: Array<{ start: number; end: number; params: ConsonantNoiseParams; name: string; sourceBuffer?: AudioBuffer }> = [];
             for (let i = 0; i < points.length - 1; i++) {
                 const startT = Math.max(0, Math.min(1, points[i].t));
                 const endT = Math.max(0, Math.min(1, points[i + 1].t));
@@ -1182,28 +1230,26 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     end: endT * advDuration,
                     params: paramsMap[name] || DEFAULT_CONSONANT_NOISE,
                     name,
+                    sourceBuffer: trackId === 'consonant' ? customConsonantNoiseBuffers[name] : undefined,
                 });
             }
             return segments;
         };
 
-        const consonantSegments = buildConsonantSegments('consonant', VOWEL_CONSONANT_LIST, CONSONANT_NOISE_PARAMS);
+        const consonantSegments = buildConsonantSegments('consonant', vowelConsonantLabels, CONSONANT_NOISE_PARAMS);
         const codaSegments = buildConsonantSegments('coda', VOWEL_CODA_LIST, CODA_NOISE_PARAMS);
         const hasConsonantSegments = consonantSegments.length > 0 || codaSegments.length > 0;
-        let consonantNoise: AudioBufferSourceNode | null = null;
 
         if (hasConsonantSegments) {
-            const noiseBuffer = createNoiseBuffer(offline, Math.max(1, Math.floor(sr * advDuration)), 'white');
-            consonantNoise = offline.createBufferSource();
-            consonantNoise.buffer = noiseBuffer;
-            consonantNoise.loop = true;
-
-        const scheduleSegment = (seg: { start: number; end: number; params: ConsonantNoiseParams }, gainFactor: number) => {
-            const segLen = Math.max(0.0005, seg.end - seg.start);
-            const attack = Math.min(seg.params.attack, segLen * 0.4);
-            const release = Math.min(seg.params.release, segLen * 0.4);
-            const sustainEnd = Math.max(seg.start + attack, seg.end - release);
-            const targetGain = Math.max(0, seg.params.gain * gainFactor);
+            const scheduleSegment = (
+                seg: { start: number; end: number; params: ConsonantNoiseParams; sourceBuffer?: AudioBuffer },
+                gainFactor: number
+            ) => {
+                const segLen = Math.max(0.0005, seg.end - seg.start);
+                const attack = Math.min(seg.params.attack, segLen * 0.4);
+                const release = Math.min(seg.params.release, segLen * 0.4);
+                const sustainEnd = Math.max(seg.start + attack, seg.end - release);
+                const targetGain = Math.max(0, seg.params.gain * gainFactor);
 
                 const bpf = offline.createBiquadFilter();
                 bpf.type = 'bandpass';
@@ -1217,9 +1263,21 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                 g.gain.setValueAtTime(targetGain, sustainEnd);
                 g.gain.linearRampToValueAtTime(0, seg.end);
 
-                consonantNoise!.connect(bpf);
+                const src = offline.createBufferSource();
+                if (seg.sourceBuffer) {
+                    src.buffer = seg.sourceBuffer;
+                    src.loop = true;
+                } else {
+                    const segNoiseLength = Math.max(1, Math.floor(sr * Math.max(0.3, segLen + 0.05)));
+                    src.buffer = createNoiseBuffer(offline, segNoiseLength, 'white');
+                    src.loop = true;
+                }
+
+                src.connect(bpf);
                 bpf.connect(g);
                 g.connect(mG);
+                src.start(seg.start);
+                src.stop(Math.min(advDuration, seg.end + 0.03));
             };
 
             const getConsonantGainAt = (timeSec: number) => {
@@ -1256,7 +1314,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
 
         lastRenderedRef.current = renderedBuffer;
         return renderedBuffer;
-    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, synthBlend, eqBands, getValueAtTime, simIntensity, consonantBoostOn, resolveConsonantOverlay, blendTract]);
+    }, [audioContext, advDuration, advTracks, tractSourceType, tractSourceFileId, files, larynxParams, fadeOutDuration, synthWaveform, synthBlend, eqBands, getValueAtTime, simIntensity, consonantBoostOn, resolveConsonantOverlay, blendTract, customConsonantNoiseBuffers]);
 
     useEffect(() => {
         if (previewDebounceRef.current) window.clearTimeout(previewDebounceRef.current);
@@ -1349,7 +1407,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         setAdvTracks(prev => prev.map(tr => {
             if (tr.group !== 'adj' && tr.id !== 'pitch' && tr.id !== 'gender' && tr.id !== 'consonant' && tr.id !== 'coda' && tr.id !== 'consonantGain') return tr;
             let val = 0;
-            if (tr.id === 'tongueX') val = liveTract.x; else if (tr.id === 'tongueY') val = liveTract.y; else if (tr.id === 'lips') val = liveTract.lips; else if (tr.id === 'lipLen') val = liveTract.lipLen; else if (tr.id === 'throat') val = liveTract.throat; else if (tr.id === 'nasal') val = liveTract.nasal; else if (tr.id === 'pitch') val = manualPitch; else if (tr.id === 'gender') val = manualGender; else if (tr.id === 'consonant') val = Math.max(0, VOWEL_CONSONANT_LIST.indexOf(selectedVowelConsonant ?? '(none)')); else if (tr.id === 'coda') val = Math.max(0, VOWEL_CODA_LIST.indexOf(selectedVowelCoda ?? '(none)'));
+            if (tr.id === 'tongueX') val = liveTract.x; else if (tr.id === 'tongueY') val = liveTract.y; else if (tr.id === 'lips') val = liveTract.lips; else if (tr.id === 'lipLen') val = liveTract.lipLen; else if (tr.id === 'throat') val = liveTract.throat; else if (tr.id === 'nasal') val = liveTract.nasal; else if (tr.id === 'pitch') val = manualPitch; else if (tr.id === 'gender') val = manualGender; else if (tr.id === 'consonant') val = Math.max(0, vowelConsonantLabels.indexOf(selectedVowelConsonant ?? '(none)')); else if (tr.id === 'coda') val = Math.max(0, VOWEL_CODA_LIST.indexOf(selectedVowelCoda ?? '(none)'));
             if (tr.id === 'consonantGain') val = getValueAtTime('consonantGain', t);
             return { ...tr, points: [...tr.points.filter(p => Math.abs(p.t - t) > 0.005), { t, v: val }].sort((a, b) => a.t - b.t) };
         }));
@@ -1362,7 +1420,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
         const noneCodaIdx = 0;
         const consonantName = selectedVowelConsonant ?? null;
         const codaName = selectedVowelCoda ?? null;
-        const consonantIdx = Math.max(0, VOWEL_CONSONANT_LIST.indexOf(consonantName ?? '(none)'));
+        const consonantIdx = Math.max(0, vowelConsonantLabels.indexOf(consonantName ?? '(none)'));
         const codaIdx = Math.max(0, VOWEL_CODA_LIST.indexOf(codaName ?? '(none)'));
         const consonantDur = consonantName ? (CONSONANT_KEYFRAME_DUR_SEC[consonantName] ?? 0.1) : 0;
         const codaDur = codaName ? (CODA_KEYFRAME_DUR_SEC[codaName] ?? 0.08) : 0;
@@ -1394,11 +1452,11 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
             return { ...tr, points: points.sort((a, b) => a.t - b.t) };
         }));
         commitChange('Record consonant');
-    }, [playHeadPos, selectedVowelConsonant, selectedVowelCoda, advDuration, commitChange, getValueAtTime]);
+    }, [playHeadPos, selectedVowelConsonant, selectedVowelCoda, advDuration, commitChange, getValueAtTime, vowelConsonantLabels]);
 
     const handleResetAllKeyframes = useCallback(() => {
         commitChange("Reset all keyframes");
-        const defaultTracks = createDefaultAdvTracks(language);
+        const defaultTracks = createDefaultAdvTracks(language, vowelConsonantLabels);
         setAdvTracks(defaultTracks);
         setSelectedTrackId('pitch');
         setPlayheadPos(0);
@@ -1513,7 +1571,8 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                             setSelectedConsonantName={setSelectedVowelConsonant}
                         selectedJongName={selectedVowelCoda}
                         setSelectedJongName={setSelectedVowelCoda}
-                        onPreviewPlayingChange={setIsVowelPreviewPlaying}
+                            onPreviewPlayingChange={setIsVowelPreviewPlaying}
+                            onCustomConsonantsChange={setCustomConsonantProfiles}
                     />
                     </div>
                 </div>
@@ -1792,7 +1851,7 @@ const AdvancedTractTab: React.FC<AdvancedTractTabProps> = ({ audioContext, files
                     getValueAtTime={getValueAtTime}
                     simPauseOffsetRef={simPauseOffsetRef}
                     advDuration={advDuration}
-                    consonantLabels={[...VOWEL_CONSONANT_LIST]}
+                    consonantLabels={[...vowelConsonantLabels]}
                     codaLabels={[...VOWEL_CODA_LIST]}
                     onResetAllKeyframes={handleResetAllKeyframes}
                     onUndo={handleUndo}

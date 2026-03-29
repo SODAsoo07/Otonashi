@@ -8,6 +8,16 @@ type BlendWave = 'sawtooth' | 'sine' | 'square' | 'noise';
 type SynthBlend = Record<BlendWave, number>;
 
 export type VowelSynthFrame = { f1: number; f2: number; durMs: number; consonant?: string | null; coda?: string | null };
+export type CustomConsonantProfile = {
+  name: string;
+  baseName: string;
+  freqScale: number;
+  durScale: number;
+  aspirScale: number;
+  ampScale: number;
+  customNoiseName?: string;
+  customNoiseBuffer?: AudioBuffer;
+};
 
 interface KoreanVowelSynthProps {
   audioContext: AudioContext;
@@ -24,6 +34,7 @@ interface KoreanVowelSynthProps {
   onRecordSnapshot: () => void;
   onRecordTts: (frames: VowelSynthFrame[], totalDurationSec: number) => void;
   onRecordConsonant: () => void;
+  onCustomConsonantsChange?: (items: CustomConsonantProfile[]) => void;
   consonantBoostOn: boolean;
   setConsonantBoostOn: React.Dispatch<React.SetStateAction<boolean>>;
   autoExtendDuration: boolean;
@@ -39,9 +50,13 @@ type ConsonantType = 'plosive' | 'fricative' | 'affricate' | 'nasal' | 'liquid';
 
 type Consonant = {
   name: string;
+  recordAs?: string;
+  customNoiseName?: string;
+  customNoiseBuffer?: AudioBuffer;
   type: ConsonantType;
   place: 'velar' | 'alveolar' | 'bilabial' | 'palatal' | 'glottal';
   aspirated: boolean;
+  noiseAmp?: number;
   burstFreq?: number;
   burstBW?: number;
   burstDur?: number;
@@ -54,6 +69,16 @@ type Consonant = {
   tapDur?: number;
   silenceDur?: number;
 };
+
+type CustomConsonantDraft = {
+  name: string;
+  baseName: string;
+  freqScale: number;
+  durScale: number;
+  aspirScale: number;
+  ampScale: number;
+};
+type CustomConsonantEntry = Consonant & CustomConsonantProfile;
 
 type VowelPoint = {
   f1: number;
@@ -194,13 +219,6 @@ const decomposeVowel = (jung: string) => doubleVowels[jung] || [jung];
 
 const getVowelFormants = (vowel: string) => vowelMap[vowel] || { f1: 490, f2: 1350 };
 
-const findConsonantByName = (name: string) => {
-  if (name === 'ㅇ') return null;
-  const ssangMap: Record<string, string> = { 'ㄲ': 'ㄱ', 'ㄸ': 'ㄷ', 'ㅃ': 'ㅂ', 'ㅆ': 'ㅅ', 'ㅉ': 'ㅈ' };
-  const mapped = ssangMap[name] || name;
-  return consonants.find(c => c.name === mapped) || null;
-};
-
 const composeHangul = (cho: string, jung: string, jong?: string | null) => {
   const choIdx = choList.indexOf(cho);
   const jungIdx = jungList.indexOf(jung);
@@ -220,6 +238,43 @@ const getF2Locus = (consonant: Consonant | null) => {
     case 'glottal': return 1500;
     default: return 1500;
   }
+};
+
+const getConsonantOnsetDurationMs = (consonant: Consonant | null) => {
+  if (!consonant) return 0;
+  if (consonant.type === 'plosive') return (consonant.burstDur || 0) + (consonant.aspirated ? (consonant.aspirDur || 0) : 0) + 35;
+  if (consonant.type === 'fricative') return (consonant.fricDur || 0) + 45;
+  if (consonant.type === 'affricate') return (consonant.burstDur || 0) + (consonant.fricDur || 0) + (consonant.aspirated ? (consonant.aspirDur || 0) : 0) + 45;
+  if (consonant.type === 'nasal') return (consonant.nasalDur || 0) + 18;
+  if (consonant.type === 'liquid') return (consonant.tapDur || 0) + (consonant.silenceDur || 0) + 16;
+  return 0;
+};
+
+const getConsonantOverlapMs = (consonant: Consonant | null) => {
+  if (!consonant) return 0;
+  if (consonant.type === 'plosive') return consonant.aspirated ? 44 : 36;
+  if (consonant.type === 'fricative') return 24;
+  if (consonant.type === 'affricate') return consonant.aspirated ? 40 : 32;
+  if (consonant.type === 'nasal') return 22;
+  if (consonant.type === 'liquid') return 18;
+  return 20;
+};
+
+const getTransitionMs = (consonant: Consonant | null) => {
+  if (!consonant || consonant.name === 'ㅇ') return 24;
+  if (consonant.type === 'plosive') return 70;
+  if (consonant.type === 'affricate') return 64;
+  if (consonant.type === 'fricative') return 56;
+  if (consonant.type === 'nasal') return 46;
+  if (consonant.type === 'liquid') return 42;
+  return 50;
+};
+
+const getCodaDurationMs = (jong: string | null) => {
+  if (!jong) return 0;
+  const base = jongParams[jong]?.dur ?? 80;
+  if (jong === 'ㄱ' || jong === 'ㄷ' || jong === 'ㅂ') return Math.max(22, Math.round(base * 0.28));
+  return base;
 };
 
 const createNoiseBuffer = (ctx: AudioContext, durationSec: number, preset: NoisePreset) => {
@@ -275,6 +330,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     onRecordSnapshot,
     onRecordTts,
     onRecordConsonant,
+    onCustomConsonantsChange,
     consonantBoostOn,
     setConsonantBoostOn,
     autoExtendDuration,
@@ -315,6 +371,18 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         vowelPresetLabel: '母音プリセット',
         consonantPresetLabel: '子音プリセット',
         codaPresetLabel: '終声プリセット',
+        customConsonantLabel: 'カスタム子音',
+        customName: '名前',
+        baseConsonant: '基準子音',
+        freqScale: '周波数',
+        durScale: '長さ',
+        aspirScale: '気息',
+        ampScale: '強度',
+        customFile: 'カスタム音声',
+        clearFile: '解除',
+        addCustom: '登録',
+        removeCustom: '削除',
+        duplicateName: '同じ子音名がすでにあります。',
         timeRatio: '時間比率',
         ttsSpeed: 'TTS 速度',
       };
@@ -347,6 +415,18 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
         vowelPresetLabel: 'Vowel presets',
         consonantPresetLabel: 'Consonant presets',
         codaPresetLabel: 'Coda presets',
+        customConsonantLabel: 'Custom consonants',
+        customName: 'Name',
+        baseConsonant: 'Base consonant',
+        freqScale: 'Frequency',
+        durScale: 'Duration',
+        aspirScale: 'Aspiration',
+        ampScale: 'Intensity',
+        customFile: 'Custom audio',
+        clearFile: 'Clear',
+        addCustom: 'Add',
+        removeCustom: 'Delete',
+        duplicateName: 'This consonant name already exists.',
         timeRatio: 'Time ratio',
         ttsSpeed: 'TTS speed',
       };
@@ -378,6 +458,18 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       vowelPresetLabel: '모음 프리셋',
       consonantPresetLabel: '자음 프리셋',
       codaPresetLabel: '받침 프리셋',
+      customConsonantLabel: '커스텀 자음',
+      customName: '이름',
+      baseConsonant: '기반 자음',
+      freqScale: '주파수',
+      durScale: '길이',
+      aspirScale: '기식',
+      ampScale: '강도',
+      customFile: '커스텀 음성',
+      clearFile: '해제',
+      addCustom: '등록',
+      removeCustom: '삭제',
+      duplicateName: '이미 존재하는 자음 이름입니다.',
       timeRatio: '시간 비율',
       ttsSpeed: 'TTS 속도',
     };
@@ -389,8 +481,44 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   const timeoutIdsRef = useRef<number[]>([]);
   const lastTtsFramesRef = useRef<VowelSynthFrame[] | null>(null);
   const lastTtsDurationRef = useRef(0);
+  const [customConsonants, setCustomConsonants] = useState<CustomConsonantEntry[]>([]);
+  const [customNoiseBuffer, setCustomNoiseBuffer] = useState<AudioBuffer | null>(null);
+  const [customNoiseName, setCustomNoiseName] = useState('');
+  const [customDraft, setCustomDraft] = useState<CustomConsonantDraft>({
+    name: '',
+    baseName: 'ㄱ',
+    freqScale: 1,
+    durScale: 1,
+    aspirScale: 1,
+    ampScale: 1,
+  });
+  const consonantRegistry = useMemo(() => [...consonants, ...customConsonants], [customConsonants]);
+  const findConsonant = useCallback((name: string) => {
+    if (!name) return null;
+    const exact = consonantRegistry.find(c => c.name === name);
+    if (exact) return exact;
+    if (name === 'ㅇ') return null;
+    const ssangMap: Record<string, string> = { 'ㄲ': 'ㄱ', 'ㄸ': 'ㄷ', 'ㅃ': 'ㅂ', 'ㅆ': 'ㅅ', 'ㅉ': 'ㅈ' };
+    const mapped = ssangMap[name] || name;
+    return consonantRegistry.find(c => c.name === mapped) || null;
+  }, [consonantRegistry]);
 
-  const selectedConsonant = useMemo(() => (selectedConsonantName ? findConsonantByName(selectedConsonantName) : null), [selectedConsonantName]);
+  const selectedConsonant = useMemo(
+    () => (selectedConsonantName ? findConsonant(selectedConsonantName) : null),
+    [findConsonant, selectedConsonantName]
+  );
+  useEffect(() => {
+    onCustomConsonantsChange?.(customConsonants.map(c => ({
+      name: c.name,
+      baseName: c.baseName,
+      freqScale: c.freqScale,
+      durScale: c.durScale,
+      aspirScale: c.aspirScale,
+      ampScale: c.ampScale,
+      customNoiseName: c.customNoiseName,
+      customNoiseBuffer: c.customNoiseBuffer,
+    })));
+  }, [customConsonants, onCustomConsonantsChange]);
   const selectedJong = selectedJongName;
   const [isPointerDown, setIsPointerDown] = useState(false);
   const [currentF1, setCurrentF1] = useState(490);
@@ -630,6 +758,16 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
   };
 
+  const decodeAudioArrayBuffer = useCallback(async (arrayBuffer: ArrayBuffer) => {
+    const clone = arrayBuffer.slice(0);
+    if (audioContext.decodeAudioData.length <= 1) {
+      return await audioContext.decodeAudioData(clone);
+    }
+    return await new Promise<AudioBuffer>((resolve, reject) => {
+      audioContext.decodeAudioData(clone, resolve, reject);
+    });
+  }, [audioContext]);
+
   const updateFormants = (f1Target: number, f2Target: number) => {
     if (!nodesRef.current) return;
     const now = audioContext.currentTime;
@@ -666,7 +804,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     formantAnimRef.current = requestAnimationFrame(step);
   };
 
-  const startVowelTransition = (consonant: Consonant | null, f1Target: number, f2Target: number) => {
+  const startVowelTransition = (consonant: Consonant | null, f1Target: number, f2Target: number, transitionMs?: number) => {
     const now = audioContext.currentTime;
     if (!nodesRef.current) return;
     nodesRef.current.oscGain.gain.setTargetAtTime(0.002, now, 0.05);
@@ -675,14 +813,16 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
 
     const locus = getF2Locus(consonant);
     if (locus) {
-      nodesRef.current.f2.frequency.setTargetAtTime(locus, now, 0.01);
-      nodesRef.current.f2.frequency.linearRampToValueAtTime(f2Target, now + 0.05);
+      const tMs = transitionMs ?? getTransitionMs(consonant);
+      const startF2 = locus + (f2Target - locus) * 0.08;
+      nodesRef.current.f2.frequency.setTargetAtTime(startF2, now, 0.006);
+      nodesRef.current.f2.frequency.linearRampToValueAtTime(f2Target, now + Math.max(0.015, tMs / 1000));
     }
   };
 
-  const setupNoise = (freq: number, bw: number, amp: number) => {
+  const setupNoise = (freq: number, bw: number, amp: number, sourceBuffer?: AudioBuffer | null) => {
     if (!nodesRef.current) return;
-    const noiseBuffer = createNoiseBuffer(audioContext, 0.5, noisePreset);
+    const noiseBuffer = sourceBuffer || createNoiseBuffer(audioContext, 0.5, noisePreset);
     const noiseSrc = audioContext.createBufferSource();
     noiseSrc.buffer = noiseBuffer;
     noiseSrc.loop = true;
@@ -717,7 +857,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       nodesRef.current.f1.frequency.setTargetAtTime(300, audioContext.currentTime, 0.02);
       nodesRef.current.f2.frequency.setTargetAtTime(p.place === 'bilabial' ? 800 : 1800, audioContext.currentTime, 0.02);
       const isShortStop = jong === 'ㄱ' || jong === 'ㄷ' || jong === 'ㅂ';
-      const stopDur = isShortStop ? Math.max(25, p.dur * 0.28) : p.dur;
+      const stopDur = getCodaDurationMs(jong);
       const fastTc = isShortStop ? 0.012 : 0.03;
       nodesRef.current.oscGain.gain.setTargetAtTime(0.001, audioContext.currentTime, fastTc);
       const t = window.setTimeout(() => {
@@ -754,21 +894,39 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     playingRef.current = true;
     setPreviewPlaying(true);
     const jongValue = jongOverride !== undefined ? jongOverride : selectedJong;
+    const onsetDur = getConsonantOnsetDurationMs(consonant);
+    const overlapMs = getConsonantOverlapMs(consonant);
+    const transitionMs = getTransitionMs(consonant);
+    const scheduleJong = () => {
+      if (!applyJong || !jongValue) return;
+      const codaStart = Math.max(120, onsetDur + 180);
+      const t = window.setTimeout(() => playCoda(jongValue, stopPlayback), codaStart);
+      timeoutIdsRef.current.push(t);
+    };
 
     if (!consonant || consonant.name === 'ㅇ') {
-      startVowelTransition(consonant, f1Target, f2Target);
-      if (applyJong && jongValue) {
-        const t = window.setTimeout(() => playCoda(jongValue, stopPlayback), 240);
-        timeoutIdsRef.current.push(t);
-      }
+      startVowelTransition(consonant, f1Target, f2Target, transitionMs);
+      scheduleJong();
+      return;
+    }
+
+    if (consonant.customNoiseBuffer) {
+      const freq = consonant.burstFreq || consonant.fricFreq || consonant.nasalFreq || 1800;
+      const bw = consonant.burstBW || consonant.fricBW || 900;
+      const totalDur = Math.max(40, onsetDur);
+      setupNoise(freq, bw, consonant.noiseAmp ?? 0.45, consonant.customNoiseBuffer);
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, totalDur - overlapMs));
+      const tStop = window.setTimeout(() => stopNoise(), totalDur);
+      timeoutIdsRef.current.push(tStart);
+      timeoutIdsRef.current.push(tStop);
+      scheduleJong();
       return;
     }
 
     if (consonant.type === 'plosive') {
-      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.45);
+      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, consonant.noiseAmp ?? 0.45);
       const burstDur = consonant.burstDur || 15;
       const aspirDur = consonant.aspirated ? (consonant.aspirDur || 0) : 0;
-      const overlapMs = consonant.aspirated ? 30 : 20;
       const totalDur = burstDur + aspirDur;
 
       if (consonant.aspirated && aspirDur > 0) {
@@ -782,24 +940,22 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       }
 
       const startDelay = Math.max(0, totalDur - overlapMs);
-      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), startDelay);
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), startDelay);
       const tStop = window.setTimeout(() => stopNoise(), totalDur);
       timeoutIdsRef.current.push(tStart);
       timeoutIdsRef.current.push(tStop);
     } else if (consonant.type === 'fricative') {
-      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.4);
+      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, consonant.noiseAmp ?? 0.4);
       const fricDur = consonant.fricDur || 120;
-      const overlapMs = 30;
-      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), Math.max(0, fricDur - overlapMs));
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, fricDur - overlapMs));
       const tStop = window.setTimeout(() => stopNoise(), fricDur);
       timeoutIdsRef.current.push(tStart);
       timeoutIdsRef.current.push(tStop);
     } else if (consonant.type === 'affricate') {
-      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.45);
+      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, consonant.noiseAmp ?? 0.45);
       const burstDur = consonant.burstDur || 20;
       const fricDur = consonant.fricDur || 60;
       const aspirDur = consonant.aspirated ? (consonant.aspirDur || 0) : 0;
-      const overlapMs = consonant.aspirated ? 35 : 25;
       const totalDur = burstDur + fricDur + aspirDur;
       const t1 = window.setTimeout(() => {
         if (nodesRef.current?.noiseBpf) {
@@ -808,42 +964,54 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       }, burstDur);
       timeoutIdsRef.current.push(t1);
 
-      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), Math.max(0, totalDur - overlapMs));
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, totalDur - overlapMs));
       const tStop = window.setTimeout(() => stopNoise(), totalDur);
       timeoutIdsRef.current.push(tStart);
       timeoutIdsRef.current.push(tStop);
     } else if (consonant.type === 'nasal') {
-      startVowelTransition(consonant, consonant.nasalFreq || f1Target, f2Target);
-      const t1 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.nasalDur || 80);
+      updateFormants(consonant.nasalFreq || f1Target, Math.max(900, f2Target * 0.82));
+      nodesRef.current.oscGain.gain.setTargetAtTime(0.0017, audioContext.currentTime, 0.018);
+      const t1 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, onsetDur - overlapMs));
       timeoutIdsRef.current.push(t1);
     } else if (consonant.type === 'liquid') {
-      startVowelTransition(consonant, f1Target, f2Target);
+      nodesRef.current.oscGain.gain.setTargetAtTime(0.0016, audioContext.currentTime, 0.01);
       const t1 = window.setTimeout(() => {
-        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
-        const t2 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.silenceDur || 10);
-        timeoutIdsRef.current.push(t2);
+        nodesRef.current?.oscGain.gain.setTargetAtTime(0.0005, audioContext.currentTime, 0.008);
       }, consonant.tapDur || 20);
+      const t2 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, onsetDur - overlapMs));
       timeoutIdsRef.current.push(t1);
+      timeoutIdsRef.current.push(t2);
     }
 
-    if (applyJong && jongValue) {
-      const t = window.setTimeout(() => playCoda(jongValue, stopPlayback), 320);
-      timeoutIdsRef.current.push(t);
-    }
+    scheduleJong();
   };
 
   const playConsonantOnChain = (consonant: Consonant | null, f1Target: number, f2Target: number) => {
     if (!nodesRef.current) return;
+    const onsetDur = getConsonantOnsetDurationMs(consonant);
+    const overlapMs = getConsonantOverlapMs(consonant);
+    const transitionMs = getTransitionMs(consonant);
     if (!consonant || consonant.name === 'ㅇ') {
-      startVowelTransition(consonant, f1Target, f2Target);
+      startVowelTransition(consonant, f1Target, f2Target, transitionMs);
+      return;
+    }
+
+    if (consonant.customNoiseBuffer) {
+      const freq = consonant.burstFreq || consonant.fricFreq || consonant.nasalFreq || 1800;
+      const bw = consonant.burstBW || consonant.fricBW || 900;
+      const totalDur = Math.max(40, onsetDur);
+      setupNoise(freq, bw, consonant.noiseAmp ?? 0.45, consonant.customNoiseBuffer);
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, totalDur - overlapMs));
+      const tStop = window.setTimeout(() => stopNoise(), totalDur);
+      timeoutIdsRef.current.push(tStart);
+      timeoutIdsRef.current.push(tStop);
       return;
     }
 
     if (consonant.type === 'plosive') {
-      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, 0.45);
+      setupNoise(consonant.burstFreq || 1800, consonant.burstBW || 600, consonant.noiseAmp ?? 0.45);
       const burstDur = consonant.burstDur || 15;
       const aspirDur = consonant.aspirated ? (consonant.aspirDur || 0) : 0;
-      const overlapMs = consonant.aspirated ? 30 : 20;
       const totalDur = burstDur + aspirDur;
 
       if (consonant.aspirated && aspirDur > 0) {
@@ -857,7 +1025,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       }
 
       const startDelay = Math.max(0, totalDur - overlapMs);
-      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), startDelay);
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), startDelay);
       const tStop = window.setTimeout(() => stopNoise(), totalDur);
       timeoutIdsRef.current.push(tStart);
       timeoutIdsRef.current.push(tStop);
@@ -865,10 +1033,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (consonant.type === 'fricative') {
-      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, 0.4);
+      setupNoise(consonant.fricFreq || 3000, consonant.fricBW || 1200, consonant.noiseAmp ?? 0.4);
       const fricDur = consonant.fricDur || 120;
-      const overlapMs = 30;
-      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), Math.max(0, fricDur - overlapMs));
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, fricDur - overlapMs));
       const tStop = window.setTimeout(() => stopNoise(), fricDur);
       timeoutIdsRef.current.push(tStart);
       timeoutIdsRef.current.push(tStop);
@@ -876,11 +1043,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (consonant.type === 'affricate') {
-      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, 0.45);
+      setupNoise(consonant.burstFreq || 3000, consonant.burstBW || 1200, consonant.noiseAmp ?? 0.45);
       const burstDur = consonant.burstDur || 20;
       const fricDur = consonant.fricDur || 60;
       const aspirDur = consonant.aspirated ? (consonant.aspirDur || 0) : 0;
-      const overlapMs = consonant.aspirated ? 35 : 25;
       const totalDur = burstDur + fricDur + aspirDur;
 
       const t1 = window.setTimeout(() => {
@@ -890,7 +1056,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       }, burstDur);
       timeoutIdsRef.current.push(t1);
 
-      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), Math.max(0, totalDur - overlapMs));
+      const tStart = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, totalDur - overlapMs));
       const tStop = window.setTimeout(() => stopNoise(), totalDur);
       timeoutIdsRef.current.push(tStart);
       timeoutIdsRef.current.push(tStop);
@@ -898,20 +1064,21 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     }
 
     if (consonant.type === 'nasal') {
-      startVowelTransition(consonant, consonant.nasalFreq || f1Target, f2Target);
-      const t1 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.nasalDur || 80);
+      updateFormants(consonant.nasalFreq || f1Target, Math.max(900, f2Target * 0.82));
+      nodesRef.current.oscGain.gain.setTargetAtTime(0.0017, audioContext.currentTime, 0.018);
+      const t1 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, onsetDur - overlapMs));
       timeoutIdsRef.current.push(t1);
       return;
     }
 
     if (consonant.type === 'liquid') {
-      startVowelTransition(consonant, f1Target, f2Target);
+      nodesRef.current.oscGain.gain.setTargetAtTime(0.0016, audioContext.currentTime, 0.01);
       const t1 = window.setTimeout(() => {
-        nodesRef.current?.oscGain.gain.setTargetAtTime(0, audioContext.currentTime, 0.01);
-        const t2 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target), consonant.silenceDur || 10);
-        timeoutIdsRef.current.push(t2);
+        nodesRef.current?.oscGain.gain.setTargetAtTime(0.0005, audioContext.currentTime, 0.008);
       }, consonant.tapDur || 20);
+      const t2 = window.setTimeout(() => startVowelTransition(consonant, f1Target, f2Target, transitionMs), Math.max(0, onsetDur - overlapMs));
       timeoutIdsRef.current.push(t1);
+      timeoutIdsRef.current.push(t2);
     }
   };
 
@@ -928,7 +1095,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     onFormantChange(f1, f2);
     const nearest = findNearestVowel(f1, f2);
     if (nearest) {
-      const cho = selectedConsonant ? selectedConsonant.name : 'ㅇ';
+      const cho = selectedConsonant ? (selectedConsonant.recordAs || selectedConsonant.name) : 'ㅇ';
       const vowel = nearest.korean || nearest.label;
       setNearestSyllable(composeHangul(cho, vowel, selectedJong));
     }
@@ -973,35 +1140,28 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     for (const char of ttsText.trim()) {
       const decomp = decomposeHangul(char);
       if (!decomp) continue;
-      const consonant = findConsonantByName(decomp.cho);
+      const consonant = findConsonant(decomp.cho);
       const vowelSeq = decomposeVowel(decomp.jung);
       const jong = decomp.jong || null;
       const consonantName = consonant ? consonant.name : null;
       const codaName = jong || null;
 
-      let onsetDur = 0;
-      if (consonant) {
-        if (consonant.type === 'plosive') onsetDur = (consonant.burstDur || 0) + (consonant.aspirated ? (consonant.aspirDur || 0) : 0) + 50;
-        else if (consonant.type === 'fricative') onsetDur = (consonant.fricDur || 0) + 50;
-        else if (consonant.type === 'affricate') onsetDur = (consonant.burstDur || 0) + (consonant.fricDur || 0) + (consonant.aspirated ? (consonant.aspirDur || 0) : 0) + 50;
-        else if (consonant.type === 'nasal') onsetDur = (consonant.nasalDur || 0) + 30;
-        else if (consonant.type === 'liquid') onsetDur = (consonant.tapDur || 0) + (consonant.silenceDur || 0) + 30;
-      }
+      const onsetDur = getConsonantOnsetDurationMs(consonant);
 
       const v0 = getVowelFormants(vowelSeq[0]);
       if (vowelSeq.length > 1) {
         const v1 = getVowelFormants(vowelSeq[1]);
-        events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 100 });
+        events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 110 });
         events.push({ type: 'glide', f1: v1.f1, f2: v1.f2, dur: 120 });
-        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 100, consonant: consonantName, coda: codaName });
+        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 110, consonant: consonantName, coda: codaName });
         frames.push({ f1: v1.f1, f2: v1.f2, durMs: 120, consonant: consonantName, coda: codaName });
       } else {
-        events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 200 });
-        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 200, consonant: consonantName, coda: codaName });
+        events.push({ type: 'syllable', consonant, jong, f1: v0.f1, f2: v0.f2, dur: onsetDur + 190 });
+        frames.push({ f1: v0.f1, f2: v0.f2, durMs: onsetDur + 190, consonant: consonantName, coda: codaName });
       }
 
-      if (jong) events.push({ type: 'coda', jong, dur: 80 });
-      events.push({ type: 'silence', dur: 60 });
+      if (jong) events.push({ type: 'coda', jong, dur: getCodaDurationMs(jong) });
+      events.push({ type: 'silence', dur: 45 });
     }
 
     if (events.length === 0) {
@@ -1028,22 +1188,22 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
       if (ev.type === 'silence' || ev.type === 'coda') return 0;
       let eased = Math.min(base, 220);
       if (ev.type === 'glide') {
-        eased = Math.min(base, Math.max(60, base * 0.6));
+        eased = Math.min(base, Math.max(50, base * 0.52));
       }
       if (ev.type === 'syllable' && (ev.jong === 'ㄱ' || ev.jong === 'ㄷ' || ev.jong === 'ㅂ')) {
-        eased = Math.min(eased, Math.max(30, base * 0.28));
+        eased = Math.min(eased, Math.max(24, base * 0.22));
       } else if (ev.type === 'syllable' && (!ev.consonant || ev.consonant.name === 'ㅇ')) {
-        eased = Math.min(eased, Math.max(45, base * 0.4));
+        eased = Math.min(eased, Math.max(26, base * 0.24));
       } else if (ev.type === 'syllable' && ev.consonant) {
         if (['ㅁ', 'ㄹ', 'ㅇ', 'ㄴ'].includes(ev.consonant.name)) {
-          eased = Math.min(eased, Math.max(55, base * 0.45));
+          eased = Math.min(eased, Math.max(32, base * 0.28));
         } else if (ev.consonant.type === 'nasal' || ev.consonant.type === 'liquid') {
-          eased = Math.min(eased, Math.max(65, base * 0.55));
+          eased = Math.min(eased, Math.max(36, base * 0.34));
         } else {
-          eased = Math.min(eased, Math.max(80, base * 0.7));
+          eased = Math.min(eased, Math.max(50, base * 0.46));
         }
       }
-      return Math.max(50, Math.min(base, eased));
+      return Math.max(24, Math.min(base, eased));
     };
 
     const playNext = () => {
@@ -1086,17 +1246,10 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     const preset = lastPresetVowelRef.current;
     const f1 = preset ? preset.f1 : currentF1Ref.current;
     const f2 = preset ? preset.f2 : currentF2Ref.current;
-    const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
+    const consonantObj = selectedConsonantName ? findConsonant(selectedConsonantName) : null;
     const vowelDur = 220;
-    let onsetDur = 0;
-    if (consonantObj) {
-      if (consonantObj.type === 'plosive') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.aspirated ? (consonantObj.aspirDur || 0) : 0) + 50;
-      else if (consonantObj.type === 'fricative') onsetDur = (consonantObj.fricDur || 0) + 50;
-      else if (consonantObj.type === 'affricate') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.fricDur || 0) + (consonantObj.aspirated ? (consonantObj.aspirDur || 0) : 0) + 50;
-      else if (consonantObj.type === 'nasal') onsetDur = (consonantObj.nasalDur || 0) + 30;
-      else if (consonantObj.type === 'liquid') onsetDur = (consonantObj.tapDur || 0) + (consonantObj.silenceDur || 0) + 30;
-    }
-    const jongDur = selectedJongName ? (jongParams[selectedJongName]?.dur ?? 80) : 0;
+    const onsetDur = getConsonantOnsetDurationMs(consonantObj);
+    const jongDur = selectedJongName ? getCodaDurationMs(selectedJongName) : 0;
     const presetFrames: VowelSynthFrame[] = [];
     if (consonantObj && onsetDur > 0) {
       presetFrames.push({ f1, f2, durMs: onsetDur, consonant: consonantObj.name, coda: null });
@@ -1111,7 +1264,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     const scaledFrames = presetFrames.map(frame => ({ ...frame, durMs: frame.durMs * ratio }));
     const total = scaledFrames.reduce((sum, f) => sum + f.durMs, 0) / 1000;
     return { frames: scaledFrames, totalSec: total };
-  }, [selectedConsonantName, selectedJongName, ttsTimeRatio]);
+  }, [findConsonant, selectedConsonantName, selectedJongName, ttsTimeRatio]);
 
   const handleRecord = () => {
     if (ttsPlaying) return;
@@ -1147,16 +1300,9 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   };
 
   const estimatePreviewDurationMs = (consonantObj: Consonant | null, jongValue: string | null) => {
-    let onsetDur = 0;
-    if (consonantObj) {
-      if (consonantObj.type === 'plosive') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.aspirDur || 0) + 50;
-      else if (consonantObj.type === 'fricative') onsetDur = (consonantObj.fricDur || 0) + 50;
-      else if (consonantObj.type === 'affricate') onsetDur = (consonantObj.burstDur || 0) + (consonantObj.fricDur || 0) + (consonantObj.aspirDur || 0) + 50;
-      else if (consonantObj.type === 'nasal') onsetDur = (consonantObj.nasalDur || 0) + 30;
-      else if (consonantObj.type === 'liquid') onsetDur = (consonantObj.tapDur || 0) + (consonantObj.silenceDur || 0) + 30;
-    }
+    const onsetDur = getConsonantOnsetDurationMs(consonantObj);
     const vowelDur = 220;
-    const jongDur = jongValue ? (jongParams[jongValue]?.dur ?? 80) : 0;
+    const jongDur = getCodaDurationMs(jongValue);
     const gap = 140;
     return Math.max(200, onsetDur + vowelDur + jongDur + gap);
   };
@@ -1165,7 +1311,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     const preset = lastPresetVowelRef.current;
     const f1 = preset ? preset.f1 : currentF1Ref.current;
     const f2 = preset ? preset.f2 : currentF2Ref.current;
-    const consonantObj = selectedConsonantName ? findConsonantByName(selectedConsonantName) : null;
+    const consonantObj = selectedConsonantName ? findConsonant(selectedConsonantName) : null;
     const jongValue = selectedJongName ?? null;
     await playConsonantAndVowel(consonantObj, f1, f2, true, jongValue, { keepPreviewLoop: true });
     const dur = estimatePreviewDurationMs(consonantObj, jongValue);
@@ -1262,7 +1408,7 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
   useEffect(() => {
     const nearest = findNearestVowel(currentF1, currentF2);
     if (!nearest) return;
-    const cho = selectedConsonant ? selectedConsonant.name : 'ㅇ';
+    const cho = selectedConsonant ? (selectedConsonant.recordAs || selectedConsonant.name) : 'ㅇ';
     const vowel = nearest.korean || nearest.label;
     setNearestSyllable(composeHangul(cho, vowel, selectedJong));
   }, [currentF1, currentF2, selectedConsonant, selectedJong, findNearestVowel]);
@@ -1296,6 +1442,81 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
     });
     return list;
   }, []);
+
+  const baseConsonantOptions = useMemo(
+    () => consonants.filter(c => c.name !== 'ㅇ').map(c => c.name),
+    []
+  );
+
+  const isCustomNameConflict = useMemo(() => {
+    const name = customDraft.name.trim();
+    if (!name) return false;
+    return consonantRegistry.some(c => c.name === name);
+  }, [consonantRegistry, customDraft.name]);
+
+  const handleAddCustomConsonant = useCallback(() => {
+    const name = customDraft.name.trim();
+    if (!name) return;
+    if (consonantRegistry.some(c => c.name === name)) return;
+    const base = consonants.find(c => c.name === customDraft.baseName);
+    if (!base) return;
+    const scaleNum = (value: number | undefined, scale: number, min = 1) => {
+      if (value === undefined) return undefined;
+      return Math.max(min, Math.round(value * scale));
+    };
+    const next: Consonant = {
+      ...base,
+      name,
+      recordAs: base.name,
+      customNoiseName: customNoiseName || undefined,
+      customNoiseBuffer: customNoiseBuffer || undefined,
+      noiseAmp: Math.max(0.25, Math.min(1.8, customDraft.ampScale)),
+      burstFreq: scaleNum(base.burstFreq, customDraft.freqScale, 80),
+      burstBW: scaleNum(base.burstBW, customDraft.freqScale, 80),
+      fricFreq: scaleNum(base.fricFreq, customDraft.freqScale, 80),
+      fricBW: scaleNum(base.fricBW, customDraft.freqScale, 80),
+      nasalFreq: scaleNum(base.nasalFreq, customDraft.freqScale, 80),
+      burstDur: scaleNum(base.burstDur, customDraft.durScale, 1),
+      fricDur: scaleNum(base.fricDur, customDraft.durScale, 1),
+      nasalDur: scaleNum(base.nasalDur, customDraft.durScale, 1),
+      tapDur: scaleNum(base.tapDur, customDraft.durScale, 1),
+      silenceDur: scaleNum(base.silenceDur, customDraft.durScale, 1),
+      aspirDur: scaleNum(base.aspirDur, customDraft.aspirScale, 0),
+      aspirated: (scaleNum(base.aspirDur, customDraft.aspirScale, 0) || 0) > 0,
+    };
+    setCustomConsonants(prev => [...prev, next]);
+    setSelectedConsonantName(name);
+    setCustomDraft(prev => ({ ...prev, name: '' }));
+    setCustomNoiseBuffer(null);
+    setCustomNoiseName('');
+    markPresetChange();
+  }, [consonantRegistry, customDraft, customNoiseBuffer, customNoiseName, setSelectedConsonantName]);
+
+  const handleDeleteCustomConsonant = useCallback((name: string) => {
+    setCustomConsonants(prev => prev.filter(c => c.name !== name));
+    if (selectedConsonantName === name) {
+      setSelectedConsonantName(null);
+    }
+    markPresetChange();
+  }, [selectedConsonantName, setSelectedConsonantName]);
+
+  const handleCustomNoiseFile = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      const arr = await file.arrayBuffer();
+      const decoded = await decodeAudioArrayBuffer(arr);
+      setCustomNoiseBuffer(decoded);
+      setCustomNoiseName(file.name);
+    } catch {
+      setCustomNoiseBuffer(null);
+      setCustomNoiseName('');
+      if (typeof window !== 'undefined') {
+        window.alert(language === 'ko' ? '오디오 파일을 읽지 못했습니다.' : language === 'ja' ? '音声ファイルを読み込めませんでした。' : 'Failed to read audio file.');
+      }
+    }
+  }, [decodeAudioArrayBuffer, language]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
@@ -1381,6 +1602,98 @@ const KoreanVowelSynth: React.FC<KoreanVowelSynthProps> = ({
               >
                 <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${consonantBoostOn ? 'left-4.5' : 'left-0.5'}`} />
               </button>
+            </div>
+            <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+              <div className="text-[10px] font-black text-slate-500 uppercase">{text.customConsonantLabel}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <input
+                  value={customDraft.name}
+                  onChange={e => setCustomDraft(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder={text.customName}
+                  className="px-2 py-1.5 text-xs rounded border border-slate-200 font-bold text-slate-800 outline-none"
+                />
+                <div className="flex items-center gap-2">
+                  <select
+                    value={customDraft.baseName}
+                    onChange={e => setCustomDraft(prev => ({ ...prev, baseName: e.target.value }))}
+                    className="flex-1 px-2 py-1.5 text-xs rounded border border-slate-200 font-bold text-slate-800 outline-none"
+                  >
+                    {baseConsonantOptions.map(name => (
+                      <option key={name} value={name}>{text.baseConsonant}: {name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleAddCustomConsonant}
+                    disabled={!customDraft.name.trim() || isCustomNameConflict}
+                    className={`px-3 py-1.5 rounded text-xs font-black ${(!customDraft.name.trim() || isCustomNameConflict) ? 'bg-slate-200 text-slate-400' : 'bg-indigo-500 text-white'}`}
+                  >
+                    {text.addCustom}
+                  </button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="px-2 py-1.5 rounded border border-slate-200 text-[11px] font-black text-slate-700 bg-white cursor-pointer">
+                  {text.customFile}
+                  <input type="file" accept="audio/*,.wav" className="hidden" onChange={handleCustomNoiseFile} />
+                </label>
+                {customNoiseName && (
+                  <>
+                    <span className="text-[10px] font-bold text-slate-500">{customNoiseName}</span>
+                    <button
+                      onClick={() => {
+                        setCustomNoiseBuffer(null);
+                        setCustomNoiseName('');
+                      }}
+                      className="px-2 py-1 rounded border border-slate-200 text-[10px] font-black text-slate-600 bg-white"
+                    >
+                      {text.clearFile}
+                    </button>
+                  </>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500">
+                    <span>{text.freqScale}</span><span>{customDraft.freqScale.toFixed(2)}x</span>
+                  </div>
+                  <input type="range" min="0.6" max="1.6" step="0.05" value={customDraft.freqScale} onChange={e => setCustomDraft(prev => ({ ...prev, freqScale: Number(e.target.value) }))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500">
+                    <span>{text.durScale}</span><span>{customDraft.durScale.toFixed(2)}x</span>
+                  </div>
+                  <input type="range" min="0.5" max="2.0" step="0.05" value={customDraft.durScale} onChange={e => setCustomDraft(prev => ({ ...prev, durScale: Number(e.target.value) }))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500">
+                    <span>{text.aspirScale}</span><span>{customDraft.aspirScale.toFixed(2)}x</span>
+                  </div>
+                  <input type="range" min="0.5" max="2.0" step="0.05" value={customDraft.aspirScale} onChange={e => setCustomDraft(prev => ({ ...prev, aspirScale: Number(e.target.value) }))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" />
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500">
+                    <span>{text.ampScale}</span><span>{customDraft.ampScale.toFixed(2)}x</span>
+                  </div>
+                  <input type="range" min="0.5" max="1.8" step="0.05" value={customDraft.ampScale} onChange={e => setCustomDraft(prev => ({ ...prev, ampScale: Number(e.target.value) }))} className="w-full h-1.5 bg-slate-200 rounded-full appearance-none accent-indigo-500" />
+                </div>
+              </div>
+              {isCustomNameConflict && (
+                <div className="text-[10px] font-bold text-rose-500">{text.duplicateName}</div>
+              )}
+              {customConsonants.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {customConsonants.map(item => {
+                    const isSelected = selectedConsonantName === item.name;
+                    return (
+                      <div key={item.name} className={`flex items-center gap-1 border rounded-md px-2 py-1 text-xs font-black ${isSelected ? 'bg-blue-500 text-white border-blue-400' : 'bg-white text-slate-700 border-slate-200'}`}>
+                        <button onClick={() => setSelectedConsonantName(item.name)}>{item.name}</button>
+                        {item.customNoiseName && <span className={`text-[9px] ${isSelected ? 'text-white/80' : 'text-indigo-500'}`}>FILE</span>}
+                        <button title={text.removeCustom} onClick={() => handleDeleteCustomConsonant(item.name)} className={`${isSelected ? 'text-white/80' : 'text-rose-500'}`}>×</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <div className="text-[10px] font-black text-slate-500 uppercase">{text.consonantPresetLabel}</div>

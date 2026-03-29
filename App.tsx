@@ -1,5 +1,6 @@
 ﻿import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Activity, Download, Globe, HelpCircle, Redo2, Undo2, Upload, User, Volume2 } from 'lucide-react';
+import JSZip from 'jszip';
 import FileRack from './components/FileRack';
 import HelpModal from './components/HelpModal';
 import StudioTab from './components/StudioTab';
@@ -23,15 +24,30 @@ type TabHistory = {
     undo: HistoryState[];
     redo: HistoryState[];
 };
-type ProjectFileData = {
+type LegacyProjectFileData = {
     id: string;
     name: string;
     data: string;
 };
-type SerializedProjectData = {
+type LegacySerializedProjectData = {
     version: string;
     timestamp?: number;
-    files: ProjectFileData[];
+    files: LegacyProjectFileData[];
+    ui: UIConfig;
+    activeFileId?: string | null;
+    activeTab?: TabId;
+    fileCounter?: number;
+};
+type PackedProjectFileData = {
+    id: string;
+    name: string;
+    path: string;
+};
+type PackedSerializedProjectData = {
+    version: string;
+    format: 'otz';
+    timestamp?: number;
+    files: PackedProjectFileData[];
     ui: UIConfig;
     activeFileId?: string | null;
     activeTab?: TabId;
@@ -43,6 +59,8 @@ const AUTOSAVE_DB = 'otonashi_autosave_db';
 const AUTOSAVE_STORE = 'sessions';
 const AUTOSAVE_RECORD_ID = 'latest';
 const AUTOSAVE_INTERVAL_MS = 10000;
+const AUTOSAVE_OTZ_PREFIX = 'OTZB64:';
+type AutosavePayload = string | Blob | ArrayBuffer;
 
 const createEmptyTabHistories = (): Record<TabId, TabHistory> => ({
     editor: { undo: [], redo: [] },
@@ -69,14 +87,34 @@ const openAutosaveDb = (): Promise<IDBDatabase> => {
     });
 };
 
-const readAutosavePayload = async (): Promise<string | null> => {
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        let piece = '';
+        for (let j = 0; j < chunk.length; j++) piece += String.fromCharCode(chunk[j]);
+        binary += piece;
+    }
+    return btoa(binary);
+};
+
+const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+};
+
+const readAutosavePayload = async (): Promise<AutosavePayload | null> => {
     try {
         const db = await openAutosaveDb();
         return await new Promise((resolve, reject) => {
             const tx = db.transaction(AUTOSAVE_STORE, 'readonly');
             const store = tx.objectStore(AUTOSAVE_STORE);
             const req = store.get(AUTOSAVE_RECORD_ID);
-            req.onsuccess = () => resolve((req.result as string | undefined) ?? null);
+            req.onsuccess = () => resolve((req.result as AutosavePayload | undefined) ?? null);
             req.onerror = () => reject(req.error);
         });
     } catch {
@@ -84,7 +122,7 @@ const readAutosavePayload = async (): Promise<string | null> => {
     }
 };
 
-const writeAutosavePayload = async (payload: string): Promise<void> => {
+const writeAutosavePayload = async (payload: AutosavePayload): Promise<void> => {
     try {
         const db = await openAutosaveDb();
         await new Promise<void>((resolve, reject) => {
@@ -94,7 +132,12 @@ const writeAutosavePayload = async (payload: string): Promise<void> => {
             tx.onerror = () => reject(tx.error);
         });
     } catch {
-        localStorage.setItem(AUTOSAVE_KEY, payload);
+        if (typeof payload === 'string') {
+            localStorage.setItem(AUTOSAVE_KEY, payload);
+            return;
+        }
+        const arr = payload instanceof Blob ? await payload.arrayBuffer() : payload;
+        localStorage.setItem(AUTOSAVE_KEY, `${AUTOSAVE_OTZ_PREFIX}${arrayBufferToBase64(arr)}`);
     }
 };
 
@@ -318,8 +361,33 @@ const AppContent: React.FC = () => {
         }
     };
 
-    const buildSerializableProject = useCallback(async (): Promise<SerializedProjectData> => {
-        const fileData: ProjectFileData[] = [];
+    const decodeAudioBuffer = useCallback(async (arrayBuffer: ArrayBuffer): Promise<AudioBuffer> => {
+        const safeBuffer = arrayBuffer.slice(0);
+        const decode = audioContext.decodeAudioData.bind(audioContext) as any;
+        if (decode.length <= 1) {
+            return await audioContext.decodeAudioData(safeBuffer);
+        }
+        return await new Promise<AudioBuffer>((resolve, reject) => {
+            decode(safeBuffer, resolve, reject);
+        });
+    }, [audioContext]);
+
+    const applyImportedProject = useCallback((importedFiles: AudioFile[], data: {
+        ui?: UIConfig;
+        activeFileId?: string | null;
+        activeTab?: TabId;
+        fileCounter?: number;
+    }) => {
+        if (data.ui) setUiConfig(data.ui);
+        setFiles(importedFiles);
+        setActiveFileId(data.activeFileId ?? importedFiles[0]?.id ?? null);
+        setActiveTab(data.activeTab ?? 'editor');
+        setFileCounter(typeof data.fileCounter === 'number' ? data.fileCounter : Math.max(1, importedFiles.length + 1));
+        setTabHistories(createEmptyTabHistories());
+    }, []);
+
+    const buildSerializableProject = useCallback(async (): Promise<LegacySerializedProjectData> => {
+        const fileData: LegacyProjectFileData[] = [];
         for (const file of files) {
             const blob = AudioUtils.bufferToWavBlob(file.buffer);
             const base64 = await AudioUtils.blobToBase64(blob);
@@ -336,21 +404,101 @@ const AppContent: React.FC = () => {
         };
     }, [files, uiConfig, activeFileId, activeTab, fileCounter]);
 
-    const applyProjectData = useCallback(async (data: SerializedProjectData) => {
+    const applyLegacyProjectData = useCallback(async (data: LegacySerializedProjectData) => {
         const importedFiles: AudioFile[] = [];
         for (const item of data.files || []) {
             const response = await fetch(item.data);
-            const buffer = await audioContext.decodeAudioData(await response.arrayBuffer());
+            const buffer = await decodeAudioBuffer(await response.arrayBuffer());
             importedFiles.push({ id: item.id, name: item.name, buffer });
         }
+        applyImportedProject(importedFiles, data);
+    }, [applyImportedProject, decodeAudioBuffer]);
 
-        if (data.ui) setUiConfig(data.ui);
-        setFiles(importedFiles);
-        setActiveFileId(data.activeFileId ?? importedFiles[0]?.id ?? null);
-        setActiveTab(data.activeTab ?? 'editor');
-        setFileCounter(typeof data.fileCounter === 'number' ? data.fileCounter : Math.max(1, importedFiles.length + 1));
-        setTabHistories(createEmptyTabHistories());
-    }, [audioContext]);
+    const buildPackedProjectManifest = useCallback((): PackedSerializedProjectData => {
+        const packedFiles: PackedProjectFileData[] = files.map(file => ({
+            id: file.id,
+            name: file.name,
+            path: `audio/${file.id}.wav`,
+        }));
+        return {
+            version: '1.7',
+            format: 'otz',
+            timestamp: Date.now(),
+            files: packedFiles,
+            ui: uiConfig,
+            activeFileId,
+            activeTab,
+            fileCounter,
+        };
+    }, [files, uiConfig, activeFileId, activeTab, fileCounter]);
+
+    const buildPackedProjectBlob = useCallback(async (): Promise<Blob> => {
+        const manifest = buildPackedProjectManifest();
+        const zip = new JSZip();
+        zip.file('project.json', JSON.stringify(manifest));
+        for (const item of manifest.files) {
+            const src = files.find(f => f.id === item.id);
+            if (!src) continue;
+            const wavBlob = AudioUtils.bufferToWavBlob(src.buffer);
+            zip.file(item.path, await wavBlob.arrayBuffer());
+        }
+        return await zip.generateAsync({
+            type: 'blob',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 },
+        });
+    }, [buildPackedProjectManifest, files]);
+
+    const applyPackedProjectData = useCallback(async (manifest: PackedSerializedProjectData, zip: JSZip) => {
+        const importedFiles: AudioFile[] = [];
+        for (const item of manifest.files || []) {
+            const entry = zip.file(item.path);
+            if (!entry) continue;
+            const arrayBuffer = await entry.async('arraybuffer');
+            const buffer = await decodeAudioBuffer(arrayBuffer);
+            importedFiles.push({ id: item.id, name: item.name, buffer });
+        }
+        applyImportedProject(importedFiles, manifest);
+    }, [applyImportedProject, decodeAudioBuffer]);
+
+    const readPackedManifestFromBinary = useCallback(async (binary: Blob | ArrayBuffer) => {
+        const zip = await JSZip.loadAsync(binary);
+        const manifestEntry = zip.file('project.json');
+        if (!manifestEntry) throw new Error('missing manifest');
+        const manifest = JSON.parse(await manifestEntry.async('text')) as PackedSerializedProjectData;
+        if (manifest?.format !== 'otz') throw new Error('invalid otz manifest');
+        return { manifest, zip };
+    }, []);
+
+    const getAutosaveTimestamp = useCallback(async (raw: AutosavePayload): Promise<number> => {
+        if (typeof raw === 'string') {
+            if (raw.startsWith(AUTOSAVE_OTZ_PREFIX)) {
+                const packed = raw.slice(AUTOSAVE_OTZ_PREFIX.length);
+                const { manifest } = await readPackedManifestFromBinary(base64ToArrayBuffer(packed));
+                return typeof manifest.timestamp === 'number' ? manifest.timestamp : Date.now();
+            }
+            const parsed = JSON.parse(raw) as LegacySerializedProjectData;
+            return typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now();
+        }
+        const { manifest } = await readPackedManifestFromBinary(raw);
+        return typeof manifest.timestamp === 'number' ? manifest.timestamp : Date.now();
+    }, [readPackedManifestFromBinary]);
+
+    const applyAutosavePayload = useCallback(async (raw: AutosavePayload) => {
+        if (typeof raw === 'string') {
+            if (raw.startsWith(AUTOSAVE_OTZ_PREFIX)) {
+                const packed = raw.slice(AUTOSAVE_OTZ_PREFIX.length);
+                const { manifest, zip } = await readPackedManifestFromBinary(base64ToArrayBuffer(packed));
+                await applyPackedProjectData(manifest, zip);
+                return;
+            }
+            const parsed = JSON.parse(raw) as LegacySerializedProjectData;
+            await applyLegacyProjectData(parsed);
+            return;
+        }
+        const { manifest, zip } = await readPackedManifestFromBinary(raw);
+        await applyPackedProjectData(manifest, zip);
+    }, [applyLegacyProjectData, applyPackedProjectData, readPackedManifestFromBinary]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -375,17 +523,15 @@ const AppContent: React.FC = () => {
             try {
                 const raw = await readAutosavePayload();
                 if (!raw || !mounted) return;
-                const parsed = JSON.parse(raw) as SerializedProjectData;
-                if (parsed && Array.isArray(parsed.files)) {
-                    setPendingRecoveryTs(typeof parsed.timestamp === 'number' ? parsed.timestamp : Date.now());
-                }
+                const ts = await getAutosaveTimestamp(raw);
+                if (mounted) setPendingRecoveryTs(ts);
             } catch (err) {
                 console.warn('Failed to read autosave', err);
             }
         };
         void loadRecovery();
         return () => { mounted = false; };
-    }, []);
+    }, [getAutosaveTimestamp]);
 
     const autosaveSignature = useMemo(() => {
         const fileSig = files.map(f => `${f.id}:${f.name}:${f.buffer.length}:${f.buffer.sampleRate}`).join('|');
@@ -396,15 +542,15 @@ const AppContent: React.FC = () => {
         if (autosaveInFlightRef.current) return;
         autosaveInFlightRef.current = true;
         try {
-            const payload = await buildSerializableProject();
-            await writeAutosavePayload(JSON.stringify(payload));
+            const packed = await buildPackedProjectBlob();
+            await writeAutosavePayload(packed);
             lastAutosaveSignatureRef.current = autosaveSignature;
         } catch (err) {
             console.warn('Autosave failed', err);
         } finally {
             autosaveInFlightRef.current = false;
         }
-    }, [buildSerializableProject, autosaveSignature]);
+    }, [buildPackedProjectBlob, autosaveSignature]);
 
     useEffect(() => {
         if (lastAutosaveSignatureRef.current === autosaveSignature) return;
@@ -437,8 +583,7 @@ const AppContent: React.FC = () => {
             setIsRecovering(true);
             const raw = await readAutosavePayload();
             if (!raw) return;
-            const parsed = JSON.parse(raw) as SerializedProjectData;
-            await applyProjectData(parsed);
+            await applyAutosavePayload(raw);
             await clearAutosavePayload();
             setPendingRecoveryTs(null);
         } catch (err) {
@@ -446,7 +591,7 @@ const AppContent: React.FC = () => {
         } finally {
             setIsRecovering(false);
         }
-    }, [applyProjectData, text.projectLoadError]);
+    }, [applyAutosavePayload, text.projectLoadError]);
 
     const handleDiscardAutosave = useCallback(() => {
         void clearAutosavePayload();
@@ -480,12 +625,11 @@ const AppContent: React.FC = () => {
     };
 
     const handleProjectExport = async () => {
-        const projectData = await buildSerializableProject();
-        const blob = new Blob([JSON.stringify(projectData)], { type: 'application/json' });
+        const blob = await buildPackedProjectBlob();
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `otonashi_project_${Date.now()}.json`;
+        link.download = `otonashi_project_${Date.now()}.otz`;
         link.click();
         URL.revokeObjectURL(url);
     };
@@ -495,8 +639,16 @@ const AppContent: React.FC = () => {
         if (!file) return;
 
         try {
-            const data = JSON.parse(await file.text()) as SerializedProjectData;
-            await applyProjectData(data);
+            if (file.name.toLowerCase().endsWith('.otz')) {
+                const zip = await JSZip.loadAsync(await file.arrayBuffer());
+                const manifestEntry = zip.file('project.json');
+                if (!manifestEntry) throw new Error('missing manifest');
+                const manifest = JSON.parse(await manifestEntry.async('text')) as PackedSerializedProjectData;
+                await applyPackedProjectData(manifest, zip);
+            } else {
+                const data = JSON.parse(await file.text()) as LegacySerializedProjectData;
+                await applyLegacyProjectData(data);
+            }
         } catch (err) {
             alert(text.projectLoadError);
         } finally {
@@ -619,7 +771,7 @@ const AppContent: React.FC = () => {
                         <button onClick={() => fileInputRef.current?.click()} title={text.importProject} className="p-1.5 text-slate-500 hover:bg-white hover:dynamic-primary-text rounded-md transition-all">
                             <Upload size={16} />
                         </button>
-                        <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleProjectImport} />
+                        <input ref={fileInputRef} type="file" accept=".json,.otz" className="hidden" onChange={handleProjectImport} />
                     </div>
                     <button onClick={() => setShowHelp(true)} className="text-slate-400 hover:text-slate-600 transition-colors">
                         <HelpCircle size={20} />
