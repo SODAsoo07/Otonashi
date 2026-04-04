@@ -60,6 +60,13 @@ const AUTOSAVE_STORE = 'sessions';
 const AUTOSAVE_RECORD_ID = 'latest';
 const AUTOSAVE_INTERVAL_MS = 10000;
 const AUTOSAVE_OTZ_PREFIX = 'OTZB64:';
+const MAX_UPLOAD_FILES = 50;
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
+const MAX_TOTAL_UPLOAD_BYTES = 500 * 1024 * 1024;
+const MAX_PROJECT_BYTES = 500 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 200;
+const MAX_ZIP_ENTRY_BYTES = 150 * 1024 * 1024;
+const MAX_ZIP_TOTAL_BYTES = 700 * 1024 * 1024;
 type AutosavePayload = string | Blob | ArrayBuffer;
 
 const createEmptyTabHistories = (): Record<TabId, TabHistory> => ({
@@ -105,6 +112,27 @@ const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes.buffer;
+};
+
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+const isHexColor = (value: string) => /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(value);
+const isLengthUnit = (value: string, min: number, max: number) => {
+    const matched = value.match(/^(\d+(?:\.\d+)?)rem$/);
+    if (!matched) return false;
+    const parsed = Number(matched[1]);
+    return Number.isFinite(parsed) && parsed >= min && parsed <= max;
+};
+
+const sanitizeUiConfig = (ui?: UIConfig): UIConfig | undefined => {
+    if (!ui) return undefined;
+    return {
+        primaryColor: isHexColor(ui.primaryColor) ? ui.primaryColor : '#209ad6',
+        accentColor: isHexColor(ui.accentColor) ? ui.accentColor : '#ec4899',
+        bgColor: isHexColor(ui.bgColor) ? ui.bgColor : '#f8f8f6',
+        panelRadius: isLengthUnit(ui.panelRadius, 0.25, 4) ? ui.panelRadius : '1.5rem',
+        headerHeight: isLengthUnit(ui.headerHeight, 2.5, 6) ? ui.headerHeight : '3.5rem',
+        sidebarWidth: clamp(Math.round(ui.sidebarWidth), 200, 600),
+    };
 };
 
 const readAutosavePayload = async (): Promise<AutosavePayload | null> => {
@@ -310,29 +338,14 @@ const AppContent: React.FC = () => {
     }, [tabHistories, activeTab, files, activeFileId]);
 
     useEffect(() => {
-        const styleId = 'otonashi-theme-vars';
-        let styleTag = document.getElementById(styleId) as HTMLStyleElement | null;
-        if (!styleTag) {
-            styleTag = document.createElement('style');
-            styleTag.id = styleId;
-            document.head.appendChild(styleTag);
-        }
-
-        styleTag.innerHTML = `
-            :root {
-                --primary: ${uiConfig.primaryColor};
-                --accent: ${uiConfig.accentColor};
-                --app-bg: ${uiConfig.bgColor};
-                --radius: ${uiConfig.panelRadius};
-                --header-h: ${uiConfig.headerHeight};
-                --sidebar-w: ${isRackOpen ? uiConfig.sidebarWidth : 48}px;
-            }
-            .dynamic-primary { background-color: var(--primary); }
-            .dynamic-primary-text { color: var(--primary); }
-            .dynamic-primary-border { border-color: var(--primary); }
-            .dynamic-radius { border-radius: var(--radius); }
-            .dynamic-bg { background-color: var(--app-bg); }
-        `;
+        const rootStyle = document.documentElement.style;
+        const safeUi = sanitizeUiConfig(uiConfig)!;
+        rootStyle.setProperty('--primary', safeUi.primaryColor);
+        rootStyle.setProperty('--accent', safeUi.accentColor);
+        rootStyle.setProperty('--app-bg', safeUi.bgColor);
+        rootStyle.setProperty('--radius', safeUi.panelRadius);
+        rootStyle.setProperty('--header-h', safeUi.headerHeight);
+        rootStyle.setProperty('--sidebar-w', `${isRackOpen ? safeUi.sidebarWidth : 48}px`);
     }, [uiConfig, isRackOpen]);
 
     useEffect(() => {
@@ -378,7 +391,8 @@ const AppContent: React.FC = () => {
         activeTab?: TabId;
         fileCounter?: number;
     }) => {
-        if (data.ui) setUiConfig(data.ui);
+        const safeUi = sanitizeUiConfig(data.ui);
+        if (safeUi) setUiConfig(safeUi);
         setFiles(importedFiles);
         setActiveFileId(data.activeFileId ?? importedFiles[0]?.id ?? null);
         setActiveTab(data.activeTab ?? 'editor');
@@ -407,6 +421,9 @@ const AppContent: React.FC = () => {
     const applyLegacyProjectData = useCallback(async (data: LegacySerializedProjectData) => {
         const importedFiles: AudioFile[] = [];
         for (const item of data.files || []) {
+            if (!item?.data || !item.data.startsWith('data:audio/')) {
+                throw new Error('invalid legacy audio payload');
+            }
             const response = await fetch(item.data);
             const buffer = await decodeAudioBuffer(await response.arrayBuffer());
             importedFiles.push({ id: item.id, name: item.name, buffer });
@@ -463,6 +480,15 @@ const AppContent: React.FC = () => {
 
     const readPackedManifestFromBinary = useCallback(async (binary: Blob | ArrayBuffer) => {
         const zip = await JSZip.loadAsync(binary);
+        const entries = Object.values(zip.files).filter(entry => !entry.dir);
+        if (entries.length > MAX_ZIP_ENTRIES) throw new Error('too many zip entries');
+        let totalUncompressed = 0;
+        for (const entry of entries) {
+            const bytes = await entry.async('uint8array');
+            if (bytes.byteLength > MAX_ZIP_ENTRY_BYTES) throw new Error('zip entry too large');
+            totalUncompressed += bytes.byteLength;
+            if (totalUncompressed > MAX_ZIP_TOTAL_BYTES) throw new Error('zip exceeds total limit');
+        }
         const manifestEntry = zip.file('project.json');
         if (!manifestEntry) throw new Error('missing manifest');
         const manifest = JSON.parse(await manifestEntry.async('text')) as PackedSerializedProjectData;
@@ -602,9 +628,24 @@ const AppContent: React.FC = () => {
         await ensureAudioContext();
         commitHistory(files, activeFileId);
         const nextFiles = [...files];
+        const incoming = Array.from(filesToUpload);
+        if (incoming.length > MAX_UPLOAD_FILES) {
+            alert(`Too many files. Please upload up to ${MAX_UPLOAD_FILES} files at once.`);
+            return;
+        }
 
-        for (const file of Array.from(filesToUpload)) {
+        const totalBytes = incoming.reduce((sum, f) => sum + (f?.size ?? 0), 0);
+        if (totalBytes > MAX_TOTAL_UPLOAD_BYTES) {
+            alert('Upload size is too large. Please reduce the total file size.');
+            return;
+        }
+
+        for (const file of incoming) {
             if (file.size === 0) continue;
+            if (file.size > MAX_FILE_BYTES) {
+                console.warn('Skipping oversized file', file.name);
+                continue;
+            }
             try {
                 const arrayBuffer = await file.arrayBuffer();
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -637,13 +678,15 @@ const AppContent: React.FC = () => {
     const handleProjectImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        if (file.size > MAX_PROJECT_BYTES) {
+            alert('Project file is too large to import safely.');
+            e.target.value = '';
+            return;
+        }
 
         try {
             if (file.name.toLowerCase().endsWith('.otz')) {
-                const zip = await JSZip.loadAsync(await file.arrayBuffer());
-                const manifestEntry = zip.file('project.json');
-                if (!manifestEntry) throw new Error('missing manifest');
-                const manifest = JSON.parse(await manifestEntry.async('text')) as PackedSerializedProjectData;
+                const { manifest, zip } = await readPackedManifestFromBinary(await file.arrayBuffer());
                 await applyPackedProjectData(manifest, zip);
             } else {
                 const data = JSON.parse(await file.text()) as LegacySerializedProjectData;
@@ -881,4 +924,3 @@ const App: React.FC = () => (
 );
 
 export default App;
-

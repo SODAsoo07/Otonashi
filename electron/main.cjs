@@ -21,7 +21,8 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false,
+      webSecurity: true,
+      sandbox: true,
     },
     show: false,
   });
@@ -74,4 +75,3 @@ app.on('activate', () => {
     createWindow();
   }
 });
-

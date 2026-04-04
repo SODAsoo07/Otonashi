@@ -6,10 +6,23 @@
     <title>OTONASHI - Vocal Tract Simulator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+      :root {
+        --primary: #209ad6;
+        --accent: #ec4899;
+        --app-bg: #f8f8f6;
+        --radius: 1.5rem;
+        --header-h: 3.5rem;
+        --sidebar-w: 256px;
+      }
       html { font-size: 105%; }
       .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       body { font-family: 'Inter', sans-serif; }
+      .dynamic-primary { background-color: var(--primary); }
+      .dynamic-primary-text { color: var(--primary); }
+      .dynamic-primary-border { border-color: var(--primary); }
+      .dynamic-radius { border-radius: var(--radius); }
+      .dynamic-bg { background-color: var(--app-bg); }
     </style>
   <script type="importmap">
 {
