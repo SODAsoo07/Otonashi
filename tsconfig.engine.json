@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "skipLibCheck": true,
+    "rootDir": ".",
+    "outDir": "dist-engine",
+    "declaration": true,
+    "sourceMap": true
+  },
+  "include": [
+    "packages/engine-core/src/**/*.ts",
+    "packages/engine-renderer/src/**/*.ts",
+    "scripts/render-vowel-only.ts",
+    "scripts/test-vowel-renderer.ts"
+  ]
+}

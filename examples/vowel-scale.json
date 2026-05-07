@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "vowel-only-0.1",
+  "sampleRate": 44100,
+  "seed": 7,
+  "notes": [
+    { "id": "c4", "lyric": "가", "tone": 60, "durationMs": 300 },
+    { "id": "d4", "lyric": "가", "tone": 62, "durationMs": 300 },
+    { "id": "e4", "lyric": "가", "tone": 64, "durationMs": 300 },
+    { "id": "f4", "lyric": "가", "tone": 65, "durationMs": 300 },
+    { "id": "g4", "lyric": "가", "tone": 67, "durationMs": 300 },
+    { "id": "a4", "lyric": "가", "tone": 69, "durationMs": 300 },
+    { "id": "b4", "lyric": "가", "tone": 71, "durationMs": 300 },
+    { "id": "c5", "lyric": "가", "tone": 72, "durationMs": 500 }
+  ],
+  "tract": {
+    "x": 0.48,
+    "y": 0.38,
+    "lips": 0.72,
+    "lipLen": 0.42,
+    "throat": 0.44,
+    "nasal": 0.2,
+    "gender": 1.0,
+    "gain": 0.24
+  },
+  "renderer": {
+    "waveform": "sawtooth",
+    "attackMs": 6,
+    "releaseMs": 28,
+    "formantAmount": 1.0,
+    "vowelTargetAmount": 0.15
+  }
+}

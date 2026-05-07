@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "vowel-only-0.1",
+  "sampleRate": 44100,
+  "seed": 1,
+  "notes": [
+    {
+      "id": "n1",
+      "lyric": "가",
+      "tone": 60,
+      "durationMs": 500
+    },
+    {
+      "id": "n2",
+      "lyric": "기",
+      "tone": 64,
+      "durationMs": 500
+    },
+    {
+      "id": "n3",
+      "lyric": "고",
+      "tone": 67,
+      "durationMs": 500
+    },
+    {
+      "id": "n4",
+      "lyric": "구",
+      "tone": 72,
+      "durationMs": 500
+    }
+  ],
+  "tract": {
+    "x": 0.5,
+    "y": 0.4,
+    "lips": 0.7,
+    "lipLen": 0.5,
+    "throat": 0.5,
+    "nasal": 0.2,
+    "gender": 1.0,
+    "gain": 0.25
+  },
+  "renderer": {
+    "waveform": "sawtooth",
+    "attackMs": 8,
+    "releaseMs": 35,
+    "formantAmount": 1.0,
+    "vowelTargetAmount": 0.2
+  }
+}

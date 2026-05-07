@@ -9,6 +9,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "desktop:dev": "electron .",
+    "engine:build": "tsc -p tsconfig.engine.json",
+    "otonashi:render": "npm run engine:build --silent && node dist-engine/scripts/render-vowel-only.js",
+    "test:vowel-renderer": "npm run engine:build --silent && node dist-engine/scripts/test-vowel-renderer.js",
     "build:desktop:win": "npm run build && electron-builder --win --publish never",
     "build:desktop:mac": "npm run build && electron-builder --mac --publish never"
   },
