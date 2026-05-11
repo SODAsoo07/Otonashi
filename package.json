@@ -11,7 +11,9 @@
     "desktop:dev": "electron .",
     "engine:build": "tsc -p tsconfig.engine.json",
     "otonashi:render": "npm run engine:build --silent && node dist-engine/scripts/render-vowel-only.js",
+    "otonashi:service": "npm run engine:build --silent && node dist-engine/scripts/vowel-engine-service.js",
     "test:vowel-renderer": "npm run engine:build --silent && node dist-engine/scripts/test-vowel-renderer.js",
+    "test:vowel-service": "npm run engine:build --silent && node dist-engine/scripts/test-vowel-service.js",
     "build:desktop:win": "npm run build && electron-builder --win --publish never",
     "build:desktop:mac": "npm run build && electron-builder --mac --publish never"
   },

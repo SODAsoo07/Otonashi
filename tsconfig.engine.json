@@ -15,7 +15,10 @@
   "include": [
     "packages/engine-core/src/**/*.ts",
     "packages/engine-renderer/src/**/*.ts",
+    "packages/engine-service/src/**/*.ts",
     "scripts/render-vowel-only.ts",
-    "scripts/test-vowel-renderer.ts"
+    "scripts/test-vowel-renderer.ts",
+    "scripts/test-vowel-service.ts",
+    "scripts/vowel-engine-service.ts"
   ]
 }
